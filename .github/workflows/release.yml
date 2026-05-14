@@ -1,0 +1,181 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ── Job 1: Lint & Test ─────────────────────────────────────────────────────
+  check:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Test
+        run: pnpm run test
+
+  # ── Job 2: Cross-compile for 5 platforms ───────────────────────────────────
+  build:
+    name: Build
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Shim react-devtools-core
+        run: |
+          mkdir -p node_modules/react-devtools-core
+          echo '{"name":"react-devtools-core","version":"0.0.0","main":"index.js","type":"module"}' > node_modules/react-devtools-core/package.json
+          echo 'export default {};' > node_modules/react-devtools-core/index.js
+
+      - name: Build binaries
+        run: |
+          mkdir -p dist/release
+
+          # Read version from package.json and prepare build-time defines
+          VERSION=$(node -p "require('./package.json').version")
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "Injecting version: $VERSION, build time: $BUILD_TIME"
+
+          targets=(
+            "bun-linux-x64"
+            "bun-linux-arm64"
+            "bun-darwin-x64"
+            "bun-darwin-arm64"
+            "bun-windows-x64"
+          )
+
+          for target in "${targets[@]}"; do
+            platform=$(echo "$target" | cut -d'-' -f2)
+            arch=$(echo "$target" | cut -d'-' -f3)
+            dir="dist/stage/${platform}-${arch}"
+            mkdir -p "$dir"
+
+            if [ "$platform" = "windows" ]; then
+              binname="qianwen.exe"
+            else
+              binname="qianwen"
+            fi
+
+            echo "::group::Building $target -> $binname"
+            bun build bin/qianwen.ts --compile --target="$target" --outfile "$dir/$binname" \
+              --define '__VERSION__="'"${VERSION}"'"' \
+              --define '__BUILD_TIME__="'"${BUILD_TIME}"'"' \
+              --define '__NODE_ENV__="production"'
+            echo "::endgroup::"
+          done
+
+      - name: Zip artifacts
+        run: |
+          for dir in dist/stage/*/; do
+            label=$(basename "$dir")
+            zipname="qianwen-${label}.zip"
+            echo "Zipping $dir -> dist/release/$zipname"
+            (cd "$dir" && zip "../../release/$zipname" *)
+          done
+          rm -rf dist/stage
+
+      - name: Generate checksums
+        working-directory: dist/release
+        run: sha256sum *.zip > checksums.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ github.ref_name }}
+          path: |
+            dist/release/*.zip
+            dist/release/checksums.txt
+          retention-days: 7
+
+  # ── Job 3: Create Draft Release ────────────────────────────────────────────
+  draft-release:
+    name: Draft Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Extracting notes for version: $VERSION"
+
+          # If CHANGELOG contains a template section, strip it first
+          if grep -q '^---$' CHANGELOG.md && grep -q '## Template for New Releases' CHANGELOG.md; then
+            CONTENT=$(sed '/^---$/,$d' CHANGELOG.md)
+          else
+            CONTENT=$(cat CHANGELOG.md)
+          fi
+
+          # Extract content between ## [VERSION] and the next ## [, skip the title line
+          NOTES=$(echo "$CONTENT" | sed -n "/^## \[${VERSION}\]/,/^## \[/p" | sed '1d;$d')
+
+          if [ -z "$NOTES" ]; then
+            NOTES="Release ${GITHUB_REF_NAME}"
+            echo "::warning::No CHANGELOG entry found for version $VERSION, using fallback."
+          fi
+
+          # Write to file to preserve multiline content
+          echo "$NOTES" > release-notes.md
+          echo "notes_file=release-notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-${{ github.ref_name }}
+          path: dist/release
+
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: |
+            dist/release/*.zip
+            dist/release/checksums.txt
