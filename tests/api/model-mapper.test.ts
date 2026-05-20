@@ -124,11 +124,11 @@ describe('mapApiModelToModel', () => {
 
   it('maps Supports.Experience to can_try', () => {
     const yes = mapApiModelToModel(
-      makeApiItem({ Supports: { ...makeApiItem().Supports, Experience: true } }),
+      makeApiItem({ Supports: { ...makeApiItem().Supports!, Experience: true } }),
       false,
     );
     const no = mapApiModelToModel(
-      makeApiItem({ Supports: { ...makeApiItem().Supports, Experience: false } }),
+      makeApiItem({ Supports: { ...makeApiItem().Supports!, Experience: false } }),
       false,
     );
     expect(yes.can_try).toBe(true);
@@ -185,7 +185,7 @@ describe('mapApiModelToModel pricing summary', () => {
     });
   });
 
-  it('LLM all-zero tier → billing_type "free"', () => {
+  it('LLM all-zero tier → empty tiers + billing_type "unknown"', () => {
     const item = makeApiItem({
       Prices: [
         { Type: 'input_token', Price: '0', PriceUnit: 'USD/1M tokens', PriceName: 'Input' },
@@ -193,8 +193,10 @@ describe('mapApiModelToModel pricing summary', () => {
       ],
     });
     const m = mapApiModelToModel(item, false);
-    // mapPrices flips all-zero into a single 'Free (Early Access)' tier
-    expect(m.pricing!.summary?.billing_type).toBe('free');
+    // mapPrices returns empty tiers for all-zero prices — "free" semantics
+    // come only from free_tier.mode === 'only'
+    expect(m.pricing).toMatchObject({ tiers: [] });
+    expect(m.pricing!.summary?.billing_type).toBe('unknown');
   });
 
   it('image pricing → billing_type "image", cheapest_output from per_image', () => {
@@ -274,6 +276,43 @@ describe('mapApiModelToModel pricing summary', () => {
     expect(m.pricing!.summary).toMatchObject({ billing_type: 'token', cheapest_input: 0.05 });
   });
 
+  it('Multiple embedding entries → ItemizedPricing (no data loss)', () => {
+    const item = makeApiItem({
+      InferenceMetadata: { RequestModality: ['Text', 'Image'], ResponseModality: ['vector'] },
+      Prices: [
+        { Type: 'embedding_image_token', Price: '0.15', PriceUnit: '每百万tokens', PriceName: '图片输入' },
+        { Type: 'embedding_token', Price: '0.15', PriceUnit: '每百万tokens', PriceName: '文本输入' },
+      ],
+    });
+    const m = mapApiModelToModel(item, false);
+    expect(m.pricing).toMatchObject({
+      items: [
+        { name: '图片输入', price: 0.15, unit: '每百万tokens' },
+        { name: '文本输入', price: 0.15, unit: '每百万tokens' },
+      ],
+    });
+    expect(m.pricing!.summary).toMatchObject({
+      billing_type: 'itemized',
+      cheapest_output: 0.15,
+    });
+  });
+
+  it('Empty/malformed Price string → 0 instead of NaN', () => {
+    const item = makeApiItem({
+      Prices: [
+        { Type: 'input_token', Price: '', PriceUnit: 'CNY/1M tokens', PriceName: 'Input' },
+        { Type: 'output_token', Price: '2.00', PriceUnit: 'CNY/1M tokens', PriceName: 'Output' },
+      ],
+    });
+    const m = mapApiModelToModel(item, false);
+    // Empty Price should be 0, not NaN; output should still be valid
+    const p = m.pricing as { tiers: Array<{ input: number; output: number }> };
+    expect(p.tiers[0].input).toBe(0);
+    expect(p.tiers[0].output).toBe(2);
+    expect(Number.isNaN(p.tiers[0].input)).toBe(false);
+    expect(Number.isNaN(p.tiers[0].output)).toBe(false);
+  });
+
   it('MultiPrices → multiple LLM tiers (cheapest input wins for summary)', () => {
     const item = makeApiItem({
       MultiPrices: [
@@ -304,6 +343,98 @@ describe('mapApiModelToModel pricing summary', () => {
       cheapest_input: 0.8,
       cheapest_output: 4,
       billing_type: 'token',
+    });
+  });
+
+  it('MultiPrices with image_number → per_image_tiers + billing_type "image"', () => {
+    const item = makeApiItem({
+      InferenceMetadata: { RequestModality: ['Text'], ResponseModality: ['Image'] },
+      MultiPrices: [
+        {
+          RangeName: '图片生成数量<=25',
+          Prices: [
+            { Type: 'image_number', Price: '0.3', PriceUnit: '每张', PriceName: '图片生成' },
+          ],
+        },
+        {
+          RangeName: '25<图片生成数量<=125',
+          Prices: [
+            { Type: 'image_number', Price: '0.275', PriceUnit: '每张', PriceName: '图片生成' },
+          ],
+        },
+        {
+          RangeName: '25000<图片生成数量',
+          Prices: [
+            { Type: 'image_number', Price: '0.15', PriceUnit: '每张', PriceName: '图片生成' },
+          ],
+        },
+      ],
+    });
+    const m = mapApiModelToModel(item, false);
+    expect(m.pricing).toMatchObject({
+      per_image: { price: 0.3 },
+      per_image_tiers: [
+        { label: '图片生成数量<=25', price: 0.3 },
+        { label: '25<图片生成数量<=125', price: 0.275 },
+        { label: '25000<图片生成数量', price: 0.15 },
+      ],
+    });
+    expect(m.pricing!.summary).toMatchObject({
+      cheapest_input: 0,
+      cheapest_output: 0.15,
+      billing_type: 'image',
+    });
+  });
+
+  it('Unclassifiable Prices → ItemizedPricing with items + billing_type "itemized"', () => {
+    const item = makeApiItem({
+      InferenceMetadata: { RequestModality: ['Text'], ResponseModality: ['Image'] },
+      Prices: [
+        { Type: 'custom_inference_unit', Price: '0.7', PriceUnit: '每千次', PriceName: '推理调用' },
+        { Type: 'unknown_fee_type', Price: '0.12', PriceUnit: '每GB', PriceName: '存储读取' },
+      ],
+    });
+    const m = mapApiModelToModel(item, false);
+    expect(m.pricing).toMatchObject({
+      items: [
+        { name: '推理调用', price: 0.7, unit: '每千次' },
+        { name: '存储读取', price: 0.12, unit: '每GB' },
+      ],
+    });
+    expect(m.pricing!.summary).toMatchObject({
+      cheapest_input: 0,
+      cheapest_output: 0.12,
+      billing_type: 'itemized',
+    });
+  });
+
+  it('MultiPrices with no recognized types → ItemizedPricing fallback', () => {
+    const item = makeApiItem({
+      MultiPrices: [
+        {
+          RangeName: '0-100次',
+          Prices: [
+            { Type: 'custom_unit', Price: '0.5', PriceUnit: '每次', PriceName: '自定义调用' },
+          ],
+        },
+        {
+          RangeName: '100+次',
+          Prices: [
+            { Type: 'custom_unit', Price: '0.3', PriceUnit: '每次', PriceName: '自定义调用' },
+          ],
+        },
+      ],
+    });
+    const m = mapApiModelToModel(item, false);
+    expect(m.pricing).toMatchObject({
+      items: expect.arrayContaining([
+        expect.objectContaining({ name: '自定义调用', price: 0.5 }),
+        expect.objectContaining({ name: '自定义调用', price: 0.3 }),
+      ]),
+    });
+    expect(m.pricing!.summary).toMatchObject({
+      billing_type: 'itemized',
+      cheapest_output: 0.3,
     });
   });
 
@@ -505,6 +636,28 @@ describe('mapFqInstanceToQuota', () => {
   it('handles 0 total → used_pct = 0 (no NaN/Infinity)', () => {
     const q = mapFqInstanceToQuota(
       makeFq({ InitCapacity: { BaseValue: 0, ShowUnit: 'Tokens', ShowValue: '0' } }),
+    );
+    expect(q.used_pct).toBe(0);
+  });
+
+  it('truncates used_pct via Math.floor (no rounding up to 100)', () => {
+    // 995/1000 used → 99.5%, floor at 2dp → 99.5 (NOT 100)
+    const q = mapFqInstanceToQuota(
+      makeFq({
+        InitCapacity: { BaseValue: 1000, ShowUnit: 'Tokens', ShowValue: '1000' },
+        CurrCapacity: { BaseValue: 5, ShowUnit: 'Tokens', ShowValue: '5' },
+      }),
+    );
+    expect(q.used_pct).toBe(99.5);
+  });
+
+  it('truncates tiny usage to 0 via Math.floor', () => {
+    // 4/1_000_000 used → 0.0004%, floor at 2dp → 0
+    const q = mapFqInstanceToQuota(
+      makeFq({
+        InitCapacity: { BaseValue: 1_000_000, ShowUnit: 'Tokens', ShowValue: '1M' },
+        CurrCapacity: { BaseValue: 999_996, ShowUnit: 'Tokens', ShowValue: '999996' },
+      }),
     );
     expect(q.used_pct).toBe(0);
   });

@@ -214,7 +214,7 @@ describe('buildModelRows', () => {
       metadata: { version_tag: 'v1', open_source: false, updated: '2026-01-01' },
     } as any;
     const rows = buildModelRows([baseModel], [detail]);
-    expect(rows[0].price).toContain('5.00');
+    expect(rows[0].price).toContain('5');
   });
 
   it('handles multimodal input (image+text) → modality string with separator', () => {

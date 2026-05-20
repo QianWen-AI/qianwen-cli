@@ -62,7 +62,7 @@ export interface PricingSummary {
   cheapest_input: number;
   cheapest_output: number;
   unit: string;
-  billing_type: 'token' | 'image' | 'second' | 'character' | 'free' | 'unknown';
+  billing_type: 'token' | 'image' | 'second' | 'character' | 'free' | 'itemized' | 'no_pricing' | 'unknown';
 }
 
 // Different pricing structures. Every variant carries a `summary` for
@@ -78,8 +78,15 @@ export interface VideoPerSecondPricing {
   summary?: PricingSummary;
 }
 
+export interface ImageTier {
+  label: string; // Volume bracket, e.g. "图片生成数量<=25"
+  price: number;
+  unit: string; // e.g. "CNY/image"
+}
+
 export interface ImagePricing {
   per_image: { price: number; unit: string };
+  per_image_tiers?: ImageTier[]; // Tiered pricing by volume brackets
   summary?: PricingSummary;
 }
 
@@ -98,13 +105,28 @@ export interface EmbeddingPricing {
   summary?: PricingSummary;
 }
 
+// Itemized pricing — generic fallback for price items that cannot be classified
+// into any of the specialised structures above. Preserves the original
+// PriceName / Price / PriceUnit so no data is lost.
+export interface PriceItem {
+  name: string; // from PriceName (fallback to Type)
+  price: number; // parseFloat(Price)
+  unit: string; // from PriceUnit
+}
+
+export interface ItemizedPricing {
+  items: PriceItem[];
+  summary?: PricingSummary;
+}
+
 export type Pricing =
   | LLMPricing
   | VideoPerSecondPricing
   | ImagePricing
   | TTSPricing
   | ASRPricing
-  | EmbeddingPricing;
+  | EmbeddingPricing
+  | ItemizedPricing;
 
 // Context info (LLM only)
 export interface Context {

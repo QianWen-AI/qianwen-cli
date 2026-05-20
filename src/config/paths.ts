@@ -8,6 +8,7 @@ const CONFIG_FILE = 'config.json';
 const LOCAL_CONFIG_FILE = site.localConfigFile;
 const MIGRATION_STATE_FILE = '.migrated-projects';
 const DEVICE_FLOW_PENDING_FILE = '.device-flow-pending';
+const CACHE_DIR_NAME = 'cache';
 
 /**
  * Get the global config directory path (~/.qianwen).
@@ -53,4 +54,21 @@ export function getMigrationStatePath(): string {
  */
 export function getDeviceFlowPendingPath(): string {
   return join(getConfigDir(), DEVICE_FLOW_PENDING_FILE);
+}
+
+/**
+ * Get the cache directory path (~/.qianwen/cache).
+ * Used by FileCache to persist cross-process cache entries (one-shot mode).
+ */
+export function getCacheDir(): string {
+  return join(getConfigDir(), CACHE_DIR_NAME);
+}
+
+/**
+ * Get the absolute path of a single cache file inside the cache directory.
+ * `fileName` is expected to be a stable, hand-picked name per cache key
+ * (e.g. `models-raw-list.json`).
+ */
+export function getCacheFilePath(fileName: string): string {
+  return join(getCacheDir(), fileName);
 }

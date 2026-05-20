@@ -115,7 +115,7 @@ describe('ModelInfoInk', () => {
     expect(out).not.toMatch(/^\s*Tags\s*$/m);
   });
 
-  it('renders all-free LLM as "Free (Early Access)"', () => {
+  it('renders all-free LLM with em-dash pricing rows', () => {
     const vm: ModelDetailViewModel = {
       id: 'free-llm',
       description: 'free',
@@ -125,15 +125,16 @@ describe('ModelInfoInk', () => {
       features: '—',
       pricingType: 'llm',
       pricingLines: [
-        { cells: { label: 'all', input: `${s.currencySymbol}0.00/1M`, output: `${s.currencySymbol}0.00/1M` } },
+        { cells: { label: '\u2014', input: '\u2014', output: '\u2014' } },
       ],
       builtInTools: [],
       rateLimits: 'RPM   100',
       metadata: baseMetadata(),
     };
     const out = frame(<ModelInfoInk vm={vm} />);
-    expect(out).toContain('Free');
-    expect(out).toContain('Early Access');
+    // All-zero pricing now surfaces as em-dash rows, not "Free (Early Access)"
+    expect(out).toContain('\u2014');
+    expect(out).not.toContain('Early Access');
   });
 
   it('renders image model with single price line', () => {
@@ -235,12 +236,11 @@ describe('ModelInfoInk', () => {
       metadata: baseMetadata(),
     };
 
-    it('renders "only" free tier with Free + Early Access label', () => {
+    it('renders "only" free tier with FreeTier Only label', () => {
       const vm: ModelDetailViewModel = { ...baseVm, freeTier: { mode: 'only' } };
       const out = frame(<ModelInfoInk vm={vm} />);
       expect(out).toContain('Free Tier');
-      expect(out).toContain('Free');
-      expect(out).toContain('Early Access');
+      expect(out).toContain('FreeTier Only');
     });
 
     it('renders "standard" free tier with quota: total, remaining bar, reset date', () => {
@@ -260,7 +260,7 @@ describe('ModelInfoInk', () => {
       expect(out).toContain('1M tok');
       expect(out).toContain('Remaining');
       expect(out).toContain('850K tok');
-      expect(out).toContain('85.0%');
+      expect(out).toContain('85.00%');
       expect(out).toContain('Resets');
       expect(out).toContain('2026-05-01');
     });

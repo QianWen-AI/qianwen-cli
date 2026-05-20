@@ -86,6 +86,9 @@ export function renderTextModelDetail(vm: ModelDetailViewModel): void {
   } else if (vm.pricingType === 'video') {
     const toolRows = vm.pricingLines.map((l) => [l.cells.resolution, l.cells.price]);
     lines.push('  ' + formatTextTable(['Resolution', 'Price'], toolRows, 0).replace(/^ {2}/gm, ''));
+  } else if (vm.pricingType === 'itemized') {
+    const itemRows = vm.pricingLines.map((l) => [l.cells.label, l.cells.price]);
+    lines.push('  ' + formatTextTable(['Item', 'Price'], itemRows, 0).replace(/^ {2}/gm, ''));
   } else {
     // Single-line pricing (image, tts, asr, embedding)
     const firstLine = vm.pricingLines[0];
@@ -113,7 +116,7 @@ export function renderTextModelDetail(vm: ModelDetailViewModel): void {
   if (vm.freeTier) {
     lines.push('  ── Free Tier ──');
     if (vm.freeTier.mode === 'only') {
-      lines.push('  Free (Early Access) — no paid option');
+      lines.push('  FreeTier Only');
     } else if (vm.freeTier.remaining !== undefined && vm.freeTier.remainingPct !== undefined) {
       lines.push(
         `  ${vm.freeTier.total ?? '—'}  ·  ${vm.freeTier.remaining} remaining (${vm.freeTier.remainingPct}%)`,

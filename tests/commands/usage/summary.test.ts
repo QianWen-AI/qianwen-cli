@@ -71,7 +71,7 @@ describe('usage summary command (one-shot)', () => {
             models: [
               {
                 model_id: 'qwen3-max',
-                usage: { tokens_in: 50_000, tokens_out: 10_000 },
+                usage: { tokens: 60_000 },
                 cost: 0.42,
                 currency: 'CNY',
               },
@@ -171,7 +171,7 @@ describe('usage summary command (one-shot)', () => {
             models: [
               {
                 model_id: 'qwen3-max',
-                usage: { tokens_in: 10_000, tokens_out: 2_000 },
+                usage: { tokens: 12_000 },
                 cost: 0.12,
                 currency: 'CNY',
               },
@@ -202,7 +202,7 @@ describe('usage summary command (one-shot)', () => {
             resetDate: '2026-06-01T00:00:00Z',
           },
           pay_as_you_go: {
-            models: [{ model_id: 'qwen-payg', usage: { tokens_in: 100, tokens_out: 50 }, cost: 0.01, currency: 'CNY' }],
+            models: [{ model_id: 'qwen-payg', usage: { tokens: 150 }, cost: 0.01, currency: 'CNY' }],
             total: { cost: 0.01, currency: 'CNY' },
           },
         }),
@@ -250,7 +250,7 @@ describe('usage summary command (one-shot)', () => {
           },
           pay_as_you_go: {
             models: [
-              { model_id: 'qwen3-payg', usage: { tokens_in: 100, tokens_out: 50 }, cost: 0.01, currency: 'CNY' },
+              { model_id: 'qwen3-payg', usage: { tokens: 150 }, cost: 0.01, currency: 'CNY' },
             ],
             total: { cost: 0.01, currency: 'CNY' },
           },
@@ -345,7 +345,7 @@ describe('usage summary command (one-shot)', () => {
     it('renders PayAsYouGoSection with hidden-count footer when >10 rows', async () => {
       const manyPayg = Array.from({ length: 12 }, (_, i) => ({
         model_id: `qwen-payg-${i}`,
-        usage: { tokens_in: 100, tokens_out: 50 },
+        usage: { tokens: 150 },
         cost: 0.01,
         currency: 'CNY',
       }));

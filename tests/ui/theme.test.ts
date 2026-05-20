@@ -21,7 +21,7 @@ describe('buildProgressBar', () => {
 
   it('shows percentage when showPct=true', () => {
     const bar = buildProgressBar(85, 10, undefined, true);
-    expect(bar).toMatch(/85\.0%/);
+    expect(bar).toMatch(/85\.00%/);
   });
 
   it('uses custom color function', () => {

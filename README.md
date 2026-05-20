@@ -1,12 +1,12 @@
 # QianWen CLI
 
 <p>
-  <img src="./assets/QianWenAILogo.svg" alt="QianWenAI" width="220" />
+  <img src="./assets/QianWenAILogo.png" alt="QianWenAI" width="220" />
 </p>
 
 > 千问云官方命令行工具。在终端或 AI Agent 运行时中，发现模型、查看用量、管理认证与诊断本地环境。
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.0.1-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 

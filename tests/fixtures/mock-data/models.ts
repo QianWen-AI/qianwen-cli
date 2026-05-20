@@ -143,7 +143,7 @@ export const mockModels = [
     features: ['Function Calling'],
     pricing: {
       tiers: [
-        { label: 'Free (Early Access)', input: 0, output: 0, unit: 'free' },
+        { label: 'FreeTier Only', input: 0, output: 0, unit: 'free' },
       ],
     },
     context: { context_window: 131072, max_input: 129024, max_output: 16384 },

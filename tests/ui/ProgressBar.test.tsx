@@ -63,9 +63,9 @@ describe('ProgressBar', () => {
   });
 
   describe('free-only mode', () => {
-    it('renders the literal "Free (Early Access)" text instead of bar', () => {
+    it('renders the literal "FreeTier Only" text instead of bar', () => {
       const out = frame(<ProgressBar percentage={0} mode="free-only" />);
-      expect(out).toContain('Free (Early Access)');
+      expect(out).toContain('FreeTier Only');
       // No filled/empty blocks
       expect(out).not.toContain('█');
       expect(out).not.toContain('░');
@@ -73,7 +73,7 @@ describe('ProgressBar', () => {
 
     it('appends label in free-only mode when provided', () => {
       const out = frame(<ProgressBar percentage={0} mode="free-only" label="no quota" />);
-      expect(out).toContain('Free (Early Access)');
+      expect(out).toContain('FreeTier Only');
       expect(out).toContain('no quota');
     });
   });

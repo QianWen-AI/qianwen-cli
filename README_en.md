@@ -1,12 +1,12 @@
 # QianWen CLI
 
 <p>
-  <img src="./assets/QianWenAILogo.svg" alt="QianWenAI" width="220" />
+  <img src="./assets/QianWenAILogo.png" alt="QianWenAI" width="220" />
 </p>
 
 > Official command-line tool for [QianWen](https://www.qianwenai.com/). Discover models, check usage, manage authentication, and diagnose local setup from a terminal or an AI agent runtime.
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.0.1-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 

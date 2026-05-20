@@ -81,10 +81,13 @@ export function buildModelRows(
 
     const { amount: priceAmt, unit: priceUnit } = splitPrice(priceStr);
     const { amount: ftAmt, unit: ftUnit, expired: ftExpired } = formatFreeTierSplit(model);
-    const remainingPct = model.free_tier.quota
-      ? model.free_tier.quota.status === 'expire'
+    const quota = model.free_tier.quota;
+    const remainingPct = quota
+      ? quota.status === 'expire'
         ? 0
-        : Math.round((100 - model.free_tier.quota.used_pct) * 10) / 10
+        : quota.total > 0
+          ? parseFloat(((quota.remaining / quota.total) * 100).toFixed(2))
+          : undefined
       : undefined;
 
     // Build free tier bar: expired shows empty muted bar with "expired" label

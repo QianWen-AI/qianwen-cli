@@ -3,6 +3,10 @@
 // In-memory cache with expiration, used to reduce API calls.
 // ============================================================
 
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'fs';
+import { dirname } from 'path';
+import { getCacheFilePath } from '../config/paths.js';
+
 interface CacheEntry<T> {
   data: T;
   expiresAt: number; // Expiration timestamp (milliseconds)
@@ -155,6 +159,17 @@ export const CacheKeys = {
   MODEL_MAPPING: 'models:mapping',
 } as const;
 
+export type CacheKey = (typeof CacheKeys)[keyof typeof CacheKeys];
+
+/**
+ * Stable file names per cache key. Hand-picked so users can locate or clear
+ * a single entry without parsing the file content.
+ */
+export const CacheFileNames: Record<CacheKey, string> = {
+  [CacheKeys.MODELS_RAW_LIST]: 'models-raw-list.json',
+  [CacheKeys.MODEL_MAPPING]: 'model-mapping.json',
+};
+
 // ============================================================
 // Default cache configuration
 // Note: only model data is cached; all other data (usage, auth, etc.)
@@ -190,4 +205,218 @@ export function resetGlobalCache(): void {
     globalCache.dispose();
     globalCache = null;
   }
+}
+
+// ============================================================
+// File cache (cross-process, one-shot mode)
+//
+// Persists a small set of cache entries to ~/.qianwen/cache/<file>.json so
+// each one-shot CLI invocation does not re-fetch slow upstream resources
+// (model list, model-mapping). Reliability requirements:
+//   - Validity is determined entirely by self-describing fields inside the
+//     file (schemaVersion, key, endpoint, expiresAt). No reliance on file
+//     mtime / atime, file locks, inotify, or any other OS facility.
+//   - Any read/parse error, schema mismatch, endpoint mismatch or expiry
+//     produces a miss; the caller is expected to refetch and overwrite.
+//   - Writes are atomic via tmp-file + rename, safe under concurrent
+//     one-shot invocations (last writer wins; never half-written).
+// ============================================================
+
+declare const __VERSION__: string;
+
+/**
+ * On-disk schema version. Bump when the envelope shape changes; older files
+ * with a different value are treated as miss and overwritten.
+ */
+export const FILE_CACHE_SCHEMA_VERSION = 1;
+
+interface FileCacheEnvelope<T> {
+  schemaVersion: number;
+  cliVersion: string;
+  endpoint: string;
+  key: string;
+  createdAt: number;
+  expiresAt: number;
+  ttlMs: number;
+  data: T;
+}
+
+export interface FileCacheContext {
+  /** Current API endpoint (api.endpoint). Read entries with a different endpoint are evicted. */
+  endpoint: string;
+  /** TTL in milliseconds for the next write. `0` disables both read and write. */
+  ttlMs: number;
+}
+
+/**
+ * Resolver for the runtime context. Injected so that this module does not
+ * depend on the config manager at import time (and tests can override).
+ */
+export type FileCacheContextResolver = () => FileCacheContext;
+
+let contextResolver: FileCacheContextResolver | null = null;
+
+/**
+ * Wire the file cache to a context resolver. Called once during process
+ * startup (or in tests). When unset, the file cache behaves as disabled.
+ */
+export function setFileCacheContextResolver(resolver: FileCacheContextResolver | null): void {
+  contextResolver = resolver;
+}
+
+function resolveContext(): FileCacheContext | null {
+  if (!contextResolver) return null;
+  try {
+    return contextResolver();
+  } catch {
+    return null;
+  }
+}
+
+function currentCliVersion(): string {
+  return typeof __VERSION__ !== 'undefined' ? __VERSION__ : '0.0.0';
+}
+
+function filePathFor(key: CacheKey): string | null {
+  const fileName = CacheFileNames[key];
+  if (!fileName) return null;
+  return getCacheFilePath(fileName);
+}
+
+export class FileCache {
+  /**
+   * Read a cache entry from disk. Returns `null` on any failure path:
+   * file missing, parse error, schema/key/endpoint mismatch, or expired.
+   * Never throws.
+   */
+  get<T>(key: CacheKey): T | null {
+    const ctx = resolveContext();
+    if (!ctx || ctx.ttlMs <= 0) return null; // disabled
+
+    const path = filePathFor(key);
+    if (!path || !existsSync(path)) return null;
+
+    let raw: string;
+    try {
+      raw = readFileSync(path, 'utf-8');
+    } catch {
+      return null;
+    }
+
+    let parsed: FileCacheEnvelope<T>;
+    try {
+      parsed = JSON.parse(raw) as FileCacheEnvelope<T>;
+    } catch {
+      this.safeUnlink(path);
+      return null;
+    }
+
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      parsed.schemaVersion !== FILE_CACHE_SCHEMA_VERSION ||
+      parsed.key !== key ||
+      typeof parsed.expiresAt !== 'number' ||
+      typeof parsed.endpoint !== 'string'
+    ) {
+      this.safeUnlink(path);
+      return null;
+    }
+
+    if (parsed.endpoint !== ctx.endpoint) {
+      // Stale entry from a different upstream; drop it.
+      this.safeUnlink(path);
+      return null;
+    }
+
+    if (Date.now() > parsed.expiresAt) {
+      this.safeUnlink(path);
+      return null;
+    }
+
+    return parsed.data;
+  }
+
+  /**
+   * Persist a cache entry. Honours `ttlMs === 0` (disabled) by skipping the
+   * write. All errors are swallowed so the cache layer never breaks the
+   * primary request flow.
+   */
+  set<T>(key: CacheKey, data: T): void {
+    const ctx = resolveContext();
+    if (!ctx || ctx.ttlMs <= 0) return; // disabled
+
+    const path = filePathFor(key);
+    if (!path) return;
+
+    const now = Date.now();
+    const envelope: FileCacheEnvelope<T> = {
+      schemaVersion: FILE_CACHE_SCHEMA_VERSION,
+      cliVersion: currentCliVersion(),
+      endpoint: ctx.endpoint,
+      key,
+      createdAt: now,
+      expiresAt: now + ctx.ttlMs,
+      ttlMs: ctx.ttlMs,
+      data,
+    };
+
+    const dir = dirname(path);
+    try {
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+    } catch {
+      return;
+    }
+
+    // Write to a per-process tmp file then atomically rename. Safe under
+    // concurrent one-shot invocations: rename within the same directory is
+    // atomic on POSIX and Win32; readers either see the previous version or
+    // the new one, never a partially written file.
+    const tmpPath = `${path}.tmp.${process.pid}.${Date.now()}`;
+    try {
+      writeFileSync(tmpPath, JSON.stringify(envelope), 'utf-8');
+      renameSync(tmpPath, path);
+    } catch {
+      // Best-effort cleanup of the tmp file; ignore errors.
+      this.safeUnlink(tmpPath);
+    }
+  }
+
+  /**
+   * Remove a cache entry. Used by tests and by callers that detect a logical
+   * inconsistency in the cached payload.
+   */
+  delete(key: CacheKey): void {
+    const path = filePathFor(key);
+    if (path) this.safeUnlink(path);
+  }
+
+  private safeUnlink(path: string): void {
+    try {
+      if (existsSync(path)) unlinkSync(path);
+    } catch {
+      /* swallow */
+    }
+  }
+}
+
+let globalFileCache: FileCache | null = null;
+
+/**
+ * Get the global file cache instance.
+ */
+export function getGlobalFileCache(): FileCache {
+  if (!globalFileCache) {
+    globalFileCache = new FileCache();
+  }
+  return globalFileCache;
+}
+
+/**
+ * Reset the global file cache (for tests).
+ */
+export function resetGlobalFileCache(): void {
+  globalFileCache = null;
 }

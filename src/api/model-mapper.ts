@@ -26,15 +26,38 @@ import type {
   TTSPricing,
   ASRPricing,
   EmbeddingPricing,
+  ItemizedPricing,
   PricingTier,
   BuiltInTool,
   Context,
   RateLimits,
+  ImageTier,
+  PriceItem,
 } from '../types/model.js';
 import { site } from '../site.js';
 
 /** Currency label used in pricing unit strings (e.g. "CNY/1M tokens" or "USD/1M tokens"). */
 const CUR_LABEL = site.features.currency;
+
+/** Parse a price string to a finite number; returns 0 for NaN / non-numeric input. */
+function safePrice(raw: string | undefined | null): number {
+  if (raw == null) return 0;
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Apply a discount multiplier to a base price.
+ * Validates that the discount is in the range (0, 1]; invalid or missing
+ * discounts return the original price unchanged.
+ * Uses toPrecision(10) + parseFloat to clean floating-point noise.
+ */
+function applyDiscount(basePrice: number, discount: string | undefined | null): number {
+  if (discount == null) return basePrice;
+  const d = parseFloat(discount);
+  if (!Number.isFinite(d) || d <= 0 || d > 1) return basePrice;
+  return parseFloat((basePrice * d).toPrecision(10));
+}
 
 /**
  * Internal mapper output before `summary` is attached. mapPrices/mapMultiPrices
@@ -48,7 +71,8 @@ type RawPricing =
   | Omit<ImagePricing, 'summary'>
   | Omit<TTSPricing, 'summary'>
   | Omit<ASRPricing, 'summary'>
-  | Omit<EmbeddingPricing, 'summary'>;
+  | Omit<EmbeddingPricing, 'summary'>
+  | Omit<ItemizedPricing, 'summary'>;
 
 function minPositive(values: Array<number | null | undefined>): number {
   let best = Infinity;
@@ -86,6 +110,14 @@ function computePricingSummary(p: RawPricing): PricingSummary {
       billing_type: 'token',
     };
   }
+  if ('per_image_tiers' in p && p.per_image_tiers && p.per_image_tiers.length > 0) {
+    return {
+      cheapest_input: 0,
+      cheapest_output: minPositive(p.per_image_tiers.map((t) => t.price)),
+      unit: p.per_image_tiers[0].unit,
+      billing_type: 'image',
+    };
+  }
   if ('per_image' in p) {
     return {
       cheapest_input: 0,
@@ -116,6 +148,14 @@ function computePricingSummary(p: RawPricing): PricingSummary {
       cheapest_output: minPositive(p.per_second.map((s) => s.price)),
       unit: p.per_second[0]?.unit ?? `${CUR_LABEL}/second`,
       billing_type: 'second',
+    };
+  }
+  if ('items' in p && p.items.length > 0) {
+    return {
+      cheapest_input: 0,
+      cheapest_output: minPositive(p.items.map((i) => i.price)),
+      unit: p.items[0].unit,
+      billing_type: 'itemized',
     };
   }
   return { cheapest_input: 0, cheapest_output: 0, unit: '', billing_type: 'unknown' };
@@ -316,8 +356,17 @@ function mapPrices(
   prices: ApiPriceItem[] | undefined,
   multiPrices?: ApiMultiPriceRange[],
 ): RawPricing {
-  // MultiPrices takes precedence: iterate over all ranges to generate multiple tiers
+  // MultiPrices takes precedence: detect non-token pricing types first,
+  // then iterate over all ranges to generate tiers.
   if (multiPrices && multiPrices.length > 0) {
+    const allTypes = multiPrices.flatMap((r) => r.Prices.map((p) => p.Type));
+
+    // Image tiered pricing (e.g. image_number volume brackets)
+    if (allTypes.some((t) => t.startsWith('image_'))) {
+      return mapImageMultiPrices(multiPrices);
+    }
+
+    // LLM token-style tiered pricing (default)
     return mapMultiPrices(multiPrices);
   }
 
@@ -332,12 +381,12 @@ function mapPrices(
   effectivePrices.forEach((item) => {
     const mapping = PRICE_TYPE_MAP[item.Type];
     if (mapping) {
-      priceMap[item.Type] = parseFloat(item.Price);
+      priceMap[item.Type] = applyDiscount(safePrice(item.Price), item.Discount);
     } else {
       // Heuristic fallback: infer price direction and category from name keywords
       const inferred = inferPriceType(item.Type);
       if (inferred) {
-        const price = parseFloat(item.Price);
+        const price = applyDiscount(safePrice(item.Price), item.Discount);
         priceMap[item.Type] = price;
         // Register the canonical alias so downstream tier construction can extract a value
         const canonical = getCanonicalAlias(inferred.field, inferred.category);
@@ -354,21 +403,12 @@ function mapPrices(
     }
   });
 
-  // Check whether everything is free
-  const allParsedPrices = effectivePrices.map((item) => parseFloat(item.Price));
+  // All prices parsed as 0 — treat as no usable pricing data rather than
+  // "free", since only `free_tier.mode === 'only'` carries reliable
+  // free-only semantics.
+  const allParsedPrices = effectivePrices.map((item) => safePrice(item.Price));
   if (allParsedPrices.length > 0 && allParsedPrices.every((p) => p === 0)) {
-    return {
-      tiers: [
-        {
-          label: 'Free (Early Access)',
-          input: 0,
-          output: 0,
-          cache_creation: null,
-          cache_read: null,
-          unit: 'free',
-        },
-      ],
-    };
+    return { tiers: [] };
   }
 
   // Detect model type
@@ -385,10 +425,21 @@ function mapPrices(
   // Embedding model - billed per token
   if (hasEmbedding) {
     const embeddingEntries = effectivePrices.filter((p) => p.Type.startsWith('embedding'));
+    // Multiple embedding entries with distinct names → show as itemized
+    // (e.g. "图片输入" + "文本输入") rather than discarding all but the first.
+    if (embeddingEntries.length > 1) {
+      return {
+        items: embeddingEntries.map((item) => ({
+          name: item.PriceName || item.Type,
+          price: applyDiscount(safePrice(item.Price), item.Discount),
+          unit: item.PriceUnit,
+        })),
+      };
+    }
     const primaryEntry = embeddingEntries[0];
     return {
       per_token: {
-        price: primaryEntry ? parseFloat(primaryEntry.Price) : 0,
+        price: primaryEntry ? applyDiscount(safePrice(primaryEntry.Price), primaryEntry.Discount) : 0,
         unit: primaryEntry?.PriceUnit || `${CUR_LABEL}/1M tokens`,
       },
     } as Omit<EmbeddingPricing, 'summary'>;
@@ -396,12 +447,23 @@ function mapPrices(
 
   // TTS model - billed per character
   if (hasTTS) {
-    const ttsEntry = effectivePrices.find(
+    const ttsEntries = effectivePrices.filter(
       (p) => p.Type.startsWith('cosy_tts') || p.Type.startsWith('tts_'),
     );
+    // Multiple TTS entries → show as itemized
+    if (ttsEntries.length > 1) {
+      return {
+        items: ttsEntries.map((item) => ({
+          name: item.PriceName || item.Type,
+          price: applyDiscount(safePrice(item.Price), item.Discount),
+          unit: item.PriceUnit,
+        })),
+      };
+    }
+    const ttsEntry = ttsEntries[0];
     return {
       per_character: {
-        price: ttsEntry ? parseFloat(ttsEntry.Price) : 0,
+        price: ttsEntry ? applyDiscount(safePrice(ttsEntry.Price), ttsEntry.Discount) : 0,
         unit: ttsEntry?.PriceUnit || `${CUR_LABEL}/1K characters`,
       },
     } as Omit<TTSPricing, 'summary'>;
@@ -409,10 +471,21 @@ function mapPrices(
 
   // ASR model - when content_duration is present and there is no video type, return ASRPricing
   if (hasContentDuration && !hasVideo) {
-    const asrEntry = effectivePrices.find((p) => p.Type === 'content_duration');
+    const asrEntries = effectivePrices.filter((p) => p.Type === 'content_duration');
+    // Multiple ASR entries → show as itemized
+    if (asrEntries.length > 1) {
+      return {
+        items: asrEntries.map((item) => ({
+          name: item.PriceName || item.Type,
+          price: applyDiscount(safePrice(item.Price), item.Discount),
+          unit: item.PriceUnit,
+        })),
+      };
+    }
+    const asrEntry = asrEntries[0];
     return {
       per_second_audio: {
-        price: asrEntry ? parseFloat(asrEntry.Price) : 0,
+        price: asrEntry ? applyDiscount(safePrice(asrEntry.Price), asrEntry.Discount) : 0,
         unit: asrEntry?.PriceUnit || `${CUR_LABEL}/second`,
       },
     } as Omit<ASRPricing, 'summary'>;
@@ -425,7 +498,7 @@ function mapPrices(
     );
     const perSecond = videoEntries.map((entry) => ({
       resolution: entry.PriceName || entry.Type,
-      price: parseFloat(entry.Price),
+      price: applyDiscount(safePrice(entry.Price), entry.Discount),
       unit: `${CUR_LABEL}/second`,
     }));
 
@@ -437,9 +510,19 @@ function mapPrices(
   // Image generation model - billed per image
   if (hasImage) {
     const imageEntries = effectivePrices.filter((p) => p.Type.startsWith('image_'));
-    // Use the lowest non-zero price as the primary price
-    const prices = imageEntries.map((e) => parseFloat(e.Price)).filter((p) => p > 0);
-    const price = prices.length > 0 ? Math.min(...prices) : 0;
+    // Multiple image entries with distinct PriceNames → show as itemized
+    // rather than collapsing to a single min price.
+    if (imageEntries.length > 1) {
+      return {
+        items: imageEntries.map((item) => ({
+          name: item.PriceName || item.Type,
+          price: applyDiscount(safePrice(item.Price), item.Discount),
+          unit: item.PriceUnit,
+        })),
+      };
+    }
+    // Single entry — use specialised ImagePricing
+    const price = imageEntries.length > 0 ? applyDiscount(safePrice(imageEntries[0].Price), imageEntries[0].Discount) : 0;
     return {
       per_image: {
         price,
@@ -640,16 +723,71 @@ function mapPrices(
     return { tiers } as Omit<LLMPricing, 'summary'>;
   }
 
-  // Default: return empty tiers
-  return { tiers: [] };
+  // Default: no known pricing structure matched — collect all items as
+  // ItemizedPricing so the user still sees every price entry rather than a
+  // blank em-dash. This is a fallback; specialised branches above handle
+  // known types.
+  const items: PriceItem[] = effectivePrices.map((item) => ({
+    name: item.PriceName || item.Type,
+    price: applyDiscount(safePrice(item.Price), item.Discount),
+    unit: item.PriceUnit,
+  }));
+  return items.length > 0 ? { items } : { tiers: [] };
+}
+
+/**
+ * Handle MultiPrices with image_* price types: generate per_image_tiers for
+ * volume-bracket pricing (e.g. image_number with quantity thresholds).
+ * Also populates per_image with the first tier's price for backward
+ * compatibility with consumers that only read per_image.
+ */
+function mapImageMultiPrices(multiPrices: ApiMultiPriceRange[]): Omit<ImagePricing, 'summary'> {
+  const tiers: ImageTier[] = [];
+
+  for (const range of multiPrices) {
+    const entry = range.Prices.find((p) => p.Type.startsWith('image_'));
+    if (entry) {
+      tiers.push({
+        label: range.RangeName,
+        price: applyDiscount(safePrice(entry.Price), entry.Discount),
+        unit: `${CUR_LABEL}/image`,
+      });
+    }
+  }
+
+  // Fallback: if no image entries found, return simple empty per_image
+  if (tiers.length === 0) {
+    return {
+      per_image: { price: 0, unit: `${CUR_LABEL}/image` },
+    };
+  }
+
+  return {
+    per_image: { price: tiers[0].price, unit: tiers[0].unit },
+    per_image_tiers: tiers,
+  };
 }
 
 /**
  * Handle MultiPrices tiered pricing: iterate over all ranges and generate one
  * PricingTier per range.
  */
-function mapMultiPrices(multiPrices: ApiMultiPriceRange[]): Omit<LLMPricing, 'summary'> {
+function mapMultiPrices(multiPrices: ApiMultiPriceRange[]): Omit<LLMPricing, 'summary'> | Omit<ItemizedPricing, 'summary'> {
   const tiers: PricingTier[] = [];
+
+  // LLM token-style keys this function knows how to translate into tier
+  // input/output. Non-token tiered pricing (e.g. `image_number` per-image
+  // brackets) does not match any of these, so the resulting tier values stay
+  // at 0 — which is *not* a genuine "free" signal.
+  const LLM_TOKEN_KEYS = [
+    'input_token',
+    'text_input_token',
+    'thinking_input_token',
+    'output_token',
+    'purein_text_output_token',
+    'thinking_output_token',
+  ];
+  let anyRecognized = false;
 
   for (const range of multiPrices) {
     // Parse all price items within this range
@@ -657,9 +795,13 @@ function mapMultiPrices(multiPrices: ApiMultiPriceRange[]): Omit<LLMPricing, 'su
     range.Prices.forEach((item) => {
       const mapping = PRICE_TYPE_MAP[item.Type];
       if (mapping) {
-        priceMap[item.Type] = parseFloat(item.Price);
+        priceMap[item.Type] = applyDiscount(safePrice(item.Price), item.Discount);
       }
     });
+
+    if (LLM_TOKEN_KEYS.some((k) => k in priceMap)) {
+      anyRecognized = true;
+    }
 
     const input =
       priceMap['input_token'] ||
@@ -692,20 +834,31 @@ function mapMultiPrices(multiPrices: ApiMultiPriceRange[]): Omit<LLMPricing, 'su
     tiers.push(tier);
   }
 
-  // Check whether everything is free
+  // None of the ranges yielded a recognisable LLM token type — collect
+  // all items across ranges as ItemizedPricing so no price data is lost.
+  // This check MUST precede the all-zero check below because when no LLM
+  // token keys were recognised, the zero input/output values are merely
+  // default placeholders, not genuine "free" pricing.
+  if (!anyRecognized) {
+    const items: PriceItem[] = multiPrices.flatMap((range) =>
+      range.Prices.map((p) => ({
+        name: p.PriceName || p.Type,
+        price: applyDiscount(safePrice(p.Price), p.Discount),
+        unit: p.PriceUnit,
+      })),
+    );
+    addDiagnostic(
+      'PriceMapping',
+      `mapMultiPrices: no LLM token-typed prices recognised across ${multiPrices.length} range(s); falling back to itemized`,
+    );
+    return items.length > 0 ? { items } : { tiers: [] };
+  }
+
+  // All tiers are zero — treat as no usable pricing data rather than
+  // "free", since only `free_tier.mode === 'only'` carries reliable
+  // free-only semantics.
   if (tiers.length > 0 && tiers.every((t) => t.input === 0 && t.output === 0)) {
-    return {
-      tiers: [
-        {
-          label: 'Free (Early Access)',
-          input: 0,
-          output: 0,
-          cache_creation: null,
-          cache_read: null,
-          unit: 'free',
-        },
-      ],
-    };
+    return { tiers: [] };
   }
 
   return { tiers };
@@ -760,6 +913,7 @@ const SHOW_UNIT_MAP: Record<string, string> = {
 function normalizeShowUnit(lower: string): string {
   if (lower.includes('token') || lower.includes('千')) return 'tokens';
   if (lower.includes('image') || lower.includes('piece') || lower.includes('page') || lower.includes('张')) return 'images';
+  if (lower.includes('voice')) return 'voices';
   if (lower.includes('second') || lower.includes('sec') || lower.includes('秒')) return 'seconds';
   if (lower.includes('char') || lower.includes('word') || lower.includes('字')) return 'characters';
   // Default: pass through without conversion
@@ -775,7 +929,7 @@ export function mapFqInstanceToQuota(instance: FqInstanceItem): FreeTierQuota {
     SHOW_UNIT_MAP[rawShowUnit] ??
     SHOW_UNIT_MAP[rawShowUnit.toLowerCase()] ??
     normalizeShowUnit(rawShowUnit.toLowerCase());
-  const used_pct = total > 0 ? Math.round(((total - remaining) / total) * 10000) / 100 : 0;
+  const used_pct = total > 0 ? Math.floor(((total - remaining) / total) * 10000) / 100 : 0;
   const status = instance.Status as 'valid' | 'exhaust' | 'expire';
 
   // Normalize CurrentCycleEndTime to a strict ISO 8601 UTC string so Agents
@@ -803,7 +957,7 @@ function mapBuiltInTools(tools: ApiBuiltInToolPrice[] | undefined): BuiltInTool[
     const firstPrice = tool.Prices[0];
     return {
       name: tool.Name || tool.Type,
-      price: parseFloat(firstPrice?.Price || '0'),
+      price: safePrice(firstPrice?.Price || '0'),
       unit: firstPrice?.PriceUnit || '',
       api: tool.SupportedApi || 'Responses API',
     };

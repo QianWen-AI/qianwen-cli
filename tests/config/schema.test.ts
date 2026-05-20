@@ -9,6 +9,8 @@ describe('CONFIG_DEFAULTS', () => {
     expect(CONFIG_DEFAULTS['output.format']).toBe('auto');
     expect(CONFIG_DEFAULTS['api.endpoint']).toBe(s.apiEndpoint);
     expect(CONFIG_DEFAULTS['auth.endpoint']).toBe(s.authEndpoint);
+    // cache.ttl is hidden but valid; default matches the previous in-memory TTL (10 min).
+    expect(CONFIG_DEFAULTS['cache.ttl']).toBe(String(10 * 60 * 1000));
   });
 });
 
@@ -21,7 +23,7 @@ describe('VALID_KEYS', () => {
   });
 
   it('has correct length', () => {
-    expect(VALID_KEYS).toHaveLength(3);
+    expect(VALID_KEYS).toHaveLength(4);
   });
 });
 
@@ -45,6 +47,7 @@ describe('isValidKey', () => {
     expect(isValidKey('output.format')).toBe(true);
     expect(isValidKey('api.endpoint')).toBe(true);
     expect(isValidKey('auth.endpoint')).toBe(true);
+    expect(isValidKey('cache.ttl')).toBe(true);
   });
 
   it('returns false for invalid keys', () => {
@@ -63,6 +66,8 @@ describe('isPublicKey', () => {
   it('returns false for internal keys', () => {
     expect(isPublicKey('api.endpoint')).toBe(false);
     expect(isPublicKey('auth.endpoint')).toBe(false);
+    // cache.ttl is intentionally hidden from `config list`.
+    expect(isPublicKey('cache.ttl')).toBe(false);
   });
 
   it('returns false for invalid keys', () => {
@@ -110,6 +115,22 @@ describe('validateConfigValue', () => {
     it('rejects invalid URLs', () => {
       expect(validateConfigValue('auth.endpoint', 'invalid')).toContain('Invalid value');
       expect(validateConfigValue('auth.endpoint', '')).toContain('Invalid value');
+    });
+  });
+
+  describe('cache.ttl', () => {
+    it('accepts non-negative integer milliseconds', () => {
+      expect(validateConfigValue('cache.ttl', '0')).toBeNull();
+      expect(validateConfigValue('cache.ttl', '600000')).toBeNull();
+      expect(validateConfigValue('cache.ttl', '1')).toBeNull();
+    });
+
+    it('rejects negative, decimal or non-numeric values', () => {
+      expect(validateConfigValue('cache.ttl', '-1')).toContain('Invalid value');
+      expect(validateConfigValue('cache.ttl', '1.5')).toContain('Invalid value');
+      expect(validateConfigValue('cache.ttl', 'abc')).toContain('Invalid value');
+      expect(validateConfigValue('cache.ttl', '')).toContain('Invalid value');
+      expect(validateConfigValue('cache.ttl', ' 600000')).toContain('Invalid value');
     });
   });
 

@@ -11,6 +11,7 @@ import { platform, machine, homedir } from 'os';
 import { join } from 'path';
 import { loginCommand } from '../utils/runtime-mode.js';
 import { site } from '../site.js';
+import { getOrCreateClientId } from './client-id.js';
 
 // ─── Constants ──────────────────────────────────────────────
 
@@ -306,8 +307,32 @@ function getOrCreateHostId(): string {
 
 /**
  * Get the fingerprint or fall back (hardware fingerprint first; on failure, SHA-256 of the HostID).
+ *
+ * Bun + Windows workaround: Bun's child_process implementation on Windows uses
+ * IOCP-based named pipes that suffer from a race condition — when a subprocess
+ * finishes very quickly (e.g. `reg query`, `wmic`), the IOCP completion callback
+ * may fire before all stdout data has been read, causing intermittent empty
+ * returns from execSync/spawnSync.  This makes the hardware fingerprint unstable
+ * across invocations, which in turn causes encrypted-credential decryption
+ * failures ("not logged in" after a few minutes once the in-memory cache expires).
+ * Node.js's libuv-based pipes do not have this issue.
+ *
+ * To work around this, on Bun + win32 we skip hardware fingerprint collection
+ * entirely and derive the key from the already-persisted device ID file
+ * (created during `deviceFlowInit`, guaranteed to exist before credentials
+ * are written).  See also: detectChannel() in upgrade/check.ts.
  */
 export function getFingerprintOrFallback(): Buffer {
+  const isBunWindows =
+    typeof process.versions.bun === 'string' &&
+    process.versions.bun.length > 0 &&
+    platform() === 'win32';
+
+  if (isBunWindows) {
+    const clientId = getOrCreateClientId();
+    return crypto.createHash('sha256').update(clientId).digest();
+  }
+
   try {
     return getMachineFingerprint();
   } catch {

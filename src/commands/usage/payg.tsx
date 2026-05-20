@@ -80,9 +80,9 @@ export function usagePaygAction(cmd: Command): (...args: any[]) => void | Promis
 
       if (format === 'text') {
         for (const row of payg.rows) {
-          console.log(`${row.modelId}  ${row.requests} req  ${row.usage}  ${row.cost}`);
+          console.log(`${row.modelId}  ${row.usage}  ${row.cost}`);
         }
-        console.log(`Total  ${payg.total.requests} req  ${payg.total.cost}`);
+        console.log(`Total  ${payg.total.cost}`);
         return;
       }
 
@@ -100,19 +100,17 @@ const PER_PAGE = 15;
 async function renderPaygInteractive(
   rows: PayAsYouGoRowViewModel[],
   totalCount: number,
-  total: { requests: string; cost: string },
+  total: { cost: string },
   period: string,
 ): Promise<void> {
   const columns = [
     { key: 'modelId', header: 'Model' },
-    { key: 'requests', header: 'Requests' },
     { key: 'usage', header: 'Usage' },
     { key: 'cost', header: 'Cost' },
   ];
 
   const allBuilt = rows.map((row) => ({
     modelId: row.modelId,
-    requests: row.requests,
     usage: row.usage,
     cost: row.cost,
   }));
@@ -126,7 +124,6 @@ async function renderPaygInteractive(
 
   const tableFooter = {
     modelId: theme.bold('Total'),
-    requests: theme.bold(total.requests),
     usage: theme.bold('—'),
     cost: theme.bold(total.cost),
   };

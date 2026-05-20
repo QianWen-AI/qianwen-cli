@@ -58,7 +58,7 @@ export function usageFreeTierAction(cmd: Command): (...args: any[]) => void | Pr
       if (format === 'text') {
         for (const row of vm.freeTier.rows) {
           if (row.isFreeOnly) {
-            console.log(`${row.modelId}  Free access`);
+            console.log(`${row.modelId}  Enable to unlock free-tier`);
           } else {
             console.log(
               `${row.modelId}  ${row.remaining} / ${row.total}  (${row.progressBar.label})`,
@@ -86,7 +86,7 @@ function buildRow(row: FreeTierRowViewModel): Record<string, string> {
       model: row.modelId,
       remaining: '—',
       total: '—',
-      bar: theme.dim('Free access'),
+      bar: theme.dim('Enable to unlock free-tier'),
     };
   }
   const bar = buildProgressBar(row.progressBar.percentage, 16, theme.data, false);

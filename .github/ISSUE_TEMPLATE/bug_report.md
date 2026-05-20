@@ -1,28 +1,28 @@
 ---
-name: Bug 报告
-about: 创建报告帮助我们改进
+name: Bug Report
+about: Create a report to help us improve
 title: '[BUG] '
 labels: bug
 ---
 
-## 问题描述
+## Description
 
-简要描述问题。
+Briefly describe the issue.
 
-## 复现步骤
+## Steps to Reproduce
 
-1. 运行命令 '...'
-2. 看到错误
+1. Run command '...'
+2. See error
 
-## 环境信息
+## Environment
 
-- 操作系统:
+- OS:
 - Node.js:
-- CLI 版本:
-- 安装方式:
+- CLI Version:
+- Installation Method:
 
-## 错误输出
+## Error Output
 
 ```bash
-# 粘贴命令输出或错误信息
+# Paste command output or error message
 ```

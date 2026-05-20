@@ -50,9 +50,9 @@ export function aggregatePaygByModel(items: PaygItem[]): PaygSummaryAggregate {
     if (!it.modelId) continue;
     const entry = (dict[it.modelId] ??= { usage: {}, cost: 0 });
 
-    // Tokens collapse into a single tokens_in bucket (the upstream API doesn't
-    // split input/output). Other units key by their unit name.
-    const key = it.billingUnit === 'tokens' ? 'tokens_in' : it.billingUnit;
+    // Tokens: the upstream API returns an undifferentiated count (no in/out
+    // split). Store under the neutral 'tokens' key.
+    const key = it.billingUnit === 'tokens' ? 'tokens' : it.billingUnit;
     entry.usage[key] = (entry.usage[key] ?? 0) + it.usageValue;
     entry.cost += it.cost;
     totalCost += it.cost;
@@ -78,9 +78,14 @@ export function aggregatePaygByModel(items: PaygItem[]): PaygSummaryAggregate {
 
 /**
  * Daily-aggregated row. Tokens stay at top-level (`tokens_in`); non-token
- * units land flat too (`images` / `seconds` / `characters`) — the consumer
- * (`getUsageBreakdown`) re-shapes them into the response's `usage` nested
- * object. `aggregateMonthly` / `aggregateQuarterly` rely on this flat layout.
+ * units land flat too (`images` / `seconds` / `characters` / `voices`) — the
+ * consumer (`getUsageBreakdown`) re-shapes them into the response's `usage`
+ * nested object. `aggregateMonthly` / `aggregateQuarterly` rely on this flat
+ * layout. `otherUsage` carries dynamic units extracted from unknown
+ * "Per X Y" formats (e.g. `{ calls: 2000200 }`).
+ *
+ * NOTE: `tokens_in` is a legacy field name kept for breakdown-view compat;
+ * the summary view now uses the neutral 'tokens' key.
  */
 export interface PaygDailyRow {
   period: string;
@@ -89,10 +94,16 @@ export interface PaygDailyRow {
   images?: number;
   seconds?: number;
   characters?: number;
+  voices?: number;
+  otherUsage?: Record<string, number>;
   cost: number;
   currency: string;
   billingUnit: string;
+  // Index signature: required for downstream aggregators that accept `[key: string]: unknown`.
+  [key: string]: unknown;
 }
+
+const KNOWN_FLAT_UNITS = new Set(['tokens', 'images', 'seconds', 'characters', 'voices']);
 
 export function aggregatePaygByDate(items: PaygItem[]): PaygDailyRow[] {
   const byKey: Record<
@@ -107,7 +118,7 @@ export function aggregatePaygByDate(items: PaygItem[]): PaygDailyRow[] {
     const key = it.billingDate;
     if (!key) continue;
     const bucket = (byKey[key] ??= {
-      byUnit: { tokens: 0, images: 0, seconds: 0, characters: 0 },
+      byUnit: {},
       cost: 0,
     });
     bucket.byUnit[it.billingUnit] = (bucket.byUnit[it.billingUnit] ?? 0) + it.usageValue;
@@ -133,6 +144,13 @@ export function aggregatePaygByDate(items: PaygItem[]): PaygDailyRow[] {
     if (d.byUnit.images) row.images = Math.round(d.byUnit.images);
     if (d.byUnit.seconds) row.seconds = Math.round(d.byUnit.seconds);
     if (d.byUnit.characters) row.characters = Math.round(d.byUnit.characters);
+    if (d.byUnit.voices) row.voices = Math.round(d.byUnit.voices);
+    // Dynamic units (e.g. "calls", "request") collected via Per-format fallback.
+    const other: Record<string, number> = {};
+    for (const [u, v] of Object.entries(d.byUnit)) {
+      if (!KNOWN_FLAT_UNITS.has(u) && v > 0) other[u] = Math.round(v);
+    }
+    if (Object.keys(other).length > 0) row.otherUsage = other;
     rows.push(row);
   }
 

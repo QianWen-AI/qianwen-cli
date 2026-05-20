@@ -20,7 +20,7 @@ import type {
   TokenPlan,
 } from '../types/usage.js';
 import type { AuthStatus, DeviceFlowInitResponse, DeviceFlowPollResponse } from '../types/auth.js';
-import { loginCommand } from '../utils/runtime-mode.js';
+import { isReplMode, loginCommand } from '../utils/runtime-mode.js';
 import type {
   ApiModelsListResponse,
   ApiModelItem,
@@ -34,7 +34,13 @@ import {
   flattenApiModels,
   mapFqInstanceToQuota,
 } from './model-mapper.js';
-import { getGlobalCache, CacheKeys, CacheTTL } from '../utils/cache.js';
+import {
+  getGlobalCache,
+  getGlobalFileCache,
+  setFileCacheContextResolver,
+  CacheKeys,
+  CacheTTL,
+} from '../utils/cache.js';
 import { normalizeForSearch } from '../utils/search-normalize.js';
 import { getEffectiveConfig } from '../config/manager.js';
 import { getOrCreateClientId } from '../auth/client-id.js';
@@ -59,6 +65,17 @@ function getApiBaseUrl(): string {
   const endpoint = getEffectiveConfig()['api.endpoint'].replace(/\/+$/, '');
   return `${endpoint}/data/v2/api.json`;
 }
+
+// Wire the file cache to the runtime config so it picks up the current
+// api.endpoint and the (hidden) cache.ttl on every read/write. Done at module
+// load time; safe because the resolver is invoked lazily by FileCache.
+setFileCacheContextResolver(() => {
+  const cfg = getEffectiveConfig();
+  const endpoint = (cfg['api.endpoint'] as string).replace(/\/+$/, '');
+  const raw = cfg['cache.ttl'];
+  const ttlMs = /^\d+$/.test(raw) ? Number(raw) : 0;
+  return { endpoint, ttlMs };
+});
 const API_PRODUCT = 'AliyunDeliveryService';
 const API_ACTION_LIST_MODELS = 'ListModelSeries';
 const DEFAULT_REGION = 'cn-beijing';
@@ -82,6 +99,7 @@ function getAuthHeaders(): Record<string, string> {
  */
 export class HttpApiClient implements ApiClient {
   private cache = getGlobalCache();
+  private fileCache = getGlobalFileCache();
   private latestQuotaMap: Map<string, FreeTierQuota | null> = new Map();
 
   /**
@@ -194,12 +212,22 @@ export class HttpApiClient implements ApiClient {
   }
 
   /**
-   * Get the model mapping (model-id -> templateCode).
-   * Used to determine whether a model has a FreeTier.
+   * Resolve model-id → templateCode mapping (drives FreeTier check).
+   * Lookup order: L1 (memory) → L2 (file) → CDN; miss writes back both layers.
    */
   private async fetchModelMapping(): Promise<Record<string, string>> {
     const cached = this.cache.get<Record<string, string>>(CacheKeys.MODEL_MAPPING);
-    if (cached) return cached;
+    if (cached) {
+      addDiagnostic('Cache', `hit ${CacheKeys.MODEL_MAPPING} (L1)`);
+      return cached;
+    }
+
+    const fileCached = this.fileCache.get<Record<string, string>>(CacheKeys.MODEL_MAPPING);
+    if (fileCached) {
+      addDiagnostic('Cache', `hit ${CacheKeys.MODEL_MAPPING} (L2)`);
+      this.cache.set(CacheKeys.MODEL_MAPPING, fileCached, CacheTTL.MODEL_MAPPING);
+      return fileCached;
+    }
 
     try {
       const debugId = isEnabled()
@@ -221,6 +249,7 @@ export class HttpApiClient implements ApiClient {
       }
       const mapping: Record<string, string> = await response.json();
       this.cache.set(CacheKeys.MODEL_MAPPING, mapping, CacheTTL.MODEL_MAPPING);
+      this.fileCache.set(CacheKeys.MODEL_MAPPING, mapping);
       return mapping;
     } catch (error) {
       addDiagnostic(
@@ -268,7 +297,7 @@ export class HttpApiClient implements ApiClient {
         return quotaMap;
       }
 
-      // 2. API succeeded but returned no data (user has no FreeTier or model is in Early Access) — silently return empty map
+      // 2. API succeeded but returned no data (user has no FreeTier or model is FreeTier Only) — silently return empty map
       if (!result.data?.Data) {
         return quotaMap;
       }
@@ -285,7 +314,7 @@ export class HttpApiClient implements ApiClient {
           instance.Status === 'valid' ||
           instance.Status === 'exhaust' ||
           instance.Status === 'expire';
-        if (isValidStatus && instance.Template?.Code) {
+        if (isValidStatus && instance.Template?.Code && instance.InitCapacity && instance.CurrCapacity) {
           const quota = mapFqInstanceToQuota(instance);
           quotaMap.set(instance.Template.Code, quota);
           hasMatchedInstance = true;
@@ -332,8 +361,19 @@ export class HttpApiClient implements ApiClient {
   async listModels(options?: ListModelsOptions): Promise<ModelsListResponse> {
     const cache = this.cache;
 
-    // 1. Get raw model data (cacheable)
+    // raw model data: L1 → L2 → upstream API.
     let rawItems = cache.get<ApiModelItem[]>(CacheKeys.MODELS_RAW_LIST);
+    if (rawItems) {
+      addDiagnostic('Cache', `hit ${CacheKeys.MODELS_RAW_LIST} (L1)`);
+    } else {
+      const fileHit = this.fileCache.get<ApiModelItem[]>(CacheKeys.MODELS_RAW_LIST);
+      if (fileHit) {
+        addDiagnostic('Cache', `hit ${CacheKeys.MODELS_RAW_LIST} (L2)`);
+        rawItems = fileHit;
+        // promote L2 → L1
+        cache.set(CacheKeys.MODELS_RAW_LIST, fileHit, CacheTTL.MODELS_LIST);
+      }
+    }
     let mapping: Record<string, string>;
 
     if (!rawItems) {
@@ -352,8 +392,9 @@ export class HttpApiClient implements ApiClient {
 
       rawItems = flattenApiModels(rawResponse.data.Data);
 
-      // Cache the raw model data (without quotas)
+      // Cache the raw model data (without quotas) in both layers.
       cache.set(CacheKeys.MODELS_RAW_LIST, rawItems, CacheTTL.MODELS_LIST);
+      this.fileCache.set(CacheKeys.MODELS_RAW_LIST, rawItems);
     } else {
       // Cache hit; still need to fetch mapping (which has its own cache)
       mapping = await this.fetchModelMapping();
@@ -412,12 +453,86 @@ export class HttpApiClient implements ApiClient {
 
   /**
    * Get a model's detail.
-   * Raw model data is cacheable; FreeTier quotas are queried in real time.
+   *
+   * In one-shot mode, uses server-side Query+MatchOnly to fetch a single model
+   * directly, avoiding the full ListModelSeries call. In REPL mode, falls back
+   * to the cache-based path so the raw-data cache stays warm.
    */
   async getModel(id: string): Promise<ModelDetail> {
+    if (!isReplMode()) {
+      return this.getModelByQuery(id);
+    }
+    return this.getModelFromCache(id);
+  }
+
+  /**
+   * Fetch a single model.
+   *
+   * L1 → L2 cache first; on hit, build from cached snapshot (quota is
+   * always re-queried as real-time data). On miss, or when the id is
+   * absent from the snapshot (e.g. newly-published model), fall back to
+   * server-side `Query + MatchOnly`.
+   */
+  private async getModelByQuery(id: string): Promise<ModelDetail> {
+    const mapping = await this.fetchModelMapping();
+
+    // L1 → L2; promote L2 hit to L1.
+    let rawItems = this.cache.get<ApiModelItem[]>(CacheKeys.MODELS_RAW_LIST);
+    if (rawItems) {
+      addDiagnostic('Cache', `hit ${CacheKeys.MODELS_RAW_LIST} (L1)`);
+    } else {
+      const fileHit = this.fileCache.get<ApiModelItem[]>(CacheKeys.MODELS_RAW_LIST);
+      if (fileHit) {
+        addDiagnostic('Cache', `hit ${CacheKeys.MODELS_RAW_LIST} (L2)`);
+        rawItems = fileHit;
+        this.cache.set(CacheKeys.MODELS_RAW_LIST, fileHit, CacheTTL.MODELS_LIST);
+      }
+    }
+
+    let apiItem = rawItems?.find((item) => item.Model === id);
+
+    if (!apiItem) {
+      // miss or id not in snapshot: precise server query.
+      const requestConfig = this.buildApiRequest(API_ACTION_LIST_MODELS, {
+        Language: DEFAULT_LANGUAGE,
+        Query: id,
+        MatchOnly: true,
+      });
+      const rawResponse = await this.request<ApiModelsListResponse>(requestConfig);
+
+      if (String(rawResponse.code) !== '200' || !rawResponse.data?.Data) {
+        throw new Error(`Model '${id}' not found`);
+      }
+
+      const items = flattenApiModels(rawResponse.data.Data);
+      apiItem = items.find((item) => item.Model === id);
+      if (!apiItem) {
+        throw new Error(`Model '${id}' not found`);
+      }
+    }
+
+    const templateCode = mapping[apiItem.Model];
+    const hasFreeTier = !!templateCode;
+
+    let quota: FreeTierQuota | null = null;
+    if (templateCode) {
+      const quotaMap = await this.fetchFreeTierQuotas([templateCode]);
+      quota = quotaMap.get(templateCode) || null;
+    }
+
+    return mapApiModelToModelDetail(apiItem, hasFreeTier, quota);
+  }
+
+  /**
+   * Cache-based model lookup — used by REPL mode and internal callers
+   * that already have the raw-data cache populated.
+   */
+  private async getModelFromCache(id: string): Promise<ModelDetail> {
     // 1. Get raw model data (cacheable)
     let rawItems = this.cache.get<ApiModelItem[]>(CacheKeys.MODELS_RAW_LIST);
-    if (!rawItems) {
+    if (rawItems) {
+      addDiagnostic('Cache', `hit ${CacheKeys.MODELS_RAW_LIST} (L1)`);
+    } else {
       // Cache miss: trigger listModels to populate the raw-data cache
       await this.listModels();
       rawItems = this.cache.get<ApiModelItem[]>(CacheKeys.MODELS_RAW_LIST);
@@ -688,6 +803,7 @@ export class HttpApiClient implements ApiClient {
     if (code.includes('image')) return 'images';
     if (code.includes('video') || code.includes('duration')) return 'seconds';
     if (code.includes('char')) return 'characters';
+    if (code.includes('voice')) return 'voices';
     if (code.includes('token')) return 'tokens';
 
     const unitLower = stepUnit.toLowerCase();
@@ -695,12 +811,21 @@ export class HttpApiClient implements ApiClient {
     if (unitLower.includes('image') || unitLower.includes('page')) return 'images';
     if (unitLower.includes('second') || unitLower.includes('sec')) return 'seconds';
     if (unitLower.includes('char') || unitLower.includes('word')) return 'characters';
+    if (unitLower.includes('voice')) return 'voices';
+
+    // Fallback: extract dimension name from "Per <quantity> <unit>" format,
+    // e.g. "Per 1 request" → "request", "Per 100 calls" → "calls".
+    // Only single-word units beyond Per+\S+ would slip through.
+    const perMatch = stepUnit.match(/^Per\s+\S+\s+(.+)$/i);
+    if (perMatch) return perMatch[1].trim().toLowerCase();
+
     return 'tokens';
   }
 
   /**
    * Convert BillQuantity × StepQuantityUnit step size to raw units.
-   * e.g. "1K tokens" → ×1000, "1M tokens" → ×1_000_000
+   * e.g. "1K tokens" → ×1000, "1M tokens" → ×1_000_000.
+   * Commas in quantity (e.g. "10,000 characters") are stripped before parsing.
    */
   private computeUsageValue(billQuantity: number, stepUnit: string): number {
     const unitLower = stepUnit.toLowerCase();
@@ -708,7 +833,8 @@ export class HttpApiClient implements ApiClient {
     if (unitLower.includes('tenthousand') || unitLower === '\u4e07\u5b57') {
       return billQuantity * 10000;
     }
-    const match = stepUnit.trim().match(/(\d+(?:\.\d+)?)\s*([kmKM]?)/);
+    const clean = stepUnit.replace(/,/g, '');
+    const match = clean.trim().match(/(\d+(?:\.\d+)?)\s*([kmKM]?)/);
     if (match) {
       let multiplier = parseFloat(match[1]);
       const suffix = match[2].toUpperCase();
@@ -912,7 +1038,7 @@ export class HttpApiClient implements ApiClient {
       const remainingCredits = capacityType === 'periodMonthlyShift'
         ? Number(validInstance.periodCapacityBaseValue || validInstance.CurrCapacityBaseValue || 0)
         : Number(validInstance.CurrCapacityBaseValue || 0);
-      const usedPct = totalCredits > 0 ? Math.round(((totalCredits - remainingCredits) / totalCredits) * 100) : 0;
+      const usedPct = totalCredits > 0 ? Math.floor(((totalCredits - remainingCredits) / totalCredits) * 10000) / 100 : 0;
       const resetDate = validInstance.EndTime ? new Date(validInstance.EndTime).toISOString() : undefined;
 
       return {
@@ -1054,6 +1180,7 @@ export class HttpApiClient implements ApiClient {
       cost: number;
       currency: string;
       billingUnit: string;
+      [key: string]: unknown;
     }>,
   ): Array<{
     period: string;
@@ -1062,14 +1189,20 @@ export class HttpApiClient implements ApiClient {
     cost: number;
     currency: string;
     billingUnit: string;
+    [key: string]: unknown;
   }> {
+    // Buckets by quarter — known units flat + dynamic `other` map (e.g. voice extras, calls, etc.).
+    const KNOWN_KEYS = ['tokens_in', 'tokens_out', 'images', 'seconds', 'characters', 'voices'];
     const byQuarter: Record<
       string,
       {
         tokens_in: number;
+        tokens_out: number;
         images: number;
         seconds: number;
         characters: number;
+        voices: number;
+        other: Record<string, number>;
         cost: number;
         units: Set<string>;
       }
@@ -1085,9 +1218,12 @@ export class HttpApiClient implements ApiClient {
       if (!byQuarter[quarterKey]) {
         byQuarter[quarterKey] = {
           tokens_in: 0,
+          tokens_out: 0,
           images: 0,
           seconds: 0,
           characters: 0,
+          voices: 0,
+          other: {},
           cost: 0,
           units: new Set(),
         };
@@ -1100,7 +1236,9 @@ export class HttpApiClient implements ApiClient {
         q.units.add('tokens');
       }
       // Handle other unit fields from the row
-      if ('tokens_out' in row && row.tokens_out) {
+      const tokensOut = (row as Record<string, number>).tokens_out;
+      if (tokensOut) {
+        q.tokens_out += tokensOut;
         q.units.add('tokens');
       }
       if ('images' in row) {
@@ -1115,6 +1253,17 @@ export class HttpApiClient implements ApiClient {
         q.characters += (row as Record<string, number>).characters ?? 0;
         q.units.add('characters');
       }
+      if ('voices' in row) {
+        q.voices += (row as Record<string, number>).voices ?? 0;
+        q.units.add('voices');
+      }
+      // Dynamic units — collect any other numeric field not in the known list.
+      for (const [k, v] of Object.entries(row)) {
+        if (KNOWN_KEYS.includes(k)) continue;
+        if (typeof v !== 'number') continue;
+        q.other[k] = (q.other[k] ?? 0) + v;
+        q.units.add(k);
+      }
     }
 
     // Build output rows
@@ -1125,14 +1274,20 @@ export class HttpApiClient implements ApiClient {
       cost: number;
       currency: string;
       billingUnit: string;
+      [key: string]: unknown;
     }> = [];
 
     for (const [key, q] of Object.entries(byQuarter).sort(([a], [b]) => a.localeCompare(b))) {
       const usage: Record<string, number> = {};
       if (q.tokens_in) usage['tokens_in'] = q.tokens_in;
+      if (q.tokens_out) usage['tokens_out'] = q.tokens_out;
       if (q.images) usage['images'] = q.images;
       if (q.seconds) usage['seconds'] = q.seconds;
       if (q.characters) usage['characters'] = q.characters;
+      if (q.voices) usage['voices'] = q.voices;
+      for (const [k, v] of Object.entries(q.other)) {
+        if (v) usage[k] = v;
+      }
 
       const unitsList = [...q.units].sort();
       const billingUnit = unitsList.length === 1 ? unitsList[0] : 'tokens';
@@ -1161,6 +1316,7 @@ export class HttpApiClient implements ApiClient {
       cost: number;
       currency: string;
       billingUnit: string;
+      [key: string]: unknown;
     }>,
   ): Array<{
     period: string;
@@ -1169,7 +1325,9 @@ export class HttpApiClient implements ApiClient {
     cost: number;
     currency: string;
     billingUnit: string;
+    [key: string]: unknown;
   }> {
+    const KNOWN_KEYS = ['tokens_in', 'tokens_out', 'images', 'seconds', 'characters', 'voices'];
     const byMonth: Record<
       string,
       {
@@ -1178,6 +1336,8 @@ export class HttpApiClient implements ApiClient {
         images: number;
         seconds: number;
         characters: number;
+        voices: number;
+        other: Record<string, number>;
         cost: number;
         units: Set<string>;
       }
@@ -1192,6 +1352,8 @@ export class HttpApiClient implements ApiClient {
           images: 0,
           seconds: 0,
           characters: 0,
+          voices: 0,
+          other: {},
           cost: 0,
           units: new Set(),
         };
@@ -1207,16 +1369,37 @@ export class HttpApiClient implements ApiClient {
         m.units.add('tokens');
       }
       if ('images' in row) {
-        m.images += (row as any).images ?? 0;
+        m.images += (row as Record<string, number>).images ?? 0;
         m.units.add('images');
       }
       if ('seconds' in row) {
-        m.seconds += (row as any).seconds ?? 0;
+        m.seconds += (row as Record<string, number>).seconds ?? 0;
         m.units.add('seconds');
       }
       if ('characters' in row) {
-        m.characters += (row as any).characters ?? 0;
+        m.characters += (row as Record<string, number>).characters ?? 0;
         m.units.add('characters');
+      }
+      if ('voices' in row) {
+        m.voices += (row as Record<string, number>).voices ?? 0;
+        m.units.add('voices');
+      }
+      // Dynamic units from `otherUsage` on daily rows (or top-level numeric fields).
+      const otherUsage = (row as { otherUsage?: Record<string, number> }).otherUsage;
+      if (otherUsage) {
+        for (const [k, v] of Object.entries(otherUsage)) {
+          if (typeof v !== 'number') continue;
+          m.other[k] = (m.other[k] ?? 0) + v;
+          m.units.add(k);
+        }
+      }
+      for (const [k, v] of Object.entries(row)) {
+        if (KNOWN_KEYS.includes(k)) continue;
+        if (k === 'period' || k === 'cost' || k === 'currency' || k === 'billingUnit') continue;
+        if (k === 'otherUsage') continue;
+        if (typeof v !== 'number') continue;
+        m.other[k] = (m.other[k] ?? 0) + v;
+        m.units.add(k);
       }
     }
 
@@ -1227,6 +1410,7 @@ export class HttpApiClient implements ApiClient {
       cost: number;
       currency: string;
       billingUnit: string;
+      [key: string]: unknown;
     }> = [];
 
     for (const [key, m] of Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b))) {
@@ -1238,6 +1422,10 @@ export class HttpApiClient implements ApiClient {
       if (m.images) usage['images'] = m.images;
       if (m.seconds) usage['seconds'] = m.seconds;
       if (m.characters) usage['characters'] = m.characters;
+      if (m.voices) usage['voices'] = m.voices;
+      for (const [k, v] of Object.entries(m.other)) {
+        if (v) usage[k] = v;
+      }
       rows.push({
         period: key,
         ...usage,
@@ -1757,9 +1945,13 @@ export class HttpApiClient implements ApiClient {
   }
 
   async checkVersion(): Promise<{ current: string; latest: string; update_available: boolean }> {
-    // Return locally-known version; no remote check in V1.
     const current = typeof __VERSION__ !== 'undefined' ? __VERSION__ : '1.0.0';
-    return { current, latest: current, update_available: false };
+    const { fetchLatestVersion, compareVersions } = await import('../upgrade/check.js');
+    const latest = await fetchLatestVersion();
+    if (!latest) {
+      return { current, latest: current, update_available: false };
+    }
+    return { current, latest, update_available: compareVersions(current, latest) < 0 };
   }
 }
 

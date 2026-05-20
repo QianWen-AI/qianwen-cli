@@ -1,23 +1,45 @@
-# 更新日志
+# Changelog
 
-本文件记录了项目的所有重要变更。
+All notable changes to this project will be documented in this file.
 
-格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
-本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)。
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-05-12
+## [1.0.1] - 2026-05-20
 
-### 新增
+### Added
 
-- QianWen CLI 首次公开发布
-- OAuth 2.0 Device Flow with PKCE 认证（`auth login`、`auth logout`、`auth status`）
-- 交互式 REPL 和一次性命令执行模式
-- 模型发现（`models list`、`models info`、`models search`）
-- 免费额度、Token Plan 和按量计费用量追踪（`usage summary`、`usage breakdown`、`usage free-tier`、`usage payg`）
-- 配置管理（`config list`、`config get`、`config set`、`config unset`）
-- 环境诊断（`doctor`）和 zsh、bash、fish Shell 补全
-- 安全凭证存储：操作系统钥匙串 + AES-256-GCM 加密文件回退
-- Agent 友好输出：`--format json`、`--quiet` 和标准化退出码（0–4、130）
-- 全局配置 `~/.qianwen/config.json`，支持从 `<cwd>/.qianwen.json` 自动迁移
+- One-line install scripts: `install.sh` (macOS/Linux) and `install.ps1` (Windows, CLM-compatible)
+- `version --check` upgrade hints via GitHub Releases API
+- `usage breakdown` exposes `granularity` field
+- Persistent local cache for faster one-shot commands
+
+### Changed
+
+- `formatCmd()` unifies command prefix rendering across REPL and one-shot modes
+- `models list/info` pricing degrades to em-dash for invalid/non-finite values
+- `usage breakdown` field renamed `isToday` → `isCurrent`; label `← current`
+- Free-tier placeholder changed to `Enable to unlock free-tier`
+- Windows Bun credential fallback derives AES key from persisted device ID
+- CHANGELOG, GitHub issue/PR templates, and README version badges switched to English
+
+### Fixed
+
+- `humanizeNumber`/`humanizeWithUnit` guard against NaN/Infinity inputs with em-dash fallback
+
+## [1.0.0] - 2026-04-30
+
+### Added
+
+- QianWen CLI initial public release
+- OAuth 2.0 Device Flow with PKCE authentication (`auth login`, `auth logout`, `auth status`)
+- Interactive REPL and one-shot command execution modes
+- Model discovery (`models list`, `models info`, `models search`)
+- Free tier, Token Plan, and pay-as-you-go usage tracking (`usage summary`, `usage breakdown`, `usage free-tier`, `usage payg`)
+- Configuration management (`config list`, `config get`, `config set`, `config unset`)
+- Environment diagnostics (`doctor`) and zsh, bash, fish shell completions
+- Secure credential storage: OS keychain + AES-256-GCM encrypted file fallback
+- Agent-friendly output: `--format json`, `--quiet`, and standardized exit codes (0–4, 130)
+- Global configuration `~/.qianwen/config.json` with automatic migration from `<cwd>/.qianwen.json`

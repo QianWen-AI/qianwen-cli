@@ -1,22 +1,22 @@
-## 描述
+## Description
 
-简要描述变更内容。
+Briefly describe the changes.
 
-## 关联 Issue
+## Related Issue
 
 Fixes #(issue number)
 
-## 变更类型
+## Type of Change
 
-- [ ] Bug 修复
-- [ ] 新功能
-- [ ] 破坏性变更
-- [ ] 文档更新
-- [ ] 重构/优化
-- [ ] 测试更新
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Breaking change
+- [ ] Documentation update
+- [ ] Refactor/optimization
+- [ ] Test update
 
-## 测试
+## Testing
 
-- [ ] 单元测试通过（`pnpm test`）
-- [ ] Lint 检查通过（`pnpm run lint`）
-- [ ] 手动验证
+- [ ] Unit tests pass (`pnpm test`)
+- [ ] Lint check passes (`pnpm run lint`)
+- [ ] Manual verification

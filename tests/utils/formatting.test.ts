@@ -196,21 +196,21 @@ describe('formatPriceFromPricing', () => {
     expect(formatPriceFromPricing({ tiers: [] }, false)).toBe('\u2014');
   });
 
-  it('returns "Free" when all LLM tiers are zero-priced', () => {
+  it('returns em-dash when all LLM tiers are zero-priced', () => {
     const pricing: Pricing = {
       tiers: [
         { label: '0-128k', input: 0, output: 0, unit: '/1M tok' },
         { label: '128k+', input: 0, output: 0, unit: '/1M tok' },
       ],
     };
-    expect(formatPriceFromPricing(pricing, false)).toBe('Free');
+    expect(formatPriceFromPricing(pricing, false)).toBe('\u2014');
   });
 
   it('formats single-tier LLM pricing', () => {
     const pricing: Pricing = {
       tiers: [{ label: 'std', input: 0.5, output: 2, unit: `/${s.currency}/1M tok` }],
     };
-    expect(formatPriceFromPricing(pricing, false)).toBe(`${s.currencySymbol}0.50 / ${s.currencySymbol}2.00 /1M tok`);
+    expect(formatPriceFromPricing(pricing, false)).toBe(`${s.currencySymbol}0.5 / ${s.currencySymbol}2 /1M tok`);
   });
 
   it('marks multi-tier LLM pricing with "+" suffix and uses cheapest input', () => {
@@ -220,7 +220,7 @@ describe('formatPriceFromPricing', () => {
         { label: '128k-256k', input: 1.6, output: 8, unit: `/${s.currency}/1M tok` },
       ],
     };
-    expect(formatPriceFromPricing(pricing, false)).toBe(`${s.currencySymbol}0.80 / ${s.currencySymbol}4.00 + /1M tok`);
+    expect(formatPriceFromPricing(pricing, false)).toBe(`${s.currencySymbol}0.8 / ${s.currencySymbol}4 + /1M tok`);
   });
 
   it('formats per_second video pricing — single resolution', () => {
@@ -238,7 +238,7 @@ describe('formatPriceFromPricing', () => {
         { resolution: '1080p', price: 0.5, unit: `/${s.currency}/sec` },
       ],
     };
-    expect(formatPriceFromPricing(pricing, false)).toBe(`${s.currencySymbol}0.10-0.50 /sec`);
+    expect(formatPriceFromPricing(pricing, false)).toBe(`${s.currencySymbol}0.1-0.5 /sec`);
   });
 
   it('formats per_image pricing', () => {
@@ -248,7 +248,7 @@ describe('formatPriceFromPricing', () => {
 
   it('formats per_character (TTS) pricing', () => {
     const pricing: Pricing = { per_character: { price: 0.7, unit: `/${s.currency}/10K char` } };
-    expect(formatPriceFromPricing(pricing, false)).toBe(`${s.currencySymbol}0.70 /10K char`);
+    expect(formatPriceFromPricing(pricing, false)).toBe(`${s.currencySymbol}0.7 /10K char`);
   });
 
   it('formats per_second_audio (ASR) pricing with 5-digit precision', () => {

@@ -49,8 +49,7 @@ describe('renderTextModelDetail - Free Tier', () => {
     renderTextModelDetail(vm);
 
     const output = consoleLogSpy.mock.calls.join('\n');
-    expect(output).toContain('Free (Early Access)');
-    expect(output).toContain('no paid option');
+    expect(output).toContain('FreeTier Only');
   });
 
   it('renders unavailable message when quota data missing', () => {
