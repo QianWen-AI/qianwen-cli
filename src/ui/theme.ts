@@ -116,7 +116,7 @@ export function buildProgressBar(
       ? gradientFilled(filled)
       : (colorFn ?? progressColor(pct, 'remaining'))(theme.bar.filled.repeat(filled));
   const bar = filledStr + theme.muted(theme.bar.empty.repeat(empty));
-  return showPct ? `${bar} ${pct.toFixed(1)}%` : bar;
+  return showPct ? `${bar} ${pct.toFixed(2)}%` : bar;
 }
 
 // Color functions for progress bars

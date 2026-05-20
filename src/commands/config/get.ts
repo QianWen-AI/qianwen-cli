@@ -2,7 +2,7 @@ import { isPublicKey } from '../../config/schema.js';
 import { getConfigValue, getConfigValueWithSource } from '../../config/manager.js';
 import { resolveFormat, outputJSON, outputText } from '../../output/format.js';
 import { handleError, configError } from '../../utils/errors.js';
-import { site } from '../../site.js';
+import { formatCmd } from '../../utils/runtime-mode.js';
 import type { ConfigKey, OutputFormat } from '../../types/config.js';
 
 export function configGet(key: string, opts: { format?: string }, parentFormat?: string): void {
@@ -14,7 +14,7 @@ export function configGet(key: string, opts: { format?: string }, parentFormat?:
   if (!isPublicKey(key)) {
     handleError(
       configError(
-        `Unknown config key '${key}'. Run \`${site.cliName} config list\` to see available keys.`,
+        `Unknown config key '${key}'. Run \`${formatCmd('config list')}\` to see available keys.`,
       ),
       format,
     );

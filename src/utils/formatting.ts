@@ -1,5 +1,5 @@
 import type { Model, Pricing } from '../types/model.js';
-import { humanizeWithUnit, humanizeNumber } from '../output/humanize.js';
+import { humanizeWithUnit, humanizeNumber, formatAmount } from '../output/humanize.js';
 import { site } from '../site.js';
 
 /** Currency symbol resolved from site config. */
@@ -23,6 +23,7 @@ const UNIT_SHORT: Record<string, string> = {
   images: 'img',
   characters: 'char',
   seconds: 'sec',
+  voices: 'voice',
   // fallback for raw ShowUnit lowercase values that slip through SHOW_UNIT_MAP
   token: 'tok',
   image: 'img',
@@ -94,39 +95,39 @@ export function formatPriceFromPricing(pricing: Pricing, isFreeOnly: boolean): s
   if ('tiers' in pricing) {
     const tiers = pricing.tiers;
     if (tiers.length === 0) return '\u2014';
-    if (tiers.every((t) => t.input === 0 && t.output === 0)) return 'Free';
+    if (tiers.every((t) => t.input === 0 && t.output === 0)) return '\u2014';
 
     const paid = tiers.filter((t) => t.input > 0 || t.output > 0);
-    if (paid.length === 0) return 'Free';
+    if (paid.length === 0) return '\u2014';
 
     // Show cheapest tier (lowest input price) as representative; "+" flags multi-tier
     const cheapest = paid.reduce((min, t) => (t.input < min.input ? t : min), paid[0]);
     const suffix = paid.length > 1 ? ' +' : '';
-    return `${CUR}${cheapest.input.toFixed(2)} / ${CUR}${cheapest.output.toFixed(2)}${suffix} /1M tok`;
+    return `${CUR}${formatAmount(cheapest.input)} / ${CUR}${formatAmount(cheapest.output)}${suffix} /1M tok`;
   }
 
   if ('per_second' in pricing) {
     const prices = pricing.per_second.map((r) => r.price);
     const min = Math.min(...prices);
     const max = Math.max(...prices);
-    if (min === max) return `${CUR}${min.toFixed(2)} /sec`;
-    return `${CUR}${min.toFixed(2)}-${max.toFixed(2)} /sec`;
+    if (min === max) return `${CUR}${formatAmount(min)} /sec`;
+    return `${CUR}${formatAmount(min)}-${formatAmount(max)} /sec`;
   }
 
   if ('per_image' in pricing) {
-    return `${CUR}${pricing.per_image.price.toFixed(2)} /img`;
+    return `${CUR}${formatAmount(pricing.per_image.price)} /img`;
   }
 
   if ('per_character' in pricing) {
-    return `${CUR}${pricing.per_character.price.toFixed(2)} /10K char`;
+    return `${CUR}${formatAmount(pricing.per_character.price)} /10K char`;
   }
 
   if ('per_second_audio' in pricing) {
-    return `${CUR}${pricing.per_second_audio.price.toFixed(5)} /sec`;
+    return `${CUR}${formatAmount(pricing.per_second_audio.price)} /sec`;
   }
 
   if ('per_token' in pricing) {
-    return `${CUR}${pricing.per_token.price.toFixed(2)} /1M tok`;
+    return `${CUR}${formatAmount(pricing.per_token.price)} /1M tok`;
   }
 
   return '\u2014';

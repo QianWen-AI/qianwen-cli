@@ -28,7 +28,7 @@ describe('aggregatePaygByModel (summary view)', () => {
 
     expect(r.models).toHaveLength(2);
     const llm = r.models.find((m) => m.model_id === 'qwen3.6-plus')!;
-    expect(llm.usage.tokens_in).toBe(9_500_000);
+    expect(llm.usage.tokens).toBe(9_500_000);
     expect(llm.cost).toBeCloseTo(4.8, 6);
 
     const video = r.models.find((m) => m.model_id === 'wan2.6-t2v')!;
@@ -36,13 +36,13 @@ describe('aggregatePaygByModel (summary view)', () => {
     expect(video.cost).toBe(0);
   });
 
-  it('rolls up token usage into the tokens_in bucket (API does not split in/out)', () => {
+  it('rolls up token usage into the tokens bucket (API does not split in/out)', () => {
     const items: PaygItem[] = [
       item({ modelId: 'm', usageValue: 100, billingUnit: 'tokens' }),
       item({ modelId: 'm', usageValue: 200, billingUnit: 'tokens' }),
     ];
     const r = aggregatePaygByModel(items);
-    expect(r.models[0].usage).toEqual({ tokens_in: 300 });
+    expect(r.models[0].usage).toEqual({ tokens: 300 });
   });
 
   it('uses unit name as the usage key for non-token billing', () => {
@@ -150,6 +150,46 @@ describe('aggregatePaygByDate (breakdown view)', () => {
   });
 });
 
+describe('aggregatePaygByDate — voices + dynamic units (otherUsage)', () => {
+  it('puts voices count into a flat voices column', () => {
+    const items: PaygItem[] = [
+      item({ billingDate: '2026-04-01', modelId: 'cosyvoice-v3', usageValue: 3, cost: 0.05, billingUnit: 'voices' }),
+      item({ billingDate: '2026-04-01', modelId: 'cosyvoice-v3', usageValue: 2, cost: 0.04, billingUnit: 'voices' }),
+    ];
+    const rows = aggregatePaygByDate(items);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].billingUnit).toBe('voices');
+    expect(rows[0].voices).toBe(5);
+    expect(rows[0].otherUsage).toBeUndefined();
+  });
+
+  it('collects unknown billingUnit names under otherUsage', () => {
+    // Simulates the inferBillingUnit "Per <quantity> <unit>" fallback path,
+    // where stepUnit like "Per 1 call" yields billingUnit='call'.
+    const items: PaygItem[] = [
+      item({ billingDate: '2026-04-01', modelId: 'svc-x', usageValue: 200, cost: 0.20, billingUnit: 'call' }),
+      item({ billingDate: '2026-04-01', modelId: 'svc-x', usageValue: 50,  cost: 0.05, billingUnit: 'call' }),
+    ];
+    const rows = aggregatePaygByDate(items);
+    expect(rows[0].billingUnit).toBe('call');
+    expect(rows[0].otherUsage).toEqual({ call: 250 });
+    // Known columns stay empty so the view doesn't show stale tokens.
+    expect(rows[0].tokens_in).toBeUndefined();
+  });
+
+  it('summary view also accepts voices and dynamic unit keys', () => {
+    const items: PaygItem[] = [
+      item({ modelId: 'cosyvoice-v3', usageValue: 4, cost: 0.10, billingUnit: 'voices' }),
+      item({ modelId: 'svc-y',        usageValue: 7, cost: 0.07, billingUnit: 'request' }),
+    ];
+    const r = aggregatePaygByModel(items);
+    const voice = r.models.find((m) => m.model_id === 'cosyvoice-v3')!;
+    const svc = r.models.find((m) => m.model_id === 'svc-y')!;
+    expect(voice.usage).toEqual({ voices: 4 });
+    expect(svc.usage).toEqual({ request: 7 });
+  });
+});
+
 describe('summary and breakdown reconcile on shared input', () => {
   it('per-model totals from summary == sum of breakdown for that model', () => {
     const items: PaygItem[] = [
@@ -160,7 +200,7 @@ describe('summary and breakdown reconcile on shared input', () => {
     const summary = aggregatePaygByModel(items);
     const breakdown = aggregatePaygByDate(items.filter((i) => i.modelId === 'm'));
 
-    const summaryUsage = summary.models[0].usage.tokens_in;
+    const summaryUsage = summary.models[0].usage.tokens;
     const breakdownUsage = breakdown.reduce((s, r) => s + (r.tokens_in ?? 0), 0);
     expect(summaryUsage).toBe(breakdownUsage);
 

@@ -133,7 +133,7 @@ function buildFreeTierRowData(row: FreeTierRowViewModel): Record<string, string>
       modelId: row.modelId,
       remaining: '—',
       total: '—',
-      bar: theme.dim('Free access'),
+      bar: theme.dim('Enable to unlock free-tier'),
     };
   }
 

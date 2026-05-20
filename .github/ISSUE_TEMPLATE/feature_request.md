@@ -1,19 +1,19 @@
 ---
-name: 功能请求
-about: 为本项目提出建议
+name: Feature Request
+about: Suggest an idea for this project
 title: '[FEATURE] '
 labels: enhancement
 ---
 
-## 功能描述
+## Description
 
-简要描述功能和它解决的问题。
+Briefly describe the feature and the problem it solves.
 
-## 使用场景
+## Use Case
 
-描述该功能如何使用。
+Describe how this feature would be used.
 
 ```bash
-# 示例命令（如适用）
+# Example command (if applicable)
 qianwen example-command --flag value
 ```

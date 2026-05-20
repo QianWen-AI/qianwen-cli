@@ -1,4 +1,3 @@
-import chalk from 'chalk';
 import { getConfigEntries } from '../../config/manager.js';
 import { resolveFormat, outputJSON, outputText } from '../../output/format.js';
 import { formatTextTable } from '../../output/text.js';
@@ -47,7 +46,7 @@ export function configList(opts: ConfigListOptions, parentFormat?: string): void
 
   const keyWidth = 18;
   const valWidth = 38;
-  console.log(`  ${chalk.dim('Key'.padEnd(keyWidth))}${'Value'.padEnd(valWidth)}Source`);
+  console.log(`  ${'Key'.padEnd(keyWidth)}${'Value'.padEnd(valWidth)}Source`);
   console.log(`  ${theme.dim(theme.symbols.dash.repeat(keyWidth + valWidth + 10))}`);
 
   for (const entry of entries) {

@@ -97,7 +97,7 @@ describe('usage free-tier command (one-shot)', () => {
       expect(r.stdout).toContain('qwen3-max');
     });
 
-    it('mode=only model → renders "Free access" line', async () => {
+    it('mode=only model → renders "Enable to unlock free-tier" line', async () => {
       holder.client = makeMockApiClient({
         getUsageSummary: async () => ({
           period: { from: '2026-04-01', to: '2026-04-20' },

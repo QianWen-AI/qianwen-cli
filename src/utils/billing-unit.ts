@@ -1,8 +1,14 @@
 import type { Model } from '../types/model.js';
 
-export type BillingUnit = 'tokens' | 'images' | 'characters' | 'seconds';
+export type BillingUnit = 'tokens' | 'images' | 'characters' | 'seconds' | 'voices' | string;
 
-const VALID_UNITS: ReadonlySet<string> = new Set(['tokens', 'images', 'characters', 'seconds']);
+const VALID_UNITS: ReadonlySet<string> = new Set([
+  'tokens',
+  'images',
+  'characters',
+  'seconds',
+  'voices',
+]);
 
 /**
  * Infer the billing unit (= what the API charges by) for a model.

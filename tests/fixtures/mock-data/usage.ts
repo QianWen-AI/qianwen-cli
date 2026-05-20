@@ -13,12 +13,12 @@ export const mockUsageSummary = {
   token_plan: { subscribed: false },
   pay_as_you_go: {
     models: [
-      { model_id: 'qwen3.6-plus', requests: 240, usage: { tokens_in: 480000, tokens_out: 120000 }, cost: 0.38, currency: 'CNY' },
-      { model_id: 'qwen-plus', requests: 920, usage: { tokens_in: 460000, tokens_out: 115000 }, cost: 0.13, currency: 'CNY' },
-      { model_id: 'wan2.6-t2i', requests: 12, usage: { images: 45 }, cost: 1.35, currency: 'CNY' },
-      { model_id: 'cosyvoice-v3-plus', requests: 80, usage: { characters: 7200 }, cost: 0.21, currency: 'CNY' },
+      { model_id: 'qwen3.6-plus', usage: { tokens: 600000 }, cost: 0.38, currency: 'CNY' },
+      { model_id: 'qwen-plus', usage: { tokens: 575000 }, cost: 0.13, currency: 'CNY' },
+      { model_id: 'wan2.6-t2i', usage: { images: 45 }, cost: 1.35, currency: 'CNY' },
+      { model_id: 'cosyvoice-v3-plus', usage: { characters: 7200 }, cost: 0.21, currency: 'CNY' },
     ],
-    total: { requests: 1252, cost: 2.07, currency: 'CNY' },
+    total: { cost: 2.07, currency: 'CNY' },
   },
 };
 

@@ -67,7 +67,7 @@ describe('usage payg command (one-shot)', () => {
             models: [
               {
                 model_id: 'qwen3-max',
-                usage: { requests: 100, tokens_in: 50_000, tokens_out: 10_000 },
+                usage: { tokens: 60_000 },
                 cost: 0.42,
                 currency: 'CNY',
               },
@@ -113,13 +113,13 @@ describe('usage payg command (one-shot)', () => {
             models: [
               {
                 model_id: 'qwen3-max',
-                usage: { tokens_in: 50_000, tokens_out: 10_000 },
+                usage: { tokens: 50_000 },
                 cost: 0.42,
                 currency: 'CNY',
               },
               {
                 model_id: 'qwen3-mini',
-                usage: { tokens_in: 1_000, tokens_out: 200 },
+                usage: { tokens: 1_200 },
                 cost: 0.01,
                 currency: 'CNY',
               },
@@ -170,8 +170,8 @@ describe('usage payg command (one-shot)', () => {
           token_plan: { subscribed: false },
           pay_as_you_go: {
             models: [
-              { model_id: 'qwen3-max', usage: { tokens_in: 50_000, tokens_out: 10_000 }, cost: 0.42, currency: 'CNY' },
-              { model_id: 'qwen3-mini', usage: { tokens_in: 1_000, tokens_out: 200 }, cost: 0.01, currency: 'CNY' },
+              { model_id: 'qwen3-max', usage: { tokens: 50_000 }, cost: 0.42, currency: 'CNY' },
+              { model_id: 'qwen3-mini', usage: { tokens: 1_000 }, cost: 0.01, currency: 'CNY' },
             ],
             total: { cost: 0.43, currency: 'CNY' },
           },
@@ -186,7 +186,7 @@ describe('usage payg command (one-shot)', () => {
       expect(el.props.totalItems).toBe(2);
       expect(el.props.perPage).toBe(15);
       expect(Array.isArray(el.props.columns)).toBe(true);
-      expect(el.props.columns).toHaveLength(4);
+      expect(el.props.columns).toHaveLength(3);
       // footer with bold Total
       expect(el.props.footer).toBeTruthy();
       expect(el.props.footer.modelId).toContain('Total');
@@ -216,7 +216,7 @@ describe('usage payg command (one-shot)', () => {
           token_plan: { subscribed: false },
           pay_as_you_go: {
             models: [
-              { model_id: 'm1', usage: { tokens_in: 10, tokens_out: 5 }, cost: 0.001, currency: 'CNY' },
+              { model_id: 'm1', usage: { tokens: 15 }, cost: 0.001, currency: 'CNY' },
             ],
             total: { cost: 0.001, currency: 'CNY' },
           },

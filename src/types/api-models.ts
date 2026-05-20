@@ -9,6 +9,7 @@ export interface ApiPriceItem {
   PriceUnit: string; // e.g. "Per 1M tokens"
   Price: string; // Note: string type, e.g. "0.07"
   PriceName: string; // e.g. "Input: Text"
+  Discount?: string; // Discount multiplier, e.g. "0.5" means 50% off
 }
 
 // QPM rate-limit info

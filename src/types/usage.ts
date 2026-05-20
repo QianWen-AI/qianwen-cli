@@ -59,6 +59,10 @@ export interface UsageBreakdownUsage {
   images?: number;
   characters?: number;
   seconds?: number;
+  voices?: number;
+  // Index signature: allow dynamic billing units extracted from
+  // unknown "Per X Y" formats (e.g. "calls", "request") to pass through.
+  [key: string]: number | undefined;
 }
 
 export interface UsageBreakdownRow {

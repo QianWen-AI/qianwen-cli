@@ -53,7 +53,7 @@ export function registerLoginCommand(parent: Command): void {
         format = 'json';
         process.stderr.write(
           'Non-interactive environment detected. Running in --init-only mode.\n' +
-            'Open the URL in browser and authorize. After that, run `' + site.cliName + ' auth login --complete` to confirm authentication status.\n',
+            'Open the URL in browser and authorize. After that, run `' + formatCmd('auth login --complete') + '` to confirm authentication status.\n',
         );
       }
 
@@ -357,7 +357,7 @@ async function runLoginComplete(format: ResolvedFormat, timeoutSeconds?: number)
               event: 'expired',
               authenticated: false,
               message:
-                "Device code has expired. Please run '" + site.cliName + " auth login' to start a new login flow.",
+                "Device code has expired. Please run '" + formatCmd('auth login') + "' to start a new login flow.",
             });
           } else {
             console.log('');

@@ -174,7 +174,7 @@ describe('buildModelDetailViewModel', () => {
     expect(vm.builtInTools).toHaveLength(2);
     expect(vm.builtInTools[0]).toEqual({
       name: 'web_search',
-      price: `${s.currencySymbol}10.00 / 1K calls`,
+      price: `${s.currencySymbol}10 / 1K calls`,
       api: 'Responses API',
     });
     expect(vm.builtInTools[1]).toEqual({
@@ -247,7 +247,7 @@ describe('buildModelDetailViewModel', () => {
     };
     const vm = buildModelDetailViewModel(detail);
     // "per " prefix should be stripped from unit
-    expect(vm.builtInTools[0].price).toBe(`${s.currencySymbol}5.00 / request`);
+    expect(vm.builtInTools[0].price).toBe(`${s.currencySymbol}5 / request`);
   });
 
   it('includes category and snapshot in metadata when present', () => {

@@ -19,11 +19,11 @@ export function ProgressBar({
   showLabel = true,
   customColor,
 }: ProgressBarProps) {
-  // Special case: "Free (Early Access)" mode
+  // Special case: "FreeTier Only" mode
   if (mode === 'free-only') {
     return (
       <Text dimColor>
-        {'Free (Early Access)'.padEnd(width + 2)}
+        {'FreeTier Only'.padEnd(width + 2)}
         {showLabel && label ? `  ${label}` : ''}
       </Text>
     );

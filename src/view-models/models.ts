@@ -1,5 +1,5 @@
 import type { Model, ModelsListResponse, ModelDetail, Pricing } from '../types/model.js';
-import { humanizeNumber, humanizeWithUnit } from '../output/humanize.js';
+import { humanizeNumber, humanizeWithUnit, formatAmount } from '../output/humanize.js';
 import { abbreviateModality } from '../utils/modality.js';
 import { splitPrice } from '../utils/formatting.js';
 import { site } from '../site.js';
@@ -77,46 +77,84 @@ export function formatFreeTier(model: Model): string {
  * Format price column from a Pricing object.
  */
 export function formatPriceFromPricing(pricing: Pricing, isFreeOnly: boolean): string {
+  const DASH = '\u2014';
+  const isValidNum = (v: unknown): v is number =>
+    typeof v === 'number' && Number.isFinite(v);
+
   if (isFreeOnly) return 'Free';
 
   if ('tiers' in pricing) {
     const tiers = pricing.tiers;
-    if (tiers.length === 0) return '\u2014';
-    if (tiers.every((t) => t.input === 0 && t.output === 0)) return 'Free';
+    if (!Array.isArray(tiers) || tiers.length === 0) return DASH;
 
-    const paid = tiers.filter((t) => t.input > 0 || t.output > 0);
-    if (paid.length === 0) return 'Free';
+    // Only tiers with numeric, finite input/output are considered understandable.
+    const valid = tiers.filter((t) => isValidNum(t?.input) && isValidNum(t?.output));
+    if (valid.length === 0) return DASH;
+
+    const paid = valid.filter((t) => t.input > 0 || t.output > 0);
+    // All-zero or no paid tier → treat as "no price data" rather than "Free",
+    // since only `free_tier.mode === 'only'` carries reliable free-only semantics.
+    if (paid.length === 0) return DASH;
 
     const cheapest = paid.reduce((min, t) => (t.input < min.input ? t : min), paid[0]);
     const suffix = paid.length > 1 ? ' +' : '';
-    return `${CUR}${cheapest.input.toFixed(2)} / ${CUR}${cheapest.output.toFixed(2)}${suffix} /1M tok`;
+    return `${CUR}${formatAmount(cheapest.input)} / ${CUR}${formatAmount(cheapest.output)}${suffix} /1M tok`;
   }
 
   if ('per_second' in pricing) {
-    const prices = pricing.per_second.map((r) => r.price);
+    const rows = Array.isArray(pricing.per_second) ? pricing.per_second : [];
+    const prices = rows.map((r) => r?.price).filter(isValidNum);
+    if (prices.length === 0) return DASH;
     const min = Math.min(...prices);
     const max = Math.max(...prices);
-    if (min === max) return `${CUR}${min.toFixed(2)} /sec`;
-    return `${CUR}${min.toFixed(2)}-${max.toFixed(2)} /sec`;
+    if (min === max) return `${CUR}${formatAmount(min)} /sec`;
+    return `${CUR}${formatAmount(min)}-${formatAmount(max)} /sec`;
+  }
+
+  if ('per_image_tiers' in pricing && pricing.per_image_tiers && pricing.per_image_tiers!.length > 0) {
+    const tiers = pricing.per_image_tiers!;
+    const prices = tiers.map((t) => t.price).filter(isValidNum);
+    if (prices.length === 0) return DASH;
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    if (min === max) return `${CUR}${formatAmount(min)} /img`;
+    return `${CUR}${formatAmount(min)}-${formatAmount(max)} /img`;
   }
 
   if ('per_image' in pricing) {
-    return `${CUR}${pricing.per_image.price.toFixed(2)} /img`;
+    const p = pricing.per_image?.price;
+    if (!isValidNum(p)) return DASH;
+    return `${CUR}${formatAmount(p)} /img`;
   }
 
   if ('per_character' in pricing) {
-    return `${CUR}${pricing.per_character.price.toFixed(2)} /10K char`;
+    const p = pricing.per_character?.price;
+    if (!isValidNum(p)) return DASH;
+    return `${CUR}${formatAmount(p)} /10K char`;
   }
 
   if ('per_second_audio' in pricing) {
-    return `${CUR}${pricing.per_second_audio.price.toFixed(5)} /sec`;
+    const p = pricing.per_second_audio?.price;
+    if (!isValidNum(p)) return DASH;
+    return `${CUR}${formatAmount(p)} /sec`;
   }
 
   if ('per_token' in pricing) {
-    return `${CUR}${pricing.per_token.price.toFixed(2)} /1M tok`;
+    const p = pricing.per_token?.price;
+    if (!isValidNum(p)) return DASH;
+    return `${CUR}${formatAmount(p)} /1M tok`;
   }
 
-  return '\u2014';
+  if ('items' in pricing && pricing.items.length > 0) {
+    const prices = pricing.items.map((i) => i.price).filter(isValidNum);
+    if (prices.length === 0) return DASH;
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    if (min === max) return `${CUR}${formatAmount(min)}`;
+    return `${CUR}${formatAmount(min)}-${formatAmount(max)}`;
+  }
+
+  return DASH;
 }
 
 // ── Model List ViewModel ──────────────────────────────────────────────
@@ -163,10 +201,13 @@ export function buildModelListViewModelFromModels(
 
     const { amount: priceAmt, unit: priceUnit } = splitPrice(priceStr);
     const { amount: ftAmt, unit: ftUnit, expired: ftExpired } = formatFreeTierSplit(model);
-    const freeTierRemainingPct = model.free_tier.quota
-      ? model.free_tier.quota.status === 'expire'
+    const quota = model.free_tier.quota;
+    const freeTierRemainingPct = quota
+      ? quota.status === 'expire'
         ? 0
-        : Math.round((100 - model.free_tier.quota.used_pct) * 10) / 10
+        : quota.total > 0
+          ? parseFloat(((quota.remaining / quota.total) * 100).toFixed(2))
+          : undefined
       : undefined;
     return {
       id: model.id,
@@ -201,7 +242,7 @@ export interface ModelDetailViewModel {
   features: string; // comma-separated or "—"
 
   // Pricing (rendered lines)
-  pricingType: 'llm' | 'video' | 'image' | 'tts' | 'asr' | 'embedding';
+  pricingType: 'llm' | 'video' | 'image' | 'tts' | 'asr' | 'embedding' | 'itemized' | 'no_pricing';
   pricingLines: PricingLineViewModel[];
   builtInTools: BuiltInToolViewModel[];
 
@@ -291,7 +332,7 @@ export function buildModelDetailViewModel(detail: ModelDetail): ModelDetailViewM
   // Free Tier summary
   if (detail.free_tier.mode === 'standard' && detail.free_tier.quota) {
     const q = detail.free_tier.quota;
-    const pct = Math.round((100 - q.used_pct) * 10) / 10;
+    const pct = q.total > 0 ? parseFloat(((q.remaining / q.total) * 100).toFixed(2)) : undefined;
     const statusLabel =
       q.status === 'exhaust' ? '(exhaust)' : q.status === 'expire' ? '(expired)' : undefined;
     vm.freeTier = {
@@ -317,7 +358,45 @@ export function buildModelDetailViewModel(detail: ModelDetail): ModelDetailViewM
 
 function inferPricingType(
   detail: ModelDetail,
-): 'llm' | 'video' | 'image' | 'tts' | 'asr' | 'embedding' {
+): 'llm' | 'video' | 'image' | 'tts' | 'asr' | 'embedding' | 'itemized' | 'no_pricing' {
+  const pricing = detail.pricing;
+  if (!pricing) return 'llm';
+
+  // Prefer billing_type from pricing summary — 100% accurate for most types
+  const billingType = pricing.summary?.billing_type;
+  if (billingType) {
+    switch (billingType) {
+      case 'token':
+        // per_token structure = embedding/rerank; tiers structure = LLM
+        return 'per_token' in pricing ? 'embedding' : 'llm';
+      case 'image':
+        return 'image';
+      case 'character':
+        return 'tts';
+      case 'itemized':
+        return 'itemized';
+      case 'second':
+        // Distinguish ASR (per_second_audio) from video (per_second)
+        if ('per_second_audio' in pricing) return 'asr';
+        return 'video';
+      case 'no_pricing':
+        // No pricing data available — render as uniform placeholder
+        return 'no_pricing';
+      // 'free', 'unknown' — fall through to structural inference
+    }
+  }
+
+  // Fallback: pricing structure detection
+  if ('items' in pricing) return 'itemized';
+  if ('per_token' in pricing) return 'embedding';
+  if ('per_character' in pricing) return 'tts';
+  if ('per_second' in pricing) return 'video';
+  if ('per_second_audio' in pricing) return 'asr';
+  if ('per_image' in pricing) return 'image';
+  if ('per_image_tiers' in pricing) return 'image';
+
+  // Fallback: modality-based inference for tiers-based pricing
+  // (LLM models all use { tiers: [...] })
   const { input, output } = detail.modality;
   const hasContext = !!detail.context;
 
@@ -335,18 +414,26 @@ function inferPricingType(
 
 function buildPricingLines(pricing: Pricing): PricingLineViewModel[] {
   if ('tiers' in pricing) {
+    // Empty tiers means the mapper could not interpret the upstream pricing
+    // shape (e.g. non-token MultiPrices). Surface a single em-dash row so the
+    // Pricing card retains its tabular structure without falsely advertising
+    // a free or zero price.
+    if (pricing.tiers.length === 0) {
+      return [{ cells: { label: '\u2014', input: '\u2014', output: '\u2014' } }];
+    }
+
     // LLM pricing table
     const hasCache = pricing.tiers.some((t) => t.cache_creation != null);
     return pricing.tiers.map((tier) => {
       const cells: Record<string, string> = {
         label: tier.label,
-        input: `${CUR}${tier.input.toFixed(2)}/1M`,
-        output: `${CUR}${tier.output.toFixed(2)}/1M`,
+        input: `${CUR}${formatAmount(tier.input)}/1M`,
+        output: `${CUR}${formatAmount(tier.output)}/1M`,
       };
       if (hasCache) {
         cells.cacheCreation =
-          tier.cache_creation != null ? `${CUR}${tier.cache_creation.toFixed(2)}/1M` : '—';
-        cells.cacheRead = tier.cache_read != null ? `${CUR}${tier.cache_read.toFixed(2)}/1M` : '—';
+          tier.cache_creation != null ? `${CUR}${formatAmount(tier.cache_creation)}/1M` : '—';
+        cells.cacheRead = tier.cache_read != null ? `${CUR}${formatAmount(tier.cache_read)}/1M` : '—';
       }
       return { cells };
     });
@@ -356,7 +443,16 @@ function buildPricingLines(pricing: Pricing): PricingLineViewModel[] {
     return pricing.per_second.map((p) => ({
       cells: {
         resolution: p.resolution,
-        price: `${CUR}${p.price.toFixed(2)} / second`,
+        price: `${CUR}${formatAmount(p.price)} / second`,
+      },
+    }));
+  }
+
+  if ('per_image_tiers' in pricing && pricing.per_image_tiers && pricing.per_image_tiers.length > 0) {
+    return pricing.per_image_tiers.map((t) => ({
+      cells: {
+        label: t.label,
+        price: `${CUR}${formatAmount(t.price)} / image`,
       },
     }));
   }
@@ -366,7 +462,7 @@ function buildPricingLines(pricing: Pricing): PricingLineViewModel[] {
       {
         cells: {
           label: 'Image Generation',
-          price: `${CUR}${pricing.per_image.price.toFixed(2)} / image`,
+          price: `${CUR}${formatAmount(pricing.per_image.price)} / image`,
         },
       },
     ];
@@ -377,7 +473,7 @@ function buildPricingLines(pricing: Pricing): PricingLineViewModel[] {
       {
         cells: {
           label: 'TTS',
-          price: `${CUR}${pricing.per_character.price.toFixed(2)} / 10,000 characters`,
+          price: `${CUR}${formatAmount(pricing.per_character.price)} / 10,000 characters`,
         },
       },
     ];
@@ -388,7 +484,7 @@ function buildPricingLines(pricing: Pricing): PricingLineViewModel[] {
       {
         cells: {
           label: 'ASR',
-          price: `${CUR}${pricing.per_second_audio.price.toFixed(5)} / second`,
+          price: `${CUR}${formatAmount(pricing.per_second_audio.price)} / second`,
         },
       },
     ];
@@ -399,10 +495,19 @@ function buildPricingLines(pricing: Pricing): PricingLineViewModel[] {
       {
         cells: {
           label: 'Embedding',
-          price: `${CUR}${pricing.per_token.price.toFixed(2)} / 1M tokens`,
+          price: `${CUR}${formatAmount(pricing.per_token.price)} / 1M tokens`,
         },
       },
     ];
+  }
+
+  if ('items' in pricing && pricing.items.length > 0) {
+    return pricing.items.map((item) => ({
+      cells: {
+        label: item.name,
+        price: `${CUR}${formatAmount(item.price)} / ${item.unit}`,
+      },
+    }));
   }
 
   return [];
@@ -416,7 +521,7 @@ function buildBuiltInTools(pricing: Pricing): BuiltInToolViewModel[] {
       .replace(/^(USD|CNY)\//, '')
       .replace(/^per\s+/i, '')
       .trim();
-    const price = tool.price === 0 ? 'Free' : `${CUR}${tool.price.toFixed(2)} / ${unitRaw}`;
+    const price = tool.price === 0 ? 'Free' : `${CUR}${formatAmount(tool.price)} / ${unitRaw}`;
     return { name: tool.name, price, api: tool.api };
   });
 }

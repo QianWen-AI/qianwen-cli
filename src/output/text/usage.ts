@@ -66,7 +66,7 @@ function renderFreeTierTable(section: NonNullable<UsageSummaryViewModel['freeTie
   const headers = ['Model', 'Remaining', 'Total', 'Quota Left'];
   const rows = section.rows.map((row) => {
     if (row.isFreeOnly) {
-      return [row.modelId, '—', '—', 'Free (Early Access)'];
+      return [row.modelId, '—', '—', 'FreeTier Only'];
     }
     return [row.modelId, row.remaining, row.total, row.progressBar.label];
   });

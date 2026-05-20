@@ -2,7 +2,7 @@ import { isPublicKey } from '../../config/schema.js';
 import { unsetConfigValue, getConfigValue } from '../../config/manager.js';
 import { resolveFormat, outputJSON } from '../../output/format.js';
 import { theme } from '../../ui/theme.js';
-import { site } from '../../site.js';
+import { formatCmd } from '../../utils/runtime-mode.js';
 import { handleError, configError } from '../../utils/errors.js';
 import type { ConfigKey, OutputFormat } from '../../types/config.js';
 
@@ -17,7 +17,7 @@ export function configUnset(key: string, opts: ConfigUnsetOptions, parentFormat?
   );
 
   if (!isPublicKey(key)) {
-    const msg = `Unknown config key '${key}'. Run \`${site.cliName} config list\` to see available keys.`;
+    const msg = `Unknown config key '${key}'. Run \`${formatCmd('config list')}\` to see available keys.`;
     handleError(configError(msg), format);
   }
 

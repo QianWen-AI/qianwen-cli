@@ -3,7 +3,7 @@ import {
   buildUsageSummaryViewModel,
   buildUsageBreakdownViewModel,
 } from '../../src/view-models/usage.js';
-import type { UsageSummaryResponse, UsageBreakdownResponse } from '../../src/types/usage.js';
+import type { UsageSummaryResponse, UsageBreakdownResponse, UsageBreakdownRow } from '../../src/types/usage.js';
 import { site } from '../../src/site.js';
 
 const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
@@ -30,7 +30,7 @@ describe('buildUsageSummaryViewModel', () => {
       models: [
         {
           model_id: 'qwen3.6-plus',
-          usage: { tokens_in: 480000, tokens_out: 120000 },
+          usage: { tokens: 600000 },
           cost: 0.38,
           currency: 'CNY',
         },
@@ -81,8 +81,7 @@ describe('buildUsageSummaryViewModel', () => {
     expect(vm.payAsYouGo!.rows).toHaveLength(2);
     // Sorted by cost descending: wan2.6-t2i (¥1.35) first, qwen3.6-plus (¥0.38) second
     expect(vm.payAsYouGo!.rows[0].usage).toContain('img');
-    expect(vm.payAsYouGo!.rows[1].usage).toContain('in');
-    expect(vm.payAsYouGo!.rows[1].usage).toContain('out tok');
+    expect(vm.payAsYouGo!.rows[1].usage).toContain('tok');
     expect(vm.payAsYouGo!.total.cost).toBe(`${s.currencySymbol}1.73`);
   });
 
@@ -104,10 +103,10 @@ describe('buildUsageSummaryViewModel', () => {
     expect(vm.tokenPlan).toBeDefined();
     expect(vm.tokenPlan!.planName).toBe('Token Plan 团队版（月）');
     expect(vm.tokenPlan!.status).toBe('valid');
-    expect(vm.tokenPlan!.usageDisplay).toBe('25K / 25K Credits');
+    expect(vm.tokenPlan!.usageDisplay).toBe('25,000 / 25,000 Credits');
     expect(vm.tokenPlan!.progressBar.percentage).toBe(100);
     expect(vm.tokenPlan!.resetDate).toBe('2026-06-01');
-    expect(vm.tokenPlan!.addonRemaining).toBe('1K Credits');
+    expect(vm.tokenPlan!.addonRemaining).toBe('1,000 Credits');
   });
 
   it('skips Token Plan when not subscribed', () => {
@@ -144,14 +143,13 @@ describe('buildUsageSummaryViewModel', () => {
     expect(vm.payAsYouGo!.isEmpty).toBe(true);
   });
 
-  it('PAYG usage: collapses to single "X tok" when only tokens_in is present', () => {
-    // Mirrors the real upstream behavior: API doesn't split in/out, so
-    // tokens_out is missing/0. Without the collapse, the cell shows "—".
+  it('PAYG usage: renders single "X tok" for the neutral tokens key', () => {
+    // Mirrors the real upstream behavior: API returns undifferentiated token count.
     const response = {
       ...mockResponse,
       pay_as_you_go: {
         models: [
-          { model_id: 'qwen3.6-plus', usage: { tokens_in: 9_500_000 }, cost: 4.83, currency: 'CNY' },
+          { model_id: 'qwen3.6-plus', usage: { tokens: 9_500_000 }, cost: 4.83, currency: 'CNY' },
         ],
         total: { cost: 4.83, currency: 'CNY' },
       },
@@ -160,18 +158,18 @@ describe('buildUsageSummaryViewModel', () => {
     expect(vm.payAsYouGo!.rows[0].usage).toBe('9.5M tok');
   });
 
-  it('PAYG usage: keeps "in · out" format when tokens_out > 0 (forward-compat)', () => {
+  it('PAYG usage: falls back to dynamic key format for unknown usage keys', () => {
     const response = {
       ...mockResponse,
       pay_as_you_go: {
         models: [
-          { model_id: 'future-llm', usage: { tokens_in: 1000, tokens_out: 500 }, cost: 0.10, currency: 'CNY' },
+          { model_id: 'future-llm', usage: { calls: 500 }, cost: 0.10, currency: 'CNY' },
         ],
         total: { cost: 0.10, currency: 'CNY' },
       },
     };
     const vm = buildUsageSummaryViewModel(response);
-    expect(vm.payAsYouGo!.rows[0].usage).toBe('1K in · 500 out tok');
+    expect(vm.payAsYouGo!.rows[0].usage).toBe('500 calls');
   });
 });
 
@@ -277,7 +275,7 @@ describe('buildUsageBreakdownViewModel', () => {
     const vm = buildUsageBreakdownViewModel(response, { billingUnitOverride: 'images' });
     const colKeys = vm.columns.map(c => c.key);
     expect(colKeys).toEqual(['period', 'images', 'cost']);
-    expect(vm.total.cells.images).toBe('0');
+    expect(vm.total.cells.images).toBe('—');
     expect(vm.total.cells.tokensIn).toBeUndefined();
   });
 
@@ -349,7 +347,7 @@ describe('buildUsageBreakdownViewModel', () => {
     const vm = buildUsageBreakdownViewModel(response, { billingUnitOverride: 'tokens' });
     const colKeys = vm.columns.map((c) => c.key);
     expect(colKeys).toEqual(['period', 'tokens', 'cost']);
-    expect(vm.total.cells.tokens).toBe('0');
+    expect(vm.total.cells.tokens).toBe('—');
   });
 
   it('billingUnitOverride=seconds builds Duration column for video/audio models', () => {
@@ -364,6 +362,97 @@ describe('buildUsageBreakdownViewModel', () => {
     const colKeys = vm.columns.map(c => c.key);
     expect(colKeys).toContain('seconds');
     expect(colKeys).not.toContain('tokensIn');
-    expect(vm.total.cells.seconds).toBe('0');
+    expect(vm.total.cells.seconds).toBe('—');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// New test cases migrated from qwencloud-cli commit 90917204:
+//   feat(usage): support voices & dynamic billing units; uniform '—' for zero cells
+//
+// Coverage targets each guard a real regression in the dynamic billing-unit
+// branches:
+//   1. Non-tokens overrides (images / characters / seconds / voices) are
+//      trusted even when every row is empty — protects model-metadata-driven
+//      headers.
+//   2. Tokens override yields to a non-fixed inferred unit (e.g. "calls") so
+//      headers match real row data when the model registry falls through to
+//      'tokens'.
+//   3. Tokens override is preserved when the inferred unit is also fixed.
+// ---------------------------------------------------------------------------
+function makeBreakdownResponse(
+  overrides: Partial<UsageBreakdownResponse> & { rows: UsageBreakdownRow[] },
+): UsageBreakdownResponse {
+  return {
+    model_id: 'test-model',
+    period: { from: '2026-04-01', to: '2026-04-07' },
+    granularity: 'day',
+    total: { cost: 0, currency: 'CNY' },
+    ...overrides,
+  };
+}
+
+describe('buildUsageBreakdownViewModel — pickBillingUnit override behaviour', () => {
+  it('trusts a non-tokens override (images) even when all rows are zero', () => {
+    const vm = buildUsageBreakdownViewModel(
+      makeBreakdownResponse({
+        model_id: 'wan2.6-t2i',
+        rows: [
+          { period: '2026-04-01', usage: { images: 0 }, cost: 0 },
+          { period: '2026-04-02', usage: { images: 0 }, cost: 0 },
+        ],
+        total: { usage: { images: 0 }, cost: 0 },
+      }),
+      { billingUnitOverride: 'images' },
+    );
+    expect(vm.columns.map((c) => c.header)).toEqual(['Date', 'Images', 'Cost']);
+    // Zero usage renders as em-dash, not "0".
+    expect(vm.rows[0].cells.images).toBe('—');
+    expect(vm.total.cells.images).toBe('—');
+  });
+
+  it('trusts a voices override (characters/seconds/voices are equally authoritative)', () => {
+    const vm = buildUsageBreakdownViewModel(
+      makeBreakdownResponse({
+        rows: [{ period: '2026-04-01', usage: { voices: 0 }, cost: 0 }],
+        total: { usage: { voices: 0 }, cost: 0 },
+      }),
+      { billingUnitOverride: 'voices' },
+    );
+    expect(vm.columns.map((c) => c.header)).toEqual(['Date', 'Voice', 'Cost']);
+    expect(vm.rows[0].cells.voices).toBe('—');
+  });
+
+  it('lets tokens override yield to a dynamic inferred unit (e.g. "calls")', () => {
+    // Scenario: inferBillingUnitFromModel falls through to 'tokens' for a
+    // service whose API actually returns Per-1-call lines; the row carries a
+    // numeric "calls" key, so the header must follow the data.
+    const vm = buildUsageBreakdownViewModel(
+      makeBreakdownResponse({
+        rows: [
+          { period: '2026-04-01', usage: { calls: 2_000_200 } as Record<string, number>, cost: 0.5 },
+        ],
+        total: { usage: { calls: 2_000_200 } as Record<string, number>, cost: 0.5 },
+      }),
+      { billingUnitOverride: 'tokens' },
+    );
+    expect(vm.columns.map((c) => c.header)).toEqual(['Date', 'Calls', 'Cost']);
+    expect(vm.rows[0].cells.calls).toBe('2M');
+    expect(vm.total.cells.calls).toBe('2M');
+  });
+
+  it('keeps the tokens override when inferred is also a fixed unit (tokens or voices)', () => {
+    // Defensive: rows have tokens data; override='tokens' must win over a
+    // hypothetical mis-inference. The fixed-unit guard in pickBillingUnit
+    // protects against accidentally letting voices/images replace tokens.
+    const vm = buildUsageBreakdownViewModel(
+      makeBreakdownResponse({
+        rows: [{ period: '2026-04-01', tokens_in: 1234, cost: 0.01 }],
+        total: { tokens_in: 1234, cost: 0.01 },
+      }),
+      { billingUnitOverride: 'tokens' },
+    );
+    expect(vm.columns.find((c) => c.key === 'tokens')?.header).toBe('Tokens');
+    expect(vm.rows[0].cells.tokens).toBe('1.2K');
   });
 });

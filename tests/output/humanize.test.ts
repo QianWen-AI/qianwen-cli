@@ -64,16 +64,16 @@ describe('humanizeWithUnit', () => {
 });
 
 describe('formatPrice / formatCost', () => {
-  it('formats prices with 2 decimals', () => {
-    expect(formatPrice(0.50)).toBe(`${s.currencySymbol}0.50`);
-    expect(formatPrice(2.00)).toBe(`${s.currencySymbol}2.00`);
+  it('formats prices via formatAmount (full precision, no trailing zeros)', () => {
+    expect(formatPrice(0.50)).toBe(`${s.currencySymbol}0.5`);
+    expect(formatPrice(2.00)).toBe(`${s.currencySymbol}2`);
     expect(formatPrice(0.14)).toBe(`${s.currencySymbol}0.14`);
   });
 
-  it('formats costs consistently', () => {
+  it('formats costs via formatAmount (full precision)', () => {
     expect(formatCost(0.38)).toBe(`${s.currencySymbol}0.38`);
     expect(formatCost(2.07)).toBe(`${s.currencySymbol}2.07`);
-    expect(formatCost(0.000035)).toBe(`${s.currencySymbol}0.00`); // Very small rounds to ${s.currencySymbol}0.00
+    expect(formatCost(0.000035)).toBe(`${s.currencySymbol}0.000035`);
   });
 });
 

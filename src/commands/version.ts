@@ -7,6 +7,7 @@ import { theme } from '../ui/theme.js';
 import type { OutputFormat, ResolvedFormat } from '../types/config.js';
 import { networkError, handleError } from '../utils/errors.js';
 import { formatCmd } from '../utils/runtime-mode.js';
+import { detectChannel, getUpgradeHint } from '../upgrade/check.js';
 import { site } from '../site.js';
 
 export function registerVersionCommand(program: Command): void {
@@ -67,13 +68,18 @@ export function registerUpdateCommand(program: Command): void {
             current: info.current,
             latest: info.latest,
             update_available: true,
-            message: `Updating to v${info.latest}...`,
+            channel: detectChannel(),
           });
         } else {
-          console.log(`  Updating ${site.cliName} v${info.current} → v${info.latest}...`);
-          console.log(`  To update, run:`);
-          console.log(`    npm install -g ${site.cliName}@${info.latest}`);
-          console.log(`    # or: pnpm add -g ${site.cliName}@${info.latest}`);
+          const channel = detectChannel();
+          const hintLines = getUpgradeHint(channel, info.latest);
+          console.log('');
+          console.log(`  New version available: v${info.current} → v${info.latest}`);
+          console.log('');
+          for (const line of hintLines) {
+            console.log(`  ${line}`);
+          }
+          console.log('');
         }
       } catch (error) {
         handleError(

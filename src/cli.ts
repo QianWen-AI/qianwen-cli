@@ -5,7 +5,7 @@ import { registerConfigCommands } from './commands/config/index.js';
 import { registerDoctorCommand } from './commands/doctor.js';
 import { registerCompletionCommand } from './commands/completion.js';
 import { registerVersionCommand, registerUpdateCommand } from './commands/version.js';
-import { isReplMode } from './utils/runtime-mode.js';
+import { isReplMode, formatCmd } from './utils/runtime-mode.js';
 import {
   usageSummaryAction,
   usageBreakdownAction,
@@ -237,21 +237,21 @@ function registerModelsCommands(program: Command): void {
   const list = models.commands.find((c) => c.name() === 'list')!;
   setLongDescription(list, 'List available models with pricing, modality, and free tier info.');
   addExamples(list, [
-    `${site.cliName} models list`,
-    `${site.cliName} models list --input image --output text`,
-    `${site.cliName} models list --all --format json`,
+    formatCmd('models list'),
+    formatCmd('models list --input image --output text'),
+    formatCmd('models list --all --format json'),
   ]);
 
   const info = models.commands.find((c) => c.name() === 'info')!;
   addExamples(info, [
-    `${site.cliName} models info qwen3.6-plus`,
-    `${site.cliName} models info qwen3.6-plus --format json`,
+    formatCmd('models info qwen3.6-plus'),
+    formatCmd('models info qwen3.6-plus --format json'),
   ]);
 
   const search = models.commands.find((c) => c.name() === 'search')!;
   addExamples(search, [
-    `${site.cliName} models search "function calling"`,
-    `${site.cliName} models search image --format json`,
+    formatCmd('models search "function calling"'),
+    formatCmd('models search image --format json'),
   ]);
 }
 
@@ -273,8 +273,8 @@ function registerUsageCommandsWithMeta(program: Command): void {
   summaryCmd.action(usageSummaryAction(summaryCmd));
 
   addExamples(summaryCmd, [
-    `${site.cliName} usage summary`,
-    `${site.cliName} usage summary --period last-month --format json`,
+    formatCmd('usage summary'),
+    formatCmd('usage summary --period last-month --format json'),
   ]);
 
   const breakdownCmd = usage
@@ -298,12 +298,12 @@ function registerUsageCommandsWithMeta(program: Command): void {
 
   setLongDescription(
     breakdownCmd,
-    `Show usage breakdown for a specific model (time-series).\n\n  Note: PAYG only — free tier consumption is not available as a historical\n  series. Use \`${site.cliName} usage free-tier\` for current quota state.`,
+    `Show usage breakdown for a specific model (time-series).\n\n  Note: PAYG only — free tier consumption is not available as a historical\n  series. Use \`${formatCmd('usage free-tier')}\` for current quota state.`,
   );
 
   addExamples(breakdownCmd, [
-    `${site.cliName} usage breakdown --model qwen-plus --period last-month --granularity month`,
-    `${site.cliName} usage breakdown --model qwen-plus --days 7 --format json`,
+    formatCmd('usage breakdown --model qwen-plus --period last-month --granularity month'),
+    formatCmd('usage breakdown --model qwen-plus --days 7 --format json'),
   ]);
 
   const freeTierCmd = usage
@@ -318,8 +318,8 @@ function registerUsageCommandsWithMeta(program: Command): void {
     .option('--format <fmt>', 'Output format: table, json, text (default: auto)');
 
   addExamples(freeTierCmd, [
-    `${site.cliName} usage free-tier`,
-    `${site.cliName} usage free-tier --format json`,
+    formatCmd('usage free-tier'),
+    formatCmd('usage free-tier --format json'),
   ]);
 
   const paygCmd = usage
@@ -335,9 +335,9 @@ function registerUsageCommandsWithMeta(program: Command): void {
     .option('--format <fmt>', 'Output format: table, json, text (default: auto)');
 
   addExamples(paygCmd, [
-    `${site.cliName} usage payg`,
-    `${site.cliName} usage payg --period last-month`,
-    `${site.cliName} usage payg --from 2026-01-01 --to 2026-03-31`,
+    formatCmd('usage payg'),
+    formatCmd('usage payg --period last-month'),
+    formatCmd('usage payg --from 2026-01-01 --to 2026-03-31'),
   ]);
 
   // Register remaining usage actions

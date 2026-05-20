@@ -259,6 +259,79 @@ describe('HttpApiClient.getModel', () => {
     const client = new HttpApiClient();
     await expect(client.getModel('does-not-exist')).rejects.toThrow(/'does-not-exist' not found/);
   });
+
+  it('serves from L1 cache and skips the ListModels request when raw list is warm', async () => {
+    // Pre-populate the in-memory MODELS_RAW_LIST so getModelByQuery can
+    // resolve without hitting the network for the model catalog.
+    const cacheMod = await import('../../src/utils/cache.js');
+    const cache = cacheMod.getGlobalCache();
+    cache.set(
+      cacheMod.CacheKeys.MODELS_RAW_LIST,
+      [makeApiModelItem({ Model: 'qwen-cached' })],
+      cacheMod.CacheTTL.MODELS_LIST,
+    );
+
+    activeMock = mockFetch({
+      [cdnKey]: () => ({}),
+      '/data/v2/api.json': () =>
+        listModelsResponse([makeApiModelItem({ Model: 'qwen-cached' })]),
+    });
+
+    // Capture stderr so we can verify the Cache-hit diagnostic surfaces.
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const { HttpApiClient } = await import('../../src/api/http-client.js');
+    const client = new HttpApiClient();
+    const detail = await client.getModel('qwen-cached');
+
+    expect(detail.id).toBe('qwen-cached');
+    // No ListModels call should be issued: cache served the raw list and
+    // there is no free-tier mapping in this scenario, so quota stays null.
+    const listCalls = activeMock.calls.filter(
+      (c) => c.url.includes('/data/v2/api.json') && (c.body ?? '').includes('"action":"ListModelSeries"'),
+    );
+    expect(listCalls).toHaveLength(0);
+
+    // The L1 hit should be observable through the diagnostic channel.
+    const hitLogs = stderrSpy.mock.calls
+      .map((args) => args.join(' '))
+      .filter((line) => line.includes('[Cache]') && line.includes('(L1)'));
+    expect(hitLogs.length).toBeGreaterThan(0);
+
+    stderrSpy.mockRestore();
+  });
+
+  it('falls back to Query+MatchOnly when target id is not present in cached list', async () => {
+    // Cached snapshot does not contain `qwen-new` (e.g. newly published).
+    // The client must still reach the server with Query+MatchOnly.
+    const cacheMod = await import('../../src/utils/cache.js');
+    const cache = cacheMod.getGlobalCache();
+    cache.set(
+      cacheMod.CacheKeys.MODELS_RAW_LIST,
+      [makeApiModelItem({ Model: 'qwen-old' })],
+      cacheMod.CacheTTL.MODELS_LIST,
+    );
+
+    activeMock = mockFetch({
+      [cdnKey]: () => ({}),
+      '/data/v2/api.json': (req: { body?: string }) => {
+        const body = JSON.parse(req.body!);
+        if (body.action === 'DescribeFqInstance') {
+          return { code: '200', data: { Data: [] } };
+        }
+        // Expect a precise Query+MatchOnly fallback.
+        expect(body.action).toBe('ListModelSeries');
+        expect(String(body.params?.Query)).toBe('qwen-new');
+        expect(String(body.params?.MatchOnly)).toBe('true');
+        return listModelsResponse([makeApiModelItem({ Model: 'qwen-new' })]);
+      },
+    });
+
+    const { HttpApiClient } = await import('../../src/api/http-client.js');
+    const client = new HttpApiClient();
+    const detail = await client.getModel('qwen-new');
+    expect(detail.id).toBe('qwen-new');
+  });
 });
 
 describe('HttpApiClient.getModels', () => {
@@ -448,7 +521,22 @@ describe('HttpApiClient.ping', () => {
 });
 
 describe('HttpApiClient.checkVersion', () => {
-  it('returns local version with no remote check (V1 stub)', async () => {
+  it('queries GitHub and reports an available update when remote > local', async () => {
+    activeMock = mockFetch({
+      'api.github.com/repos/QianWen-AI/qianwen-cli/releases/latest': {
+        body: { tag_name: 'v99.0.0' },
+      },
+    });
+    const { HttpApiClient } = await import('../../src/api/http-client.js');
+    const client = new HttpApiClient();
+    const result = await client.checkVersion();
+    expect(result.latest).toBe('99.0.0');
+    expect(result.update_available).toBe(true);
+    expect(activeMock.wasCalled('api.github.com')).toBe(true);
+  });
+
+  it('silently falls back to no-update when the GitHub call fails', async () => {
+    // Empty route map → fetch returns 599 "not mocked" → fetchLatestVersion returns null.
     activeMock = mockFetch({});
     const { HttpApiClient } = await import('../../src/api/http-client.js');
     const client = new HttpApiClient();
@@ -459,8 +547,6 @@ describe('HttpApiClient.checkVersion', () => {
       update_available: false,
     });
     expect(result.current).toBe(result.latest);
-    // No HTTP call expected.
-    expect(activeMock.calls).toHaveLength(0);
   });
 });
 

@@ -123,9 +123,9 @@ describe('renderTextUsageSummary', () => {
     const vm = buildUsageSummaryViewModel(response);
     const out = captureStdout(() => renderTextUsageSummary(vm));
     expect(out).toContain('Token Plan');
-    expect(out).toContain('25K / 25K Credits');
+    expect(out).toContain('25,000 / 25,000 Credits');
     expect(out).toContain('valid');
-    expect(out).toContain('1K Credits');
+    expect(out).toContain('1,000 Credits');
   });
 
   it('skips Token Plan section when not subscribed', () => {

@@ -13,6 +13,7 @@ const CUR = site.features.currency === 'CNY' ? '¥' : '$';
  * JSON output should NEVER use this function - always output raw numbers.
  */
 export function humanizeNumber(n: number): string {
+  if (!Number.isFinite(n)) return '\u2014';
   if (n >= 1_000_000) {
     const val = n / 1_000_000;
     return val % 1 === 0 ? `${val}M` : `${parseFloat(val.toFixed(1))}M`;
@@ -29,6 +30,7 @@ export function humanizeNumber(n: number): string {
  * Examples: "850K tok", "1M tok", "50 img", "10K char"
  */
 export function humanizeWithUnit(n: number, unit: string): string {
+  if (!Number.isFinite(n)) return '\u2014';
   const shortUnit = unitAbbrev(unit);
   return `${humanizeNumber(n)} ${shortUnit}`;
 }
@@ -69,14 +71,14 @@ function unitAbbrev(unit: string): string {
  * Examples: "¥0.50", "¥2.00", "¥0.14/¥0.56"
  */
 export function formatPrice(amount: number): string {
-  return `${CUR}${amount.toFixed(2)}`;
+  return `${CUR}${formatAmount(amount)}`;
 }
 
 /**
  * Format cost (remove trailing zeros if possible but keep at least 2 decimals).
  */
 export function formatCost(amount: number): string {
-  return `${CUR}${amount.toFixed(2)}`;
+  return `${CUR}${formatAmount(amount)}`;
 }
 
 /**
@@ -133,4 +135,19 @@ export function formatNextReset(isoDate: string): string {
   const now = new Date();
   const diffMs = reset.getTime() - now.getTime();
   return humanizeDuration(diffMs, 'in ');
+}
+
+/**
+ * Format a numeric price amount for display.
+ *
+ * Modes:
+ * - 'full' (default): use toPrecision(10) + parseFloat to strip floating-point
+ *   noise and trailing zeros. Produces the shortest accurate representation
+ *   (e.g. 0.4 instead of 0.40).
+ * - 'fixed': classic toFixed(2) for fixed 2-decimal display.
+ */
+export function formatAmount(value: number, mode: 'full' | 'fixed' = 'full'): string {
+  if (!Number.isFinite(value)) return '0';
+  if (mode === 'fixed') return value.toFixed(2);
+  return String(parseFloat(value.toPrecision(10)));
 }

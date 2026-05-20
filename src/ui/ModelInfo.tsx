@@ -164,7 +164,7 @@ function FreeTierContent({ vm, width }: { vm: ModelDetailViewModel; width: numbe
     return (
       <CardLine width={width}>
         <Text>
-          {theme.success('Free')} {theme.muted('(Early Access — no paid option)')}
+          {theme.success('FreeTier Only')}
         </Text>
       </CardLine>
     );
@@ -177,7 +177,7 @@ function FreeTierContent({ vm, width }: { vm: ModelDetailViewModel; width: numbe
     ft.remainingPct !== undefined
   ) {
     const bar = progressBar(ft.remainingPct);
-    const pctStr = ft.statusLabel ?? `${ft.remainingPct.toFixed(1)}%`;
+    const pctStr = ft.statusLabel ?? `${ft.remainingPct.toFixed(2)}%`;
     return (
       <>
         <CardLine width={width}>
@@ -214,24 +214,43 @@ function PricingContent({
   builtInTools: BuiltInToolViewModel[];
   width: number;
 }) {
+  // no_pricing: uniform single-line placeholder regardless of modality
+  if (pricingType === 'no_pricing' || pricingLines.length === 0) {
+    return (
+      <CardLine width={width}>
+        <Text>{theme.muted('\u2014')}</Text>
+      </CardLine>
+    );
+  }
   if (pricingType === 'llm') {
     return <LlmPricing pricingLines={pricingLines} builtInTools={builtInTools} width={width} />;
   }
   if (pricingType === 'video') {
     return <VideoPricing pricingLines={pricingLines} width={width} />;
   }
-  // image, tts, asr, embedding — single price line
-  const first = pricingLines[0];
-  if (!first) return null;
-  const label = first.cells.label ? first.cells.label + '  ' : '';
-  const price = first.cells.price ?? '';
+  if (pricingType === 'image' && pricingLines.length > 1) {
+    // Tiered image pricing (volume brackets) — table layout like video
+    return <ImageTieredPricing pricingLines={pricingLines} width={width} />;
+  }
+  if (pricingType === 'itemized') {
+    return <ItemizedPricingTable pricingLines={pricingLines} width={width} />;
+  }
+  // image (single), tts, asr, embedding — render all pricing lines
   return (
-    <CardLine width={width}>
-      <Text>
-        {theme.muted(label)}
-        {theme.accent(price)}
-      </Text>
-    </CardLine>
+    <>
+      {pricingLines.map((line, i) => {
+        const label = line.cells.label ? line.cells.label + '  ' : '';
+        const price = line.cells.price ?? '';
+        return (
+          <CardLine key={i} width={width}>
+            <Text>
+              {theme.muted(label)}
+              {theme.accent(price)}
+            </Text>
+          </CardLine>
+        );
+      })}
+    </>
   );
 }
 
@@ -246,19 +265,6 @@ function LlmPricing({
 }) {
   const innerWidth = Math.max(0, width - 6);
   const hasCache = pricingLines.some((l) => l.cells.cacheCreation != null);
-  const allFree = pricingLines.every(
-    (l) => l.cells.input.includes('0.00') && l.cells.output.includes('0.00'),
-  );
-
-  if (allFree && pricingLines.length === 1) {
-    return (
-      <CardLine width={width}>
-        <Text bold>
-          {theme.success('Free')} {theme.muted('(Early Access)')}
-        </Text>
-      </CardLine>
-    );
-  }
 
   // Column widths (content only — separators ` │ ` are added between)
   // Use visibleWidth so CJK labels (e.g. "标准版") are measured correctly
@@ -370,6 +376,82 @@ function LlmPricing({
   }
 
   return <>{nodes}</>;
+}
+
+function ImageTieredPricing({
+  pricingLines,
+  width,
+}: {
+  pricingLines: PricingLineViewModel[];
+  width: number;
+}) {
+  const innerWidth = Math.max(0, width - 6);
+  const COL_BRACKET = maxVisibleWidth(pricingLines.map((l) => l.cells.label), 10);
+  const COL_PRICE = maxVisibleWidth(pricingLines.map((l) => l.cells.price), 5);
+
+  const headerStr = [padEndVisible('Tier', COL_BRACKET), padEndVisible('Price', COL_PRICE)]
+    .join(' │ ')
+    .padEnd(innerWidth);
+
+  return (
+    <>
+      <CardLine width={width}>
+        <Text bold color={theme.tableHeader.fg} backgroundColor={theme.tableHeader.bg}>
+          {headerStr}
+        </Text>
+      </CardLine>
+      <CardLine width={width}>
+        <Text>{buildSep([COL_BRACKET, COL_PRICE], innerWidth)}</Text>
+      </CardLine>
+      {pricingLines.map((line, i) => (
+        <CardLine key={`price-${i}`} width={width}>
+          <Text>
+            {[padEndVisible(line.cells.label, COL_BRACKET), theme.accent(line.cells.price)].join(COL_DIV)}
+          </Text>
+        </CardLine>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Generic itemized pricing table — fallback for price items that cannot be
+ * classified into any specialised structure. Two-column layout: Item | Price.
+ */
+function ItemizedPricingTable({
+  pricingLines,
+  width,
+}: {
+  pricingLines: PricingLineViewModel[];
+  width: number;
+}) {
+  const innerWidth = Math.max(0, width - 6);
+  const COL_ITEM = maxVisibleWidth(pricingLines.map((l) => l.cells.label), 4);
+  const COL_PRICE = maxVisibleWidth(pricingLines.map((l) => l.cells.price), 5);
+
+  const headerStr = [padEndVisible('Item', COL_ITEM), padEndVisible('Price', COL_PRICE)]
+    .join(' │ ')
+    .padEnd(innerWidth);
+
+  return (
+    <>
+      <CardLine width={width}>
+        <Text bold color={theme.tableHeader.fg} backgroundColor={theme.tableHeader.bg}>
+          {headerStr}
+        </Text>
+      </CardLine>
+      <CardLine width={width}>
+        <Text>{buildSep([COL_ITEM, COL_PRICE], innerWidth)}</Text>
+      </CardLine>
+      {pricingLines.map((line, i) => (
+        <CardLine key={`price-${i}`} width={width}>
+          <Text>
+            {[padEndVisible(line.cells.label, COL_ITEM), theme.accent(line.cells.price)].join(COL_DIV)}
+          </Text>
+        </CardLine>
+      ))}
+    </>
+  );
 }
 
 function VideoPricing({

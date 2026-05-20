@@ -2,6 +2,7 @@ export interface ConfigSchema {
   'output.format': 'auto' | 'table' | 'json' | 'text';
   'api.endpoint': string;
   'auth.endpoint': string; // Auth API base URL
+  'cache.ttl': string; // File cache TTL in milliseconds. '0' disables file cache. Hidden from `config list`.
 }
 
 export type ConfigKey = keyof ConfigSchema;
