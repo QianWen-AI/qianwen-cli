@@ -3,7 +3,7 @@
  *
  * Strategy:
  * - Mock `createClient` → `MockApiClient` (zero real API calls)
- * - Mock `credentials` → bypass real authentication
+ * - Mock authentication layer.
  * - Mock `config/manager` → avoid reading real config files
  * - Test each command across three dimensions:
  *   1. JSON output: full pipeline verification via JSON.parse
@@ -41,7 +41,7 @@ vi.mock('../../src/auth/credentials.js', async (importOriginal) => {
     isTokenExpired: () => false,
     getTokenRemainingTime: () => '2h 0m',
     clearCredentialsCache: () => undefined,
-    warnIfTokenExpiringSoon: () => undefined,
+    getTokenExpiryWarning: () => null,
   };
 });
 
@@ -61,11 +61,12 @@ vi.mock('../../src/config/manager.js', async (importOriginal) => {
       value: defaults[key] ?? '',
       source: 'default' as const,
     }),
-    getConfigEntries: (opts?: any) => Object.entries(defaults).map(([key, value]) => ({
-      key,
-      value,
-      source: 'default' as const,
-    })),
+    getConfigEntries: (opts?: any) =>
+      Object.entries(defaults).map(([key, value]) => ({
+        key,
+        value,
+        source: 'default' as const,
+      })),
   };
 });
 
@@ -74,7 +75,6 @@ import { runCommand, runCommandJSON, runCommandJSONErr } from './helpers.js';
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('oneshot commands (integration)', () => {
-
   // ── Help & Version flags ────────────────────────────────────────────────
 
   describe('help & version flags', () => {
@@ -150,7 +150,13 @@ describe('oneshot commands (integration)', () => {
     });
 
     it('info --format json: model detail with all fields', async () => {
-      const { data, exitCode } = await runCommandJSON(['models', 'info', 'qwen3.6-plus', '--format', 'json']);
+      const { data, exitCode } = await runCommandJSON([
+        'models',
+        'info',
+        'qwen3.6-plus',
+        '--format',
+        'json',
+      ]);
       const json = data as any;
 
       expect(exitCode).toBe(0);
@@ -166,7 +172,13 @@ describe('oneshot commands (integration)', () => {
     });
 
     it('info unknown-model --format json: error with MODEL_NOT_FOUND', async () => {
-      const { data, exitCode } = await runCommandJSONErr(['models', 'info', 'nonexistent-model-xyz', '--format', 'json']);
+      const { data, exitCode } = await runCommandJSONErr([
+        'models',
+        'info',
+        'nonexistent-model-xyz',
+        '--format',
+        'json',
+      ]);
       const json = data as any;
 
       expect(exitCode).toBe(1); // GENERAL_ERROR
@@ -176,7 +188,13 @@ describe('oneshot commands (integration)', () => {
     });
 
     it('search --format json: filtered results', async () => {
-      const { data, exitCode } = await runCommandJSON(['models', 'search', 'qwen', '--format', 'json']);
+      const { data, exitCode } = await runCommandJSON([
+        'models',
+        'search',
+        'qwen',
+        '--format',
+        'json',
+      ]);
       const json = data as any;
 
       expect(exitCode).toBe(0);
@@ -186,7 +204,13 @@ describe('oneshot commands (integration)', () => {
     });
 
     it('search no-match --format json: empty result', async () => {
-      const { data, exitCode } = await runCommandJSON(['models', 'search', 'zzz-nonexistent-zzz', '--format', 'json']);
+      const { data, exitCode } = await runCommandJSON([
+        'models',
+        'search',
+        'zzz-nonexistent-zzz',
+        '--format',
+        'json',
+      ]);
       const json = data as any;
 
       expect(exitCode).toBe(0);
@@ -196,7 +220,13 @@ describe('oneshot commands (integration)', () => {
     });
 
     it('list --all --format json: returns every model in one response, no pagination keys', async () => {
-      const { data, exitCode } = await runCommandJSON(['models', 'list', '--all', '--format', 'json']);
+      const { data, exitCode } = await runCommandJSON([
+        'models',
+        'list',
+        '--all',
+        '--format',
+        'json',
+      ]);
       const json = data as any;
       expect(exitCode).toBe(0);
       expect(json.all).toBe(true);
@@ -207,7 +237,14 @@ describe('oneshot commands (integration)', () => {
     });
 
     it('list --page 9999 --format json: empty models, requested page preserved', async () => {
-      const { data, exitCode } = await runCommandJSON(['models', 'list', '--page', '9999', '--format', 'json']);
+      const { data, exitCode } = await runCommandJSON([
+        'models',
+        'list',
+        '--page',
+        '9999',
+        '--format',
+        'json',
+      ]);
       const json = data as any;
       expect(exitCode).toBe(0);
       expect(json.models).toEqual([]);
@@ -218,7 +255,14 @@ describe('oneshot commands (integration)', () => {
     });
 
     it('list --input pdf --format json: INVALID_MODALITY error to stderr, exit 1', async () => {
-      const { data, exitCode } = await runCommandJSONErr(['models', 'list', '--input', 'pdf', '--format', 'json']);
+      const { data, exitCode } = await runCommandJSONErr([
+        'models',
+        'list',
+        '--input',
+        'pdf',
+        '--format',
+        'json',
+      ]);
       const json = data as any;
       expect(exitCode).toBe(1);
       expect(json.error.code).toBe('INVALID_MODALITY');
@@ -242,9 +286,12 @@ describe('oneshot commands (integration)', () => {
 
     it('breakdown --model --format json: rows and total', async () => {
       const { data, exitCode } = await runCommandJSON([
-        'usage', 'breakdown',
-        '--model', 'qwen3.6-plus',
-        '--format', 'json',
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen3.6-plus',
+        '--format',
+        'json',
       ]);
       const json = data as any;
 
@@ -255,10 +302,7 @@ describe('oneshot commands (integration)', () => {
     });
 
     it('breakdown without --model: Commander error with non-zero exit', async () => {
-      const result = await runCommand([
-        'usage', 'breakdown',
-        '--format', 'json',
-      ]);
+      const result = await runCommand(['usage', 'breakdown', '--format', 'json']);
 
       // Commander catches missing required option before our action runs
       expect(result.exitCode).not.toBe(0);
@@ -314,7 +358,13 @@ describe('oneshot commands (integration)', () => {
       // Mocked config has no overrides, so every key resolves to its built-in
       // default. Agents need the `source` field to know whether a value comes
       // from a project file, the global file, or the default.
-      const { data, exitCode } = await runCommandJSON(['config', 'get', 'output.format', '--format', 'json']);
+      const { data, exitCode } = await runCommandJSON([
+        'config',
+        'get',
+        'output.format',
+        '--format',
+        'json',
+      ]);
       const json = data as any;
       expect(exitCode).toBe(0);
       expect(json.key).toBe('output.format');

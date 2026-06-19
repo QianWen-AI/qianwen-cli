@@ -8,15 +8,24 @@ import { renderTextModelsList } from '../../src/output/text/models.js';
 import type { Model, ModelDetail } from '../../src/types/model.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 describe('MODEL_LIST_COLUMNS', () => {
   it('exports 8 column definitions with split fields', () => {
     expect(MODEL_LIST_COLUMNS).toHaveLength(8);
-    expect(MODEL_LIST_COLUMNS.map(c => c.key)).toEqual([
-      'id', 'modalityInput', 'modalityOutput',
-      'freeTierAmt', 'freeTierUnit', 'freeTierBar',
-      'price', 'priceUnit',
+    expect(MODEL_LIST_COLUMNS.map((c) => c.key)).toEqual([
+      'id',
+      'modalityInput',
+      'modalityOutput',
+      'freeTierAmt',
+      'freeTierUnit',
+      'freeTierBar',
+      'price',
+      'priceUnit',
     ]);
     expect(MODEL_LIST_COLUMNS[0].color).toBeDefined();
     expect(MODEL_LIST_COLUMNS[3].align).toBe('right'); // freeTierAmt
@@ -35,9 +44,7 @@ describe('buildModelsViewModel (pure ViewModel)', () => {
         quota: { remaining: 850000, total: 1000000, unit: 'tokens', used_pct: 15, status: 'valid' },
       },
       pricing: {
-        tiers: [
-          { label: '≤ 256K', input: 0.50, output: 3.00, unit: 'USD/1M tokens' },
-        ],
+        tiers: [{ label: '≤ 256K', input: 0.5, output: 3.0, unit: 'USD/1M tokens' }],
       },
     },
     {
@@ -124,9 +131,7 @@ describe('buildModelsUiData (UI data with progress bar)', () => {
         quota: { remaining: 850000, total: 1000000, unit: 'tokens', used_pct: 15, status: 'valid' },
       },
       pricing: {
-        tiers: [
-          { label: '≤ 256K', input: 0.50, output: 3.00, unit: 'USD/1M tokens' },
-        ],
+        tiers: [{ label: '≤ 256K', input: 0.5, output: 3.0, unit: 'USD/1M tokens' }],
       },
     },
     {
@@ -200,8 +205,8 @@ describe('buildModelsUiData (UI data with progress bar)', () => {
         features: [],
         pricing: {
           tiers: [
-            { label: '≤ 128K', input: 0.25, output: 1.50, unit: 'USD/1M tokens' },
-            { label: '128K – 1M', input: 1.00, output: 4.00, unit: 'USD/1M tokens' },
+            { label: '≤ 128K', input: 0.25, output: 1.5, unit: 'USD/1M tokens' },
+            { label: '128K – 1M', input: 1.0, output: 4.0, unit: 'USD/1M tokens' },
           ],
         },
         context: { context_window: 128000 },
@@ -230,13 +235,19 @@ describe('buildModelsUiData (UI data with progress bar)', () => {
         can_try: true,
         free_tier: {
           mode: 'standard',
-          quota: { remaining: 500000, total: 1000000, unit: 'tokens', used_pct: 50, status: 'valid' },
+          quota: {
+            remaining: 500000,
+            total: 1000000,
+            unit: 'tokens',
+            used_pct: 50,
+            status: 'valid',
+          },
         },
         pricing: {
           tiers: [
-            { label: '≤ 128K', input: 0.10, output: 0.50, unit: 'USD/1M' },
-            { label: '128K – 512K', input: 0.50, output: 1.50, unit: 'USD/1M' },
-            { label: '512K+', input: 2.00, output: 6.00, unit: 'USD/1M' },
+            { label: '≤ 128K', input: 0.1, output: 0.5, unit: 'USD/1M' },
+            { label: '128K – 512K', input: 0.5, output: 1.5, unit: 'USD/1M' },
+            { label: '512K+', input: 2.0, output: 6.0, unit: 'USD/1M' },
           ],
         },
       },
@@ -310,7 +321,7 @@ describe('buildModelsUiData (UI data with progress bar)', () => {
         modality: { input: ['text'], output: ['vector'] },
         can_try: false,
         free_tier: { mode: null, quota: null },
-        pricing: { per_token: { price: 0.10, unit: 'USD/1M tokens' } },
+        pricing: { per_token: { price: 0.1, unit: 'USD/1M tokens' } },
       },
     ] as unknown as Model[];
     const uiData = buildModelsUiData(models);
@@ -326,12 +337,16 @@ describe('buildModelsUiData (UI data with progress bar)', () => {
         can_try: true,
         free_tier: {
           mode: 'standard',
-          quota: { remaining: 1000000, total: 1000000, unit: 'tokens', used_pct: 0, status: 'valid' },
+          quota: {
+            remaining: 1000000,
+            total: 1000000,
+            unit: 'tokens',
+            used_pct: 0,
+            status: 'valid',
+          },
         },
         pricing: {
-          tiers: [
-            { label: 'Free tier', input: 0, output: 0, unit: 'USD/1M' },
-          ],
+          tiers: [{ label: 'Free tier', input: 0, output: 0, unit: 'USD/1M' }],
         },
       },
     ] as unknown as Model[];

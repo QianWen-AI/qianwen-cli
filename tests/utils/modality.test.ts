@@ -9,7 +9,9 @@ describe('formatModality', () => {
   });
 
   it('formats multiple inputs with single output', () => {
-    expect(formatModality({ input: ['text', 'image', 'video'], output: ['text'] })).toBe('Text+Img+Video→Text');
+    expect(formatModality({ input: ['text', 'image', 'video'], output: ['text'] })).toBe(
+      'Text+Img+Video→Text',
+    );
   });
 
   it('formats single input with multiple outputs', () => {
@@ -17,10 +19,12 @@ describe('formatModality', () => {
   });
 
   it('formats all modalities', () => {
-    expect(formatModality({
-      input: ['text', 'image', 'video', 'audio'],
-      output: ['text', 'audio'],
-    })).toBe('Text+Img+Video+Audio→Text+Audio');
+    expect(
+      formatModality({
+        input: ['text', 'image', 'video', 'audio'],
+        output: ['text', 'audio'],
+      }),
+    ).toBe('Text+Img+Video+Audio→Text+Audio');
   });
 
   it('handles vector output', () => {

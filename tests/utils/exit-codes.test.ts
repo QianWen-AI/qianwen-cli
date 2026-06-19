@@ -11,39 +11,43 @@ describe('EXIT_CODES contract', () => {
     expect(EXIT_CODES.AUTH_FAILURE).toBe(2);
     expect(EXIT_CODES.NETWORK_ERROR).toBe(3);
     expect(EXIT_CODES.CONFIG_ERROR).toBe(4);
+    expect(EXIT_CODES.INVALID_ARGUMENT).toBe(4);
+    expect(EXIT_CODES.TASK_NOT_COMPLETED).toBe(8);
     expect(EXIT_CODES.USER_INTERRUPT).toBe(130);
   });
 
-  it('exposes all nine known exit codes (no extras silently added)', () => {
+  it('exposes all known exit codes (no extras silently added)', () => {
     expect(Object.keys(EXIT_CODES).sort()).toEqual(
       [
         'AUTH_FAILURE',
         'CONFIG_ERROR',
         'GENERAL_ERROR',
+        'INVALID_ARGUMENT',
         'NETWORK_ERROR',
         'NOT_FOUND',
         'RATE_LIMITED',
         'SERVER_ERROR',
         'SUCCESS',
+        'TASK_NOT_COMPLETED',
         'USER_INTERRUPT',
       ].sort(),
     );
   });
 
   it('ExitCode type accepts every EXIT_CODES value', () => {
-    // Compile-time check: each value should satisfy ExitCode. We surface this
-    // as a runtime no-op so the test file fails to compile if the type drifts.
     const values: ExitCode[] = [
       EXIT_CODES.SUCCESS,
       EXIT_CODES.GENERAL_ERROR,
       EXIT_CODES.AUTH_FAILURE,
       EXIT_CODES.NETWORK_ERROR,
       EXIT_CODES.CONFIG_ERROR,
+      EXIT_CODES.INVALID_ARGUMENT,
       EXIT_CODES.RATE_LIMITED,
       EXIT_CODES.SERVER_ERROR,
       EXIT_CODES.NOT_FOUND,
+      EXIT_CODES.TASK_NOT_COMPLETED,
       EXIT_CODES.USER_INTERRUPT,
     ];
-    expect(values).toHaveLength(9);
+    expect(values).toHaveLength(11);
   });
 });

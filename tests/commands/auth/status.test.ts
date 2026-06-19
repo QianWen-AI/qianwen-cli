@@ -66,12 +66,13 @@ describe('auth status command', () => {
       },
     });
     holder.client = makeMockApiClient({
-      getAuthStatus: async () => ({
-        authenticated: true,
-        server_verified: true,
-        user: { aliyunId: '12345', email: 'demo@qwen.dev' },
-        token: { scopes: ['read', 'write'] },
-      } as any),
+      getAuthStatus: async () =>
+        ({
+          authenticated: true,
+          server_verified: true,
+          user: { aliyunId: '12345', email: 'demo@qwen.dev' },
+          token: { scopes: ['read', 'write'] },
+        }) as any,
     });
     const r = await runCommand(
       (program) => {

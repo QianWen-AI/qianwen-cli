@@ -78,8 +78,9 @@ export function resolveDateRange(options: {
   const today = formatDate(now);
 
   // Priority 1: explicit from/to
-  if (options.from) {
-    return { from: options.from, to: options.to || today };
+  if (options.from || options.to) {
+    const from = options.from ?? (options.to ? `${options.to.slice(0, 7)}-01` : today);
+    return { from, to: options.to || today };
   }
 
   // Priority 2: --days shorthand
@@ -119,6 +120,25 @@ export function validateDateRange(from: string, to: string): void {
     err.name = 'InvalidDateRangeError';
     throw err;
   }
+}
+
+/**
+ * Expand a YYYY-MM input to a full YYYY-MM-DD date by attaching the
+ * first day for a range start and the calendar's last day for a range
+ * end. Inputs already in YYYY-MM-DD form are returned unchanged. Other
+ * formats are returned as-is so callers can surface their own validation.
+ */
+export function normalizeToFullDate(dateStr: string, position: 'start' | 'end'): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  const match = dateStr.match(/^(\d{4})-(\d{2})$/);
+  if (!match) return dateStr;
+  const year = parseInt(match[1]!, 10);
+  const month = parseInt(match[2]!, 10);
+  if (position === 'start') {
+    return `${match[1]}-${match[2]}-01`;
+  }
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${match[1]}-${match[2]}-${String(lastDay).padStart(2, '0')}`;
 }
 
 /**

@@ -56,7 +56,6 @@ export type {
   UsageBreakdownOptions,
 } from './api/client.js';
 export { createClient } from './api/client.js';
-export { HttpApiClient } from './api/http-client.js';
 
 // Cache utilities
 export {

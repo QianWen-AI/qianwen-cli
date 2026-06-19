@@ -16,28 +16,40 @@ describe('inferBillingUnitFromModel', () => {
   describe('priority 1: free_tier.quota.unit', () => {
     it('returns "images" when quota.unit is images', () => {
       const m = makeModel({
-        free_tier: { mode: 'standard', quota: { remaining: 0, total: 100, unit: 'images', used_pct: 0 } },
+        free_tier: {
+          mode: 'standard',
+          quota: { remaining: 0, total: 100, unit: 'images', used_pct: 0 },
+        },
       });
       expect(inferBillingUnitFromModel(m)).toBe('images');
     });
 
     it('returns "seconds" when quota.unit is seconds', () => {
       const m = makeModel({
-        free_tier: { mode: 'standard', quota: { remaining: 0, total: 1000, unit: 'seconds', used_pct: 0 } },
+        free_tier: {
+          mode: 'standard',
+          quota: { remaining: 0, total: 1000, unit: 'seconds', used_pct: 0 },
+        },
       });
       expect(inferBillingUnitFromModel(m)).toBe('seconds');
     });
 
     it('returns "characters" when quota.unit is characters', () => {
       const m = makeModel({
-        free_tier: { mode: 'standard', quota: { remaining: 0, total: 1000, unit: 'characters', used_pct: 0 } },
+        free_tier: {
+          mode: 'standard',
+          quota: { remaining: 0, total: 1000, unit: 'characters', used_pct: 0 },
+        },
       });
       expect(inferBillingUnitFromModel(m)).toBe('characters');
     });
 
     it('returns "tokens" when quota.unit is tokens', () => {
       const m = makeModel({
-        free_tier: { mode: 'standard', quota: { remaining: 0, total: 1000, unit: 'tokens', used_pct: 0 } },
+        free_tier: {
+          mode: 'standard',
+          quota: { remaining: 0, total: 1000, unit: 'tokens', used_pct: 0 },
+        },
       });
       expect(inferBillingUnitFromModel(m)).toBe('tokens');
     });
@@ -74,7 +86,9 @@ describe('inferBillingUnitFromModel', () => {
 
     it('returns "tokens" for tiered LLM pricing', () => {
       const m = makeModel({
-        pricing: { tiers: [{ label: 'default', input: 0.5, output: 3, unit: 'USD/1M tokens' }] } as any,
+        pricing: {
+          tiers: [{ label: 'default', input: 0.5, output: 3, unit: 'USD/1M tokens' }],
+        } as any,
       });
       expect(inferBillingUnitFromModel(m)).toBe('tokens');
     });
@@ -107,8 +121,13 @@ describe('inferBillingUnitFromModel', () => {
       // qwen3.5-omni-plus: output=[text, audio], quota.unit=tokens, pricing=tiers
       const m = makeModel({
         modality: { input: ['text'], output: ['text', 'audio'] },
-        free_tier: { mode: 'standard', quota: { remaining: 0, total: 1000, unit: 'tokens', used_pct: 0 } },
-        pricing: { tiers: [{ label: 'default', input: 0.5, output: 3, unit: 'USD/1M tokens' }] } as any,
+        free_tier: {
+          mode: 'standard',
+          quota: { remaining: 0, total: 1000, unit: 'tokens', used_pct: 0 },
+        },
+        pricing: {
+          tiers: [{ label: 'default', input: 0.5, output: 3, unit: 'USD/1M tokens' }],
+        } as any,
       });
       expect(inferBillingUnitFromModel(m)).toBe('tokens');
     });

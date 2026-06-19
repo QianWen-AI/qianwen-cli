@@ -20,6 +20,12 @@ export interface TableProps {
   footer?: Record<string, string>;
   rowColor?: (row: Record<string, string>, index: number) => ((text: string) => string) | undefined;
   paddingLeft?: number;
+  /**
+   * Truncate each row to the terminal width instead of letting the terminal
+   * wrap it. Keeps physical line count equal to logical line count, which is
+   * required for correct frame erasure during interactive (redrawn) rendering.
+   */
+  truncate?: boolean;
 }
 
 /** Pad a pre-colored string to a fixed visual width. */
@@ -36,7 +42,15 @@ function padCell(value: string, width: number, align: 'left' | 'right' = 'left')
 const DIV = theme.border(' │ '); // data rows
 const DIV_SEP = '─┼─'; // separator row (drawn in border color)
 
-export function Table({ columns, data, footer, rowColor, paddingLeft = 2 }: TableProps) {
+export function Table({
+  columns,
+  data,
+  footer,
+  rowColor,
+  paddingLeft = 2,
+  truncate = false,
+}: TableProps) {
+  const wrap = truncate ? 'truncate-end' : undefined;
   // ── 1. Calculate fixed column widths ────────────────────────────────────────
   const colWidths = columns.map((col) => {
     const headerLen = col.header.length;
@@ -87,7 +101,7 @@ export function Table({ columns, data, footer, rowColor, paddingLeft = 2 }: Tabl
       }
 
       return (
-        <Text key={col.key}>
+        <Text key={col.key} wrap={wrap}>
           {cell}
           {div}
         </Text>
@@ -99,13 +113,13 @@ export function Table({ columns, data, footer, rowColor, paddingLeft = 2 }: Tabl
     <Box flexDirection="column" paddingLeft={paddingLeft}>
       {/* ── Header row with bg color ── */}
       <Box>
-        <Text bold color={theme.tableHeader.fg} backgroundColor={theme.tableHeader.bg}>
+        <Text bold color={theme.tableHeader.fg} backgroundColor={theme.tableHeader.bg} wrap={wrap}>
           {headerStr}
         </Text>
       </Box>
 
       {/* ── Separator (─┼─ pattern, brand dark purple) ── */}
-      <Text>{separator}</Text>
+      <Text wrap={wrap}>{separator}</Text>
 
       {/* ── Data rows ── */}
       {data.map((row, rowIndex) => (
@@ -115,7 +129,7 @@ export function Table({ columns, data, footer, rowColor, paddingLeft = 2 }: Tabl
       {/* ── Footer ── */}
       {footer && (
         <>
-          <Text>{separator}</Text>
+          <Text wrap={wrap}>{separator}</Text>
           <Box>{renderRow(footer, true)}</Box>
         </>
       )}

@@ -56,7 +56,6 @@ export default tseslint.config(
     files: [
       'src/repl.ts', // commander + readline private APIs
       'src/ui/render.tsx', // Ink + Node stream listener
-      'src/api/http-client.ts', // upstream API dynamic fields
       'src/commands/**/*.{ts,tsx}', // commander action signatures
       'src/view-models/usage.ts', // API response extended fields
     ],

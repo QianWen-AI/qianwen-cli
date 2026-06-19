@@ -16,6 +16,7 @@ import { InteractiveTable } from '../../ui/InteractiveTable.js';
 import { renderInteractive } from '../../ui/render.js';
 import { withSpinner } from '../../ui/spinner.js';
 import { theme } from '../../ui/theme.js';
+import { renderTextUsagePayg } from '../../output/text/usage.js';
 
 /**
  * Register the `usage payg` action.
@@ -79,10 +80,7 @@ export function usagePaygAction(cmd: Command): (...args: any[]) => void | Promis
       }
 
       if (format === 'text') {
-        for (const row of payg.rows) {
-          console.log(`${row.modelId}  ${row.usage}  ${row.cost}`);
-        }
-        console.log(`Total  ${payg.total.cost}`);
+        renderTextUsagePayg(payg.rows, payg.total);
         return;
       }
 

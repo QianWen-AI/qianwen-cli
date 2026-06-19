@@ -1,18 +1,6 @@
 // ============================================================
 // System Keychain read/write module
-// References the Python keyring library's behavior, using each platform's
-// native CLI to access the OS keychain.
-// macOS: security CLI (consistent with Python keyring's underlying impl)
-// Linux: secret-tool (GNOME Secret Service / D-Bus)
-// Windows: PowerShell CredentialManager module
-//
-// Availability detection is intentionally lightweight: it only checks whether
-// the underlying CLI exists. Detecting "the CLI exists but the keychain agent
-// is unreachable" (e.g. SSH/headless sessions on macOS, locked keychain) is
-// handled at the storage layer (see writeCredentials in credentials.ts), which
-// performs a write-then-readback verification and falls back to the encrypted
-// file when the keychain silently fails.
-//
+// Platform-specific keychain access via system CLI.
 // Supports the `${envPrefix}_KEYRING` environment variable to skip the keychain.
 // ============================================================
 
@@ -206,14 +194,12 @@ export function deleteFromKeychain(): boolean {
  * the D-Bus session bus.
  */
 function linuxSecretServiceAvailable(): boolean {
-  // 1. Check whether the secret-tool command exists
   const versionResult = spawnSync('secret-tool', ['--version'], {
     encoding: 'utf-8',
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   if (versionResult.status !== 0) return false;
 
-  // 2. Check whether the Secret Service is registered on D-Bus
   const dbusResult = spawnSync(
     'dbus-send',
     [
@@ -232,12 +218,7 @@ function linuxSecretServiceAvailable(): boolean {
 /**
  * Check whether the system Keychain is *potentially* available.
  *
- * This is a lightweight check that only verifies whether the underlying CLI
- * exists. It intentionally does NOT verify that writes will actually persist
- * (e.g. macOS SecurityAgent reachability, Keychain unlocked state) — that
- * verification is performed at the storage layer via write-then-readback in
- * writeCredentials(), which automatically falls back to the encrypted file
- * when keychain writes silently fail.
+ * Lightweight check that only verifies whether the underlying CLI exists.
  *
  * Platforms:
  *   macOS:   /usr/bin/security exists (cheap exec check)
@@ -314,7 +295,7 @@ export function isKeychainAvailable(): boolean {
 }
 
 /**
- * Check whether QIANWEN_KEYRING is set to plaintext (debug mode).
+ * Check whether QIANWEN_KEYRING is set to plaintext.
  */
 export function isPlaintextMode(): boolean {
   return process.env[ENV_KEYRING]?.trim().toLowerCase() === 'plaintext';

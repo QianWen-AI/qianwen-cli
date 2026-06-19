@@ -18,7 +18,6 @@ export interface FreeTierUsage {
   } | null;
 }
 
-
 export interface TokenPlan {
   subscribed: boolean;
   planName?: string; // e.g. "Token Plan 团队版（月）"
@@ -29,7 +28,6 @@ export interface TokenPlan {
   resetDate?: string; // ISO date derived from EndTime ms timestamp
   addonRemaining?: number; // sum of all addon CurrCapacityBaseValue
 }
-
 
 export interface PayAsYouGo {
   models: PayAsYouGoModel[];
@@ -80,4 +78,29 @@ export interface UsageBreakdownTotal {
   usage?: UsageBreakdownUsage;
   cost?: number;
   currency?: string;
+}
+
+// Usage logs response
+export interface UsageEntry {
+  key: string;
+  value: number;
+}
+
+export interface UsageLogItem {
+  requestId: string;
+  model: string;
+  createdAt: string;
+  statusCode: number;
+  durationMs: number;
+  firstOutputDurationMs: number;
+  errorCode: string | null;
+  usages: UsageEntry[];
+}
+
+export interface UsageLogsResponse {
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  period: { from: string; to: string };
+  items: UsageLogItem[];
 }

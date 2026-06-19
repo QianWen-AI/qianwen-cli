@@ -1,13 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  setReplMode,
-  isReplMode,
-  loginCommand,
-  formatCmd,
-} from '../../src/utils/runtime-mode.js';
+import { setReplMode, isReplMode, loginCommand, formatCmd } from '../../src/utils/runtime-mode.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 // runtime-mode keeps a module-scoped flag. There's no public reset, so each
 // test must be aware of order. We test fresh-state behaviour first, then flip

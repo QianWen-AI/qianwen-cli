@@ -4,7 +4,11 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 let tmpDir: string;
 

@@ -3,7 +3,11 @@ import { buildDoctorViewModel } from '../../src/view-models/doctor.js';
 import type { DoctorCheck } from '../../src/view-models/doctor.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 describe('buildDoctorViewModel', () => {
   const baseChecks: DoctorCheck[] = [
@@ -11,7 +15,12 @@ describe('buildDoctorViewModel', () => {
     { name: 'auth', status: 'pass', detail: 'demo@qianwenai.com' },
     { name: 'token', status: 'pass', detail: 'expires in 23h 45m' },
     { name: 'network', status: 'pass', detail: 'latency 42ms' },
-    { name: 'shell_completion', status: 'warn', detail: 'not installed', action: `${s.cliName} completion install` },
+    {
+      name: 'shell_completion',
+      status: 'warn',
+      detail: 'not installed',
+      action: `${s.cliName} completion install`,
+    },
     { name: 'global_config', status: 'pass', detail: `~/${s.configDirName}/config.json` },
     { name: 'project_config', status: 'info', detail: 'not found, using global defaults' },
   ];
@@ -36,8 +45,15 @@ describe('buildDoctorViewModel', () => {
       { name: 'auth', status: 'fail', detail: 'Not authenticated', action: `${s.cliName} login` },
     ];
     // Override auth to fail (replace the pass one)
-    const allChecks = checks.filter((c, i, arr) => i < 5 || c.name !== 'auth' || c.status === 'fail');
-    allChecks[1] = { name: 'auth', status: 'fail', detail: 'Not authenticated', action: `${s.cliName} login` };
+    const allChecks = checks.filter(
+      (c, i, arr) => i < 5 || c.name !== 'auth' || c.status === 'fail',
+    );
+    allChecks[1] = {
+      name: 'auth',
+      status: 'fail',
+      detail: 'Not authenticated',
+      action: `${s.cliName} login`,
+    };
 
     const vm = buildDoctorViewModel('1.0.0', allChecks);
     expect(vm.exitCode).toBe(2);

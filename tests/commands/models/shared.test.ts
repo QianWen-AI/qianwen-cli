@@ -3,12 +3,17 @@ import {
   parsePaginationOptions,
   printPaginationFooter,
   buildModelRows,
+  resolveModelId,
   MODEL_LIST_COLUMNS,
 } from '../../../src/commands/models/shared.js';
 import type { Model, ModelDetail } from '../../../src/types/model.js';
 import { site } from '../../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 // ── Helpers ────────────────────────────────────────────────────────
 function makeLLM(overrides: Partial<Model> = {}): Model {
@@ -18,9 +23,7 @@ function makeLLM(overrides: Partial<Model> = {}): Model {
     can_try: true,
     free_tier: { mode: null, quota: null },
     pricing: {
-      tiers: [
-        { label: 'tier-1', input: 0.5, output: 1.5, unit: 'USD/1M tokens' },
-      ],
+      tiers: [{ label: 'tier-1', input: 0.5, output: 1.5, unit: 'USD/1M tokens' }],
     } as any,
     ...overrides,
   } as Model;
@@ -228,13 +231,42 @@ describe('buildModelRows', () => {
   });
 
   it('handles multiple models in one call', () => {
-    const models = [
-      makeLLM({ id: 'a' }),
-      makeLLM({ id: 'b' }),
-      makeLLM({ id: 'c' }),
-    ];
+    const models = [makeLLM({ id: 'a' }), makeLLM({ id: 'b' }), makeLLM({ id: 'c' })];
     const rows = buildModelRows(models, [null, null, null]);
     expect(rows).toHaveLength(3);
     expect(rows.map((r) => r.id)).toEqual(['a', 'b', 'c']);
+  });
+});
+
+// ── resolveModelId ─────────────────────────────────────────────────
+describe('resolveModelId', () => {
+  it('returns the flag value when --model carries a string id', () => {
+    expect(resolveModelId('ss', undefined)).toBe('ss');
+  });
+
+  it('returns null when --model is present without a value and no positional', () => {
+    // flag === true means "--model" was passed but no inline value supplied.
+    // null signals the action layer to emit "model ID is required".
+    expect(resolveModelId(true, undefined)).toBeNull();
+  });
+
+  it('falls back to the positional id when --model has no value', () => {
+    expect(resolveModelId(true, 'xyz')).toBe('xyz');
+  });
+
+  it('returns the positional id when --model is absent', () => {
+    expect(resolveModelId(undefined, 'abc')).toBe('abc');
+  });
+
+  it('returns null when neither flag nor positional is provided', () => {
+    expect(resolveModelId(undefined, undefined)).toBeNull();
+  });
+
+  it('returns null for a whitespace-only flag value', () => {
+    expect(resolveModelId('  ', undefined)).toBeNull();
+  });
+
+  it('returns null for an empty-string flag value', () => {
+    expect(resolveModelId('', undefined)).toBeNull();
   });
 });

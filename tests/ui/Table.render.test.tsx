@@ -11,9 +11,7 @@ describe('<Table /> rendering', () => {
   ];
 
   it('renders header + separator + data rows', () => {
-    const { lastFrame } = render(
-      <Table columns={cols} data={[{ name: 'Alice', age: '30' }]} />
-    );
+    const { lastFrame } = render(<Table columns={cols} data={[{ name: 'Alice', age: '30' }]} />);
     const out = lastFrame()!;
     expect(out).toContain('Name');
     expect(out).toContain('Age');
@@ -29,7 +27,7 @@ describe('<Table /> rendering', () => {
         columns={cols}
         data={[{ name: 'A', age: '1' }]}
         footer={{ name: 'Total', age: '1' }}
-      />
+      />,
     );
     const out = lastFrame()!;
     expect(out).toContain('Total');
@@ -42,12 +40,12 @@ describe('<Table /> rendering', () => {
       { key: 'c', header: 'C', maxWidth: 5 },
     ];
     const { lastFrame } = render(
-      <Table columns={colsWithWidth} data={[{ a: 'aa', b: 'b', c: 'cccccccc' }]} />
+      <Table columns={colsWithWidth} data={[{ a: 'aa', b: 'b', c: 'cccccccc' }]} />,
     );
     const out = stripAnsi(lastFrame() ?? '');
     const dataRow = out.split('\n')[2] ?? '';
     expect(dataRow).toContain('aa'); // a column shows
-    expect(dataRow).toContain('b');  // b column shows
+    expect(dataRow).toContain('b'); // b column shows
     // c column has maxWidth=5 → its visible cell shouldn't expand to fit the
     // 8-char 'cccccccc'. Total visible width capped roughly at:
     //   paddingLeft(2) + 12 + 3(sep) + 8 + 3(sep) + 5 = 33
@@ -77,7 +75,7 @@ describe('<Table /> rendering', () => {
     const rowColor = (_row: any, idx: number) =>
       idx === 0 ? (s: string) => `<R0>${s}</R0>` : undefined;
     const { lastFrame } = render(
-      <Table columns={c} data={[{ k: 'first' }, { k: 'second' }]} rowColor={rowColor} />
+      <Table columns={c} data={[{ k: 'first' }, { k: 'second' }]} rowColor={rowColor} />,
     );
     expect(lastFrame()).toContain('first');
     expect(lastFrame()).toContain('second');
@@ -91,15 +89,13 @@ describe('<Table /> rendering', () => {
   });
 
   it('handles missing keys (uses empty string)', () => {
-    const { lastFrame } = render(
-      <Table columns={cols} data={[{ name: 'OnlyName' } as any]} />
-    );
+    const { lastFrame } = render(<Table columns={cols} data={[{ name: 'OnlyName' } as any]} />);
     expect(lastFrame()).toContain('OnlyName');
   });
 
   it('respects custom paddingLeft', () => {
     const { lastFrame } = render(
-      <Table columns={cols} data={[{ name: 'A', age: '1' }]} paddingLeft={0} />
+      <Table columns={cols} data={[{ name: 'A', age: '1' }]} paddingLeft={0} />,
     );
     expect(lastFrame()).toBeTruthy();
   });
@@ -109,9 +105,7 @@ describe('<Table /> rendering', () => {
       { key: 'name', header: 'Name', width: 10 },
       { key: 'age', header: 'Age', width: 6, align: 'right' as const },
     ];
-    const { lastFrame } = render(
-      <Table columns={cols2} data={[{ name: 'A', age: '7' }]} />
-    );
+    const { lastFrame } = render(<Table columns={cols2} data={[{ name: 'A', age: '7' }]} />);
     const out = stripAnsi(lastFrame() ?? '');
     const dataRow = (out.split('\n')[2] ?? '').trimEnd();
     // For right-align width=6 with content '7': padding goes BEFORE the digit.
@@ -130,7 +124,7 @@ describe('<Table /> rendering', () => {
           { name: 'Bob', age: '25' },
           { name: 'Charlie', age: '40' },
         ]}
-      />
+      />,
     );
     const out = lastFrame()!;
     expect(out).toContain('Alice');
@@ -141,9 +135,7 @@ describe('<Table /> rendering', () => {
   it('renders footer with col.color: footer uses bold, NOT the per-column color wrapper', () => {
     const colorSpy = vi.fn((s: string) => `<C>${s}</C>`);
     const c = [{ key: 'x', header: 'X', color: colorSpy }];
-    const { lastFrame } = render(
-      <Table columns={c} data={[{ x: 'a' }]} footer={{ x: 'TOTAL' }} />
-    );
+    const { lastFrame } = render(<Table columns={c} data={[{ x: 'a' }]} footer={{ x: 'TOTAL' }} />);
     const out = lastFrame() ?? '';
     expect(out).toContain('TOTAL');
     // Data cell 'a' goes through col.color → '<C>...a...</C>' must appear
@@ -153,8 +145,8 @@ describe('<Table /> rendering', () => {
     expect(out).not.toMatch(/<C>[^<]*TOTAL/);
     // colorSpy was called for the data row's 'a' (1 cell), not for footer
     // (the spy may also be called once during width calculation; loose check)
-    const sawACell = colorSpy.mock.calls.some((args) =>
-      typeof args[0] === 'string' && args[0].includes('a')
+    const sawACell = colorSpy.mock.calls.some(
+      (args) => typeof args[0] === 'string' && args[0].includes('a'),
     );
     expect(sawACell).toBe(true);
   });
@@ -163,9 +155,7 @@ describe('<Table /> rendering', () => {
     const colColorSpy = vi.fn((s: string) => `<COL>${s}</COL>`);
     const c = [{ key: 'k', header: 'K', color: colColorSpy }];
     const rowColor = () => (s: string) => `<ROW>${s}</ROW>`;
-    const { lastFrame } = render(
-      <Table columns={c} data={[{ k: 'x' }]} rowColor={rowColor} />
-    );
+    const { lastFrame } = render(<Table columns={c} data={[{ k: 'x' }]} rowColor={rowColor} />);
     const out = lastFrame() ?? '';
     // rowColor wrapper appears
     expect(out).toContain('<ROW>');

@@ -5,7 +5,11 @@ import { join } from 'path';
 import crypto from 'crypto';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 // Provide a deterministic 32-byte fingerprint to skip expensive hardware probes.
 const FAKE_FINGERPRINT = crypto.createHash('sha256').update('test-fingerprint').digest();
@@ -78,9 +82,9 @@ describe('isEncryptedEnvelope', () => {
 
   it('returns false when required fields are missing', () => {
     expect(isEncryptedEnvelope(JSON.stringify({ version: 1, salt: 'a', nonce: 'b' }))).toBe(false);
-    expect(
-      isEncryptedEnvelope(JSON.stringify({ version: 1, salt: 'a', ciphertext: 'c' })),
-    ).toBe(false);
+    expect(isEncryptedEnvelope(JSON.stringify({ version: 1, salt: 'a', ciphertext: 'c' }))).toBe(
+      false,
+    );
   });
 
   it('returns false for null', () => {

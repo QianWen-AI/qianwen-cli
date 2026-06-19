@@ -1,11 +1,14 @@
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { runCommand } from '../helpers/run-command.js';
 import { makeMockApiClient } from '../helpers/api-client.js';
 import type { ApiClient } from '../../src/api/client.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 const holder: { client: ApiClient } = { client: makeMockApiClient() };
 const credResolveStub = vi.fn();
@@ -15,10 +18,9 @@ vi.mock('../../src/api/client.js', () => ({
 }));
 
 vi.mock('../../src/auth/credentials.js', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../src/auth/credentials.js')>(
-      '../../src/auth/credentials.js',
-    );
+  const actual = await vi.importActual<typeof import('../../src/auth/credentials.js')>(
+    '../../src/auth/credentials.js',
+  );
   return {
     ...actual,
     resolveCredentials: () => credResolveStub(),

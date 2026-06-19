@@ -21,13 +21,7 @@ export function levenshtein(a: string, b: string): number {
   return dp[m][n];
 }
 
-/**
- * Return the closest candidate within an edit-distance threshold scaled to
- * the input length, or null if nothing is close enough.
- *
- * Threshold: max(2, floor(input.length * 0.5))
- * — short inputs always allow up to 2 edits, longer inputs allow proportional drift.
- */
+/** Return the closest candidate within a length-scaled edit-distance threshold, or null. */
 export function didYouMean(input: string, candidates: string[]): string | null {
   if (!input || candidates.length === 0) return null;
 

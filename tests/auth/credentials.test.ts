@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { EXIT_CODES } from '../../src/utils/exit-codes.js';
 import { CliError } from '../../src/utils/errors.js';
 import type { Credentials } from '../../src/types/auth.js';
@@ -109,59 +109,38 @@ describe('getTokenRemainingTime', () => {
 
 // ── warnIfTokenExpiringSoon tests ───────────────────────────────────
 
-describe('warnIfTokenExpiringSoon', () => {
-  let warnIfTokenExpiringSoon: typeof import('../../src/auth/credentials.js').warnIfTokenExpiringSoon;
-  let stderrWriteSpy: any;
-  const originalIsTTY = process.stderr.isTTY;
+describe('getTokenExpiryWarning', () => {
+  let getTokenExpiryWarning: typeof import('../../src/auth/credentials.js').getTokenExpiryWarning;
 
   beforeEach(async () => {
     const mod = await import('../../src/auth/credentials.js');
-    warnIfTokenExpiringSoon = mod.warnIfTokenExpiringSoon;
-    stderrWriteSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    getTokenExpiryWarning = mod.getTokenExpiryWarning;
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-    Object.defineProperty(process.stderr, 'isTTY', { value: originalIsTTY, writable: true });
-  });
-
-  it('outputs warning on TTY when token expires within 4 hours', () => {
-    Object.defineProperty(process.stderr, 'isTTY', { value: true, writable: true });
+  it('returns warning message when token expires within 4 hours', () => {
     const creds = makeCredentials(hoursFromNow(2));
 
-    warnIfTokenExpiringSoon(creds);
+    const result = getTokenExpiryWarning(creds);
 
-    expect(stderrWriteSpy).toHaveBeenCalledTimes(1);
-    const output = stderrWriteSpy.mock.calls[0][0] as string;
-    expect(output).toContain('Token expires in');
-    expect(output).toContain('run auth login to refresh');
+    expect(result).not.toBeNull();
+    expect(result).toContain('Token expires in');
+    expect(result).toContain('run auth login to refresh');
   });
 
-  it('stays silent on non-TTY', () => {
-    Object.defineProperty(process.stderr, 'isTTY', { value: undefined, writable: true });
-    const creds = makeCredentials(hoursFromNow(2));
-
-    warnIfTokenExpiringSoon(creds);
-
-    expect(stderrWriteSpy).not.toHaveBeenCalled();
-  });
-
-  it('stays silent when token has more than 4 hours', () => {
-    Object.defineProperty(process.stderr, 'isTTY', { value: true, writable: true });
+  it('returns null when token has more than 4 hours', () => {
     const creds = makeCredentials(hoursFromNow(24));
 
-    warnIfTokenExpiringSoon(creds);
+    const result = getTokenExpiryWarning(creds);
 
-    expect(stderrWriteSpy).not.toHaveBeenCalled();
+    expect(result).toBeNull();
   });
 
-  it('stays silent when token is already expired', () => {
-    Object.defineProperty(process.stderr, 'isTTY', { value: true, writable: true });
+  it('returns null when token is already expired', () => {
     const creds = makeCredentials(new Date(Date.now() - 60000));
 
-    warnIfTokenExpiringSoon(creds);
+    const result = getTokenExpiryWarning(creds);
 
-    expect(stderrWriteSpy).not.toHaveBeenCalled();
+    expect(result).toBeNull();
   });
 });
 

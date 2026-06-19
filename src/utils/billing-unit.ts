@@ -10,17 +10,7 @@ const VALID_UNITS: ReadonlySet<string> = new Set([
   'voices',
 ]);
 
-/**
- * Infer the billing unit (= what the API charges by) for a model.
- *
- * Signals, in priority order:
- *   1. `free_tier.quota.unit` — server-authoritative
- *   2. Pricing-shape discriminator (`per_image`, `per_second`, `per_character`, `tiers`)
- *   3. `modality.output` heuristic
- *
- * Used to pick the correct breakdown table headers (Tokens / Images / Duration /
- * Characters) so a video or image model never gets shown with "Tokens (in/out)".
- */
+/** Infer the billing unit for a model based on quota, pricing shape, and modality. */
 export function inferBillingUnitFromModel(model: Model): BillingUnit {
   const quotaUnit = model.free_tier?.quota?.unit;
   if (quotaUnit && VALID_UNITS.has(quotaUnit)) {

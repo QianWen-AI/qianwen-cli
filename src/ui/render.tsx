@@ -1,6 +1,30 @@
 import { PassThrough } from 'stream';
 import React, { useEffect } from 'react';
 import { render, useApp } from 'ink';
+import { isReplMode } from '../utils/runtime-mode.js';
+import { isConHost } from './terminalCompat.js';
+
+// Alternative screen buffer ANSI sequences. Entering switches the terminal to a
+// blank, scrollback-isolated canvas (vim/less behaviour); exiting restores the
+// previous content. Writing the literal sequences avoids pulling ansi-escapes
+// as a direct dependency — pnpm hoists it transitively only for ink.
+const ENTER_ALT_SCREEN = '\x1b[?1049h';
+const EXIT_ALT_SCREEN = '\x1b[?1049l';
+
+// Clear the visible screen and home the cursor. Used as the ConHost fallback
+// for the clean-exit behaviour the alternate screen buffer provides elsewhere:
+// ConHost cannot enter the alt-screen (doing so closes the window on exit), so
+// on teardown we wipe the rendered TUI and let the next prompt start fresh
+// instead of leaving the last frame stranded on the main screen.
+const CLEAR_SCREEN = '\x1b[2J\x1b[H';
+
+// React context exposing whether the current interactive render runs on the
+// alternative screen buffer. Full-screen components read this to skip the
+// height-padding that would otherwise push Ink into its clearTerminal path —
+// that path emits \x1b[3J, which wipes terminal scrollback on Terminal.app /
+// iTerm2. On the alt-screen the buffer switch already guarantees a clean exit,
+// so the padding is unnecessary there and the scrollback stays intact.
+export const AltScreenContext = React.createContext<boolean>(false);
 
 // ── Internal wrapper ──────────────────────────────────────────────────────────
 
@@ -66,6 +90,19 @@ export async function renderWithInk(element: React.ReactElement): Promise<void> 
 }
 
 /**
+ * Options for {@link renderInteractive}.
+ */
+export interface RenderInteractiveOptions {
+  /**
+   * Whether to switch to the alternative screen buffer for the duration of
+   * the render. Defaults to `true`. Set to `false` for inline editors that
+   * should stay anchored within the existing terminal scrollback (e.g. the
+   * multi-line text editor used by support flows).
+   */
+  altScreen?: boolean;
+}
+
+/**
  * Render an interactive Ink element that requires real keyboard input
  * (e.g. InteractiveTable with useInput).
  *
@@ -74,33 +111,112 @@ export async function renderWithInk(element: React.ReactElement): Promise<void> 
  * After Ink exits, it drains any residual bytes from stdin to prevent
  * them from leaking into subsequent readline / REPL input.
  */
-export async function renderInteractive(element: React.ReactElement): Promise<void> {
+export async function renderInteractive(
+  element: React.ReactElement,
+  options: RenderInteractiveOptions = {},
+): Promise<void> {
+  const { altScreen = true } = options;
+
   // Save existing stdin listeners registered by readline/REPL,
   // then remove them so only Ink receives keystrokes during pagination.
   const savedDataListeners = process.stdin.rawListeners('data').slice();
   const savedKeypressListeners = process.stdin.rawListeners('keypress').slice();
+  // Isolate stdout 'resize' listeners so readline's terminal-mode handler does
+  // not redraw its prompt inside the alt-screen, which would corrupt Ink's view.
+  const savedResizeListeners = process.stdout.rawListeners('resize').slice();
   process.stdin.removeAllListeners('data');
   process.stdin.removeAllListeners('keypress');
+  process.stdout.removeAllListeners('resize');
+
+  // Switch to the alternative screen buffer so Ink renders on a clean canvas
+  // anchored to the top of the viewport. Resize redraws happen in this buffer
+  // without leaking residue from the main screen, and the user's original
+  // terminal contents are restored automatically on exit. Inline editors
+  // opt out by passing `altScreen: false` so the surrounding output stays
+  // visible above the editor.
+  // Windows ConHost (legacy console host backing PowerShell when neither
+  // Windows Terminal nor a TERM_PROGRAM is in effect) closes its window on
+  // alt-screen exit, which would terminate the REPL after every interactive
+  // command. Detect and skip alt-screen in that environment.
+  const wantsAltScreen = altScreen && Boolean(process.stdout.isTTY);
+  const useAltScreen = wantsAltScreen && !isConHost();
+  // When a full-screen TUI was requested but the alt-screen is unavailable
+  // (ConHost), emulate the alt-screen's clean exit by clearing the screen on
+  // teardown. Callers that explicitly opt out of the alt-screen (altScreen:
+  // false, e.g. inline editors) are excluded so their output stays anchored.
+  const clearOnExit = wantsAltScreen && !useAltScreen;
+  if (useAltScreen) {
+    process.stdout.write(ENTER_ALT_SCREEN);
+  }
 
   try {
-    const { waitUntilExit } = render(element, {
-      stdout: process.stdout,
-      stdin: process.stdin,
-      exitOnCtrlC: false,
-      patchConsole: false,
-    });
+    const { waitUntilExit } = render(
+      <AltScreenContext.Provider value={useAltScreen}>{element}</AltScreenContext.Provider>,
+      {
+        stdout: process.stdout,
+        stdin: process.stdin,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      },
+    );
 
     await waitUntilExit();
 
     // Drain any residual bytes from stdin buffer
     await drainStdin();
   } finally {
+    if (useAltScreen) {
+      process.stdout.write(EXIT_ALT_SCREEN);
+    } else if (clearOnExit) {
+      process.stdout.write(CLEAR_SCREEN);
+    }
+    // Ensure stdin returns to cooked mode before downstream readline runs.
+    // Ink enables raw mode during render and calls setRawMode(false) on
+    // unmount, but event-loop ordering can leave stdin still in raw mode by
+    // the time this finally block executes — causing readline to receive
+    // duplicated keystrokes (e.g. confirmPrompt echoing "yy" for one "y").
+    if (process.stdin.isTTY && typeof process.stdin.setRawMode === 'function') {
+      try {
+        process.stdin.setRawMode(false);
+      } catch {
+        // ignore environments that don't support setRawMode
+      }
+    }
     // Restore readline's listeners so REPL resumes normal operation
     for (const fn of savedDataListeners) {
       process.stdin.on('data', fn as (...args: any[]) => void);
     }
     for (const fn of savedKeypressListeners) {
       process.stdin.on('keypress', fn as (...args: any[]) => void);
+    }
+
+    // Drop any resize listener Ink registered, then restore readline's so the
+    // REPL prompt redraws correctly on the main screen again.
+    process.stdout.removeAllListeners('resize');
+    for (const fn of savedResizeListeners) {
+      process.stdout.on('resize', fn as (...args: unknown[]) => void);
+    }
+
+    if (isReplMode()) {
+      // Ink calls stdin.unref() during cleanup (App.componentWillUnmount),
+      // which allows Node's event loop to exit if no other handles are active.
+      // Re-ref stdin so subsequent readline/confirmPrompt calls keep the
+      // process alive while waiting for user input.
+      process.stdin.ref();
+      // Pair ref() with resume(): unref() alone leaves the handle present but
+      // unobserved on Windows ConHost, where readline can stop pumping data
+      // events until the next keystroke. resume() forces the read pump back on.
+      process.stdin.resume();
+    } else {
+      // One-shot mode: nothing else will read from stdin after this point.
+      // Pause + unref so the underlying handle stops blocking the event loop;
+      // otherwise the shell prompt only re-appears after an extra Enter press.
+      try {
+        process.stdin.pause();
+      } catch {
+        // ignore environments that disallow pausing stdin
+      }
+      process.stdin.unref();
     }
   }
 }

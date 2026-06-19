@@ -4,11 +4,15 @@ import {
   mapApiModelToModelDetail,
   flattenApiModels,
   mapFqInstanceToQuota,
-} from '../../src/api/model-mapper.js';
+} from '../../src/api/model-mapper/index.js';
 import type { ApiModelItem, ApiModelGroup, FqInstanceItem } from '../../src/types/api-models.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 // ──────────────────────────────────────────────────────────────────────
 // Test fixtures: minimal-but-realistic ApiModelItem builders.
@@ -54,11 +58,26 @@ function makeApiItem(overrides: Partial<ApiModelItem> = {}): ApiModelItem {
       },
     },
     Supports: {
-      Sft: false, App: false, Dpo: false, WorkflowText: false, CheckpointImport: false,
-      WorkflowMultimodal: false, Cpt: false, Inference: true, Workflow: false, Deploy: false,
-      SelfServiceLimitIncrease: false, Experience: true, SellingByQpm: false, AppV1: false,
-      ExperienceUpcoming: false, AppV2: false, DisplayQpmLimit: true, Tokenizer: true,
-      Eval: false, FineTune: false,
+      Sft: false,
+      App: false,
+      Dpo: false,
+      WorkflowText: false,
+      CheckpointImport: false,
+      WorkflowMultimodal: false,
+      Cpt: false,
+      Inference: true,
+      Workflow: false,
+      Deploy: false,
+      SelfServiceLimitIncrease: false,
+      Experience: true,
+      SellingByQpm: false,
+      AppV1: false,
+      ExperienceUpcoming: false,
+      AppV2: false,
+      DisplayQpmLimit: true,
+      Tokenizer: true,
+      Eval: false,
+      FineTune: false,
     },
     Permissions: { Inference: true },
     Features: [],
@@ -201,9 +220,7 @@ describe('mapApiModelToModel pricing summary', () => {
 
   it('image pricing → billing_type "image", cheapest_output from per_image', () => {
     const item = makeApiItem({
-      Prices: [
-        { Type: 'image_number', Price: '0.03', PriceUnit: 'USD/image', PriceName: 'Image' },
-      ],
+      Prices: [{ Type: 'image_number', Price: '0.03', PriceUnit: 'USD/image', PriceName: 'Image' }],
     });
     const m = mapApiModelToModel(item, false);
     expect(m.pricing!.summary).toMatchObject({
@@ -216,7 +233,12 @@ describe('mapApiModelToModel pricing summary', () => {
   it('TTS (per_character) pricing → billing_type "character"', () => {
     const item = makeApiItem({
       Prices: [
-        { Type: 'cosy_tts_number', Price: '0.70', PriceUnit: 'USD/1K characters', PriceName: 'TTS' },
+        {
+          Type: 'cosy_tts_number',
+          Price: '0.70',
+          PriceUnit: 'USD/1K characters',
+          PriceName: 'TTS',
+        },
       ],
     });
     const m = mapApiModelToModel(item, false);
@@ -280,8 +302,18 @@ describe('mapApiModelToModel pricing summary', () => {
     const item = makeApiItem({
       InferenceMetadata: { RequestModality: ['Text', 'Image'], ResponseModality: ['vector'] },
       Prices: [
-        { Type: 'embedding_image_token', Price: '0.15', PriceUnit: '每百万tokens', PriceName: '图片输入' },
-        { Type: 'embedding_token', Price: '0.15', PriceUnit: '每百万tokens', PriceName: '文本输入' },
+        {
+          Type: 'embedding_image_token',
+          Price: '0.15',
+          PriceUnit: '每百万tokens',
+          PriceName: '图片输入',
+        },
+        {
+          Type: 'embedding_token',
+          Price: '0.15',
+          PriceUnit: '每百万tokens',
+          PriceName: '文本输入',
+        },
       ],
     });
     const m = mapApiModelToModel(item, false);
@@ -449,7 +481,12 @@ describe('mapApiModelToModel pricing summary', () => {
       Prices: [
         { Type: 'input_token', Price: '0.50', PriceUnit: 'USD/1M tokens', PriceName: 'TextIn' },
         { Type: 'output_token', Price: '3.00', PriceUnit: 'USD/1M tokens', PriceName: 'Out' },
-        { Type: 'vision_input_token', Price: '1.00', PriceUnit: 'USD/1M tokens', PriceName: 'VisIn' },
+        {
+          Type: 'vision_input_token',
+          Price: '1.00',
+          PriceUnit: 'USD/1M tokens',
+          PriceName: 'VisIn',
+        },
       ],
     });
     const m = mapApiModelToModel(item, false);
@@ -464,10 +501,30 @@ describe('mapApiModelToModel pricing summary', () => {
   it('Omni model (omni_audio + omni_no_audio) → "Text mode" + "Audio mode" tiers', () => {
     const item = makeApiItem({
       Prices: [
-        { Type: 'omni_no_audio_input_token', Price: '0.40', PriceUnit: 'USD/1M tokens', PriceName: 'NoAudioIn' },
-        { Type: 'omni_no_audio_output_token', Price: '0.80', PriceUnit: 'USD/1M tokens', PriceName: 'NoAudioOut' },
-        { Type: 'omni_audio_input_token', Price: '1.50', PriceUnit: 'USD/1M tokens', PriceName: 'AudioIn' },
-        { Type: 'omni_audio_output_token', Price: '3.00', PriceUnit: 'USD/1M tokens', PriceName: 'AudioOut' },
+        {
+          Type: 'omni_no_audio_input_token',
+          Price: '0.40',
+          PriceUnit: 'USD/1M tokens',
+          PriceName: 'NoAudioIn',
+        },
+        {
+          Type: 'omni_no_audio_output_token',
+          Price: '0.80',
+          PriceUnit: 'USD/1M tokens',
+          PriceName: 'NoAudioOut',
+        },
+        {
+          Type: 'omni_audio_input_token',
+          Price: '1.50',
+          PriceUnit: 'USD/1M tokens',
+          PriceName: 'AudioIn',
+        },
+        {
+          Type: 'omni_audio_output_token',
+          Price: '3.00',
+          PriceUnit: 'USD/1M tokens',
+          PriceName: 'AudioOut',
+        },
       ],
     });
     const m = mapApiModelToModel(item, false);
@@ -482,8 +539,18 @@ describe('mapApiModelToModel pricing summary', () => {
   it('Thinking-only LLM → adds "Thinking mode" tier', () => {
     const item = makeApiItem({
       Prices: [
-        { Type: 'thinking_input_token', Price: '2.00', PriceUnit: 'USD/1M tokens', PriceName: 'TIn' },
-        { Type: 'thinking_output_token', Price: '6.00', PriceUnit: 'USD/1M tokens', PriceName: 'TOut' },
+        {
+          Type: 'thinking_input_token',
+          Price: '2.00',
+          PriceUnit: 'USD/1M tokens',
+          PriceName: 'TIn',
+        },
+        {
+          Type: 'thinking_output_token',
+          Price: '6.00',
+          PriceUnit: 'USD/1M tokens',
+          PriceName: 'TOut',
+        },
       ],
     });
     const m = mapApiModelToModel(item, false);
@@ -723,9 +790,7 @@ describe('mapFqInstanceToQuota', () => {
   });
 
   it('parses CurrentCycleEndTime to ISO 8601 UTC', () => {
-    const q = mapFqInstanceToQuota(
-      makeFq({ CurrentCycleEndTime: '2026-05-01T00:00:00Z' }),
-    );
+    const q = mapFqInstanceToQuota(makeFq({ CurrentCycleEndTime: '2026-05-01T00:00:00Z' }));
     expect(q.resetDate).toBe('2026-05-01T00:00:00.000Z');
   });
 
@@ -734,7 +799,9 @@ describe('mapFqInstanceToQuota', () => {
   });
 
   it('returns null resetDate when CurrentCycleEndTime is invalid', () => {
-    expect(mapFqInstanceToQuota(makeFq({ CurrentCycleEndTime: 'not-a-date' })).resetDate).toBeNull();
+    expect(
+      mapFqInstanceToQuota(makeFq({ CurrentCycleEndTime: 'not-a-date' })).resetDate,
+    ).toBeNull();
   });
 
   it('preserves status field (expire / exhaust)', () => {

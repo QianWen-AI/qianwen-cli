@@ -1,4 +1,3 @@
-
 /**
  * QIAN + WEN ANSI Shadow art (30 + 28 = 59 chars wide, 6 rows).
  * Generated with figlet v1.11.0, ANSI Shadow font.
@@ -34,6 +33,7 @@ export const site = {
   apiEndpoint: 'https://cli.qianwenai.com',
   authEndpoint: 'https://t.qianwenai.com',
   websiteUrl: 'www.qianwenai.com',
+  docsBaseUrl: 'https://platform.qianwenai.com/docs',
   userAgentPrefix: 'qianwen-cli',
   replPrompt: 'qianwen ▸ ',
   asciiArt: {
@@ -59,6 +59,9 @@ export const site = {
       addon: 'sfm_tokenplanteamsaddon_dp_cn',
     },
     currency: 'CNY',
+  },
+  defaults: {
+    language: 'zh-CN',
   },
   uiTheme: {
     brand: '#3047F5',

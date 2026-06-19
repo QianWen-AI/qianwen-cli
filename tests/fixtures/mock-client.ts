@@ -1,11 +1,12 @@
-import type { ApiClient, ListModelsOptions, UsageSummaryOptions, UsageBreakdownOptions } from '../../src/api/client.js';
+import type {
+  ApiClient,
+  ListModelsOptions,
+  UsageSummaryOptions,
+  UsageBreakdownOptions,
+} from '../../src/api/client.js';
 import type { ModelsListResponse, ModelDetail, Model } from '../../src/types/model.js';
 import type { UsageSummaryResponse, UsageBreakdownResponse } from '../../src/types/usage.js';
-import type {
-  AuthStatus,
-  DeviceFlowInitResponse,
-  DeviceFlowPollResponse,
-} from '../../src/types/auth.js';
+import type { AuthStatus, DeviceFlowPollResponse } from '../../src/types/auth.js';
 import { mockModels as mockModelsRaw } from './mock-data/models.js';
 import {
   mockUsageSummary as mockUsageSummaryRaw,
@@ -20,10 +21,7 @@ const mockBreakdownMonthly = mockBreakdownMonthlyRaw as any;
 const mockBreakdownQuarterly = mockBreakdownQuarterlyRaw as any;
 import { mockAuthStatus, mockCredentials, mockDeviceFlowInit } from './mock-data/auth.js';
 
-/**
- * Mock API client for development and testing.
- * Returns rich mock datasets based on PRD examples.
- */
+/** Mock API client for development and testing. */
 export class MockApiClient implements ApiClient {
   async listModels(options?: ListModelsOptions): Promise<ModelsListResponse> {
     let models = mockModels.map(toListModel);
@@ -52,7 +50,7 @@ export class MockApiClient implements ApiClient {
   }
 
   async getModels(ids: string[]): Promise<(ModelDetail | null)[]> {
-    return ids.map(id => {
+    return ids.map((id) => {
       const model = mockModels.find((m) => m.id === id);
       return model ?? null;
     });
@@ -110,13 +108,15 @@ export class MockApiClient implements ApiClient {
     return { ...mockAuthStatus, server_verified: true };
   }
 
-  async deviceFlowInit(): Promise<DeviceFlowInitResponse> {
-    return mockDeviceFlowInit;
+  async loginInit() {
+    return { ...mockDeviceFlowInit, auth_mode: 'pkce' as const };
   }
 
-  setPkceVerifier(_verifier: string): void { /* no-op for mock client */ }
-
-  async deviceFlowPoll(_token: string): Promise<DeviceFlowPollResponse> {
+  async loginPoll(
+    _token: string,
+    _intervalSec?: number,
+    _verifier?: string,
+  ): Promise<DeviceFlowPollResponse> {
     // Simulate success after a short delay
     return {
       status: 'complete',

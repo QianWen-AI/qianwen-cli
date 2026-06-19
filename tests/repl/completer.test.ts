@@ -122,6 +122,17 @@ describe('tabCompleter', () => {
     expect(completions).toContain('--help');
   });
 
+  it('auth + space → completes to login/logout/status only, never refresh', () => {
+    const [completions] = tabCompleter('auth ');
+    // The three real auth subcommands must all be offered.
+    expect(completions).toContain('login');
+    expect(completions).toContain('logout');
+    expect(completions).toContain('status');
+    // `refresh` was never implemented as an auth subcommand; the completer
+    // must not advertise it.
+    expect(completions).not.toContain('refresh');
+  });
+
   it('partial --h after top command → completes to --help', () => {
     const [completions, partial] = tabCompleter('auth --h');
     expect(completions).toEqual(['--help']);
@@ -140,9 +151,20 @@ describe('tabCompleter', () => {
     expect(partial).toBe('--h');
   });
 
-  it('command without subcommands (doctor) + space → suggests --help', () => {
+  it('command without subcommands (doctor) + space → suggests flags + --help', () => {
     const [completions] = tabCompleter('doctor ');
-    expect(completions).toEqual(['--help']);
+    expect(completions).toEqual(['--format', '--help']);
+  });
+
+  it('doctor --format + space → suggests format values', () => {
+    const [completions] = tabCompleter('doctor --format ');
+    expect(completions).toEqual(['table', 'json', 'text']);
+  });
+
+  it('doctor --format t → fuzzy matches format values', () => {
+    const [completions, partial] = tabCompleter('doctor --format t');
+    expect(completions).toEqual(['table', 'text']);
+    expect(partial).toBe('t');
   });
 
   it('command without subcommands (version) + partial --h → completes --help', () => {
@@ -151,9 +173,19 @@ describe('tabCompleter', () => {
     expect(partial).toBe('--h');
   });
 
-  it('subcommand with no defined flags (auth refresh) + space → suggests --help', () => {
-    const [completions] = tabCompleter('auth refresh ');
-    expect(completions).toEqual(['--help']);
+  it('subcommand with defined flags (workspace list) + space → suggests flags and --help', () => {
+    // `workspace list` is a real leaf subcommand. It has no further nested
+    // subcommands; the completer offers its flags plus the auto-injected --help.
+    const [completions] = tabCompleter('workspace list ');
+    expect(completions).toContain('--help');
+    expect(completions).toContain('--format');
+  });
+
+  it('auth refresh + space → empty (refresh is not a valid auth subcommand)', () => {
+    // `refresh` was never implemented as an auth subcommand, so it is an
+    // unknown subcommand and the completer offers nothing — same contract as
+    // any other unknown subcommand (cf. "models bogus ").
+    expect(tabCompleter('auth refresh ')).toEqual([[], '']);
   });
 
   it('--help is excluded once already used', () => {
@@ -257,6 +289,10 @@ describe('getGhostSuffix', () => {
 
   it('completes a flag value', () => {
     expect(getGhostSuffix('usage breakdown --format te')).toBe('xt');
+  });
+
+  it('completes a flag value for 1-level command (doctor --format ta → ble)', () => {
+    expect(getGhostSuffix('doctor --format ta')).toBe('ble');
   });
 });
 

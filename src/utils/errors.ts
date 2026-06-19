@@ -146,11 +146,36 @@ export function handleError(error: unknown, format: 'json' | 'table' | 'text'): 
   clearSpinnerLine();
   flushDebugReport();
 
+  if ((error as { code?: string })?.code === 'repl.exit.intercepted') throw error;
+
   // suppress: no error output at all — just propagate exit code
   if (verbosity === 'suppress') {
     resetGlobalCache();
     const exitCode = error instanceof CliError ? error.exitCode : 1;
     throw new HandledError(exitCode);
+  }
+
+  // Plain Error carrying a numeric `.exitCode` hint — used by Service-layer
+  // errors that don't import `CliError` (e.g., RunService rejections that
+  // surface a contract-defined exit code without coupling to the command
+  // layer's error type).
+  if (
+    error instanceof Error &&
+    !(error instanceof CliError) &&
+    typeof (error as { exitCode?: unknown }).exitCode === 'number'
+  ) {
+    const e = error as Error & { exitCode: number; code?: string };
+    const code = typeof e.code === 'string' ? e.code : 'ERROR';
+    if (format === 'json') {
+      process.stderr.write(
+        JSON.stringify({ error: { code, message: e.message, exitCode: e.exitCode } }, null, 2) +
+          '\n',
+      );
+    } else {
+      console.error(`Error: ${e.message}`);
+    }
+    resetGlobalCache();
+    throw new HandledError(e.exitCode);
   }
 
   // Classify raw errors into CliError for graceful/verbose output

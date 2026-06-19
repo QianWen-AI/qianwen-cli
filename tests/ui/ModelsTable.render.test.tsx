@@ -21,7 +21,11 @@ import {
 import type { Model } from '../../src/types/model.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 const baseModels = [
   {
@@ -76,7 +80,7 @@ describe('<ModelsTableInk /> rendering', () => {
   it('renders title, subtitle and all model rows', () => {
     const uiData = buildModelsUiData(baseModels);
     const { lastFrame } = render(
-      <ModelsTableInk uiData={uiData} title="My Models" subtitle="3 items" />
+      <ModelsTableInk uiData={uiData} title="My Models" subtitle="3 items" />,
     );
     const out = lastFrame()!;
     expect(out).toContain('My Models');
@@ -88,9 +92,7 @@ describe('<ModelsTableInk /> rendering', () => {
 
   it('uses custom footer when provided', () => {
     const uiData = buildModelsUiData([baseModels[0]]);
-    const { lastFrame } = render(
-      <ModelsTableInk uiData={uiData} footer="my custom footer text" />
-    );
+    const { lastFrame } = render(<ModelsTableInk uiData={uiData} footer="my custom footer text" />);
     expect(lastFrame()).toContain('my custom footer');
   });
 

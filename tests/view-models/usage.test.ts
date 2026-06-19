@@ -3,10 +3,18 @@ import {
   buildUsageSummaryViewModel,
   buildUsageBreakdownViewModel,
 } from '../../src/view-models/usage.js';
-import type { UsageSummaryResponse, UsageBreakdownResponse, UsageBreakdownRow } from '../../src/types/usage.js';
+import type {
+  UsageSummaryResponse,
+  UsageBreakdownResponse,
+  UsageBreakdownRow,
+} from '../../src/types/usage.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 describe('buildUsageSummaryViewModel', () => {
   const mockResponse: UsageSummaryResponse = {
@@ -162,10 +170,8 @@ describe('buildUsageSummaryViewModel', () => {
     const response = {
       ...mockResponse,
       pay_as_you_go: {
-        models: [
-          { model_id: 'future-llm', usage: { calls: 500 }, cost: 0.10, currency: 'CNY' },
-        ],
-        total: { cost: 0.10, currency: 'CNY' },
+        models: [{ model_id: 'future-llm', usage: { calls: 500 }, cost: 0.1, currency: 'CNY' }],
+        total: { cost: 0.1, currency: 'CNY' },
       },
     };
     const vm = buildUsageSummaryViewModel(response);
@@ -205,8 +211,8 @@ describe('buildUsageBreakdownViewModel', () => {
     const today = new Date().toISOString().slice(0, 10);
     const response: UsageBreakdownResponse = {
       ...mockResponse,
-      rows: [{ period: today, tokens_in: 50000, tokens_out: 10000, cost: 0.10, currency: 'CNY' }],
-      total: { tokens_in: 50000, tokens_out: 10000, cost: 0.10, currency: 'CNY' },
+      rows: [{ period: today, tokens_in: 50000, tokens_out: 10000, cost: 0.1, currency: 'CNY' }],
+      total: { tokens_in: 50000, tokens_out: 10000, cost: 0.1, currency: 'CNY' },
     };
 
     const vm = buildUsageBreakdownViewModel(response);
@@ -249,14 +255,12 @@ describe('buildUsageBreakdownViewModel', () => {
       model_id: 'qwen-image-2.0-pro',
       period: { from: '2026-04-01', to: '2026-04-03' },
       granularity: 'day',
-      rows: [
-        { period: '2026-04-01', usage: { images: 20 }, cost: 0.60, currency: 'CNY' },
-      ],
-      total: { usage: { images: 20 }, cost: 0.60, currency: 'CNY' },
+      rows: [{ period: '2026-04-01', usage: { images: 20 }, cost: 0.6, currency: 'CNY' }],
+      total: { usage: { images: 20 }, cost: 0.6, currency: 'CNY' },
     };
 
     const vm = buildUsageBreakdownViewModel(imageResponse);
-    const colKeys = vm.columns.map(c => c.key);
+    const colKeys = vm.columns.map((c) => c.key);
     expect(colKeys).toContain('images');
     expect(colKeys).not.toContain('tokensIn');
   });
@@ -273,7 +277,7 @@ describe('buildUsageBreakdownViewModel', () => {
       total: { cost: 0, currency: 'CNY' },
     };
     const vm = buildUsageBreakdownViewModel(response, { billingUnitOverride: 'images' });
-    const colKeys = vm.columns.map(c => c.key);
+    const colKeys = vm.columns.map((c) => c.key);
     expect(colKeys).toEqual(['period', 'images', 'cost']);
     expect(vm.total.cells.images).toBe('—');
     expect(vm.total.cells.tokensIn).toBeUndefined();
@@ -284,10 +288,8 @@ describe('buildUsageBreakdownViewModel', () => {
       model_id: 'wan2.6-r2v',
       period: { from: '2026-04-01', to: '2026-04-20' },
       granularity: 'day',
-      rows: [
-        { period: '2026-04-01', usage: { seconds: 10 }, cost: 0.50, currency: 'CNY' },
-      ],
-      total: { usage: { seconds: 10 }, cost: 0.50, currency: 'CNY' },
+      rows: [{ period: '2026-04-01', usage: { seconds: 10 }, cost: 0.5, currency: 'CNY' }],
+      total: { usage: { seconds: 10 }, cost: 0.5, currency: 'CNY' },
     };
     const vm = buildUsageBreakdownViewModel(response, { billingUnitOverride: 'seconds' });
     // The numeric value from summary (10 sec) must round-trip into breakdown.
@@ -302,9 +304,7 @@ describe('buildUsageBreakdownViewModel', () => {
       model_id: 'qwen3.6-plus',
       period: { from: '2026-04-01', to: '2026-04-20' },
       granularity: 'day',
-      rows: [
-        { period: '2026-04-18', tokens_in: 5_800_000, cost: 2.93, currency: 'CNY' },
-      ],
+      rows: [{ period: '2026-04-18', tokens_in: 5_800_000, cost: 2.93, currency: 'CNY' }],
       total: { tokens_in: 5_800_000, cost: 2.93, currency: 'CNY' },
     };
     const vm = buildUsageBreakdownViewModel(response, { billingUnitOverride: 'tokens' });
@@ -359,27 +359,13 @@ describe('buildUsageBreakdownViewModel', () => {
       total: { cost: 0, currency: 'CNY' },
     };
     const vm = buildUsageBreakdownViewModel(response, { billingUnitOverride: 'seconds' });
-    const colKeys = vm.columns.map(c => c.key);
+    const colKeys = vm.columns.map((c) => c.key);
     expect(colKeys).toContain('seconds');
     expect(colKeys).not.toContain('tokensIn');
     expect(vm.total.cells.seconds).toBe('—');
   });
 });
 
-// ---------------------------------------------------------------------------
-// New test cases migrated from qwencloud-cli commit 90917204:
-//   feat(usage): support voices & dynamic billing units; uniform '—' for zero cells
-//
-// Coverage targets each guard a real regression in the dynamic billing-unit
-// branches:
-//   1. Non-tokens overrides (images / characters / seconds / voices) are
-//      trusted even when every row is empty — protects model-metadata-driven
-//      headers.
-//   2. Tokens override yields to a non-fixed inferred unit (e.g. "calls") so
-//      headers match real row data when the model registry falls through to
-//      'tokens'.
-//   3. Tokens override is preserved when the inferred unit is also fixed.
-// ---------------------------------------------------------------------------
 function makeBreakdownResponse(
   overrides: Partial<UsageBreakdownResponse> & { rows: UsageBreakdownRow[] },
 ): UsageBreakdownResponse {
@@ -430,7 +416,11 @@ describe('buildUsageBreakdownViewModel — pickBillingUnit override behaviour', 
     const vm = buildUsageBreakdownViewModel(
       makeBreakdownResponse({
         rows: [
-          { period: '2026-04-01', usage: { calls: 2_000_200 } as Record<string, number>, cost: 0.5 },
+          {
+            period: '2026-04-01',
+            usage: { calls: 2_000_200 } as Record<string, number>,
+            cost: 0.5,
+          },
         ],
         total: { usage: { calls: 2_000_200 } as Record<string, number>, cost: 0.5 },
       }),

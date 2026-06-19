@@ -35,3 +35,7 @@ export interface DeviceFlowPollResponse {
   status: 'authorization_pending' | 'slow_down' | 'access_denied' | 'expired_token' | 'complete';
   credentials?: Credentials;
 }
+
+/** Protocol-agnostic aliases for the login orchestration layer */
+export type LoginInitResponse = DeviceFlowInitResponse;
+export type LoginPollResponse = DeviceFlowPollResponse;

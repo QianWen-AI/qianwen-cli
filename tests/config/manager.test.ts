@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as fs from 'fs';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 // Mock fs module
 vi.mock('fs', () => ({
@@ -58,7 +62,7 @@ describe('readGlobalConfig', () => {
       JSON.stringify({
         output: { format: 'json' },
         api: { endpoint: 'https://custom.api.com' },
-      })
+      }),
     );
     const { readGlobalConfig } = await loadManager();
 
@@ -107,9 +111,7 @@ describe('getEffectiveConfig', () => {
 
   it('merges global config over defaults', async () => {
     mockedFs.existsSync.mockImplementation((path) => path === GLOBAL_PATH);
-    mockedFs.readFileSync.mockReturnValue(
-      JSON.stringify({ output: { format: 'table' } })
-    );
+    mockedFs.readFileSync.mockReturnValue(JSON.stringify({ output: { format: 'table' } }));
     const { getEffectiveConfig } = await loadManager();
 
     const result = getEffectiveConfig();
@@ -132,9 +134,7 @@ describe('getConfigValue', () => {
 
   it('returns overridden value from global config', async () => {
     mockedFs.existsSync.mockImplementation((path) => path === GLOBAL_PATH);
-    mockedFs.readFileSync.mockReturnValue(
-      JSON.stringify({ output: { format: 'text' } })
-    );
+    mockedFs.readFileSync.mockReturnValue(JSON.stringify({ output: { format: 'text' } }));
     const { getConfigValue } = await loadManager();
 
     expect(getConfigValue('output.format')).toBe('text');
@@ -155,7 +155,7 @@ describe('setConfigValue', () => {
 
     expect(mockedFs.writeFileSync).toHaveBeenCalledWith(
       GLOBAL_PATH,
-      expect.stringContaining('"format": "json"')
+      expect.stringContaining('"format": "json"'),
     );
   });
 
@@ -183,16 +183,14 @@ describe('unsetConfigValue', () => {
 
   it('removes the key from the global config file', async () => {
     mockedFs.existsSync.mockReturnValue(true);
-    mockedFs.readFileSync.mockReturnValue(
-      JSON.stringify({ output: { format: 'json' } })
-    );
+    mockedFs.readFileSync.mockReturnValue(JSON.stringify({ output: { format: 'json' } }));
     const { unsetConfigValue } = await loadManager();
 
     unsetConfigValue('output.format');
 
     expect(mockedFs.writeFileSync).toHaveBeenCalledWith(
       GLOBAL_PATH,
-      expect.not.stringContaining('format')
+      expect.not.stringContaining('format'),
     );
   });
 
@@ -224,13 +222,11 @@ describe('getConfigEntries', () => {
 
   it('shows global source when global config exists', async () => {
     mockedFs.existsSync.mockImplementation((path) => path === GLOBAL_PATH);
-    mockedFs.readFileSync.mockReturnValue(
-      JSON.stringify({ output: { format: 'json' } })
-    );
+    mockedFs.readFileSync.mockReturnValue(JSON.stringify({ output: { format: 'json' } }));
     const { getConfigEntries } = await loadManager();
 
     const entries = getConfigEntries();
-    const formatEntry = entries.find(e => e.key === 'output.format');
+    const formatEntry = entries.find((e) => e.key === 'output.format');
     expect(formatEntry?.source).toBe('global');
     expect(formatEntry?.value).toBe('json');
     expect(formatEntry?.sourcePath).toBe(`~/${s.configDirName}/config.json`);
@@ -260,13 +256,10 @@ describe('legacy project-config migration', () => {
     // The merged value was written to the global file.
     expect(mockedFs.writeFileSync).toHaveBeenCalledWith(
       GLOBAL_PATH,
-      expect.stringContaining('"format": "json"')
+      expect.stringContaining('"format": "json"'),
     );
     // The legacy path was appended to the migration-state file.
-    expect(mockedFs.appendFileSync).toHaveBeenCalledWith(
-      MIGRATION_STATE_PATH,
-      `${LEGACY_PATH}\n`
-    );
+    expect(mockedFs.appendFileSync).toHaveBeenCalledWith(MIGRATION_STATE_PATH, `${LEGACY_PATH}\n`);
   });
 
   it('skips migration when the cwd path is already recorded', async () => {
@@ -315,9 +308,6 @@ describe('legacy project-config migration', () => {
     // Migration must not call writeFileSync — global already has the key.
     expect(mockedFs.writeFileSync).not.toHaveBeenCalled();
     // But the path is still recorded so we don't re-attempt next run.
-    expect(mockedFs.appendFileSync).toHaveBeenCalledWith(
-      MIGRATION_STATE_PATH,
-      `${LEGACY_PATH}\n`
-    );
+    expect(mockedFs.appendFileSync).toHaveBeenCalledWith(MIGRATION_STATE_PATH, `${LEGACY_PATH}\n`);
   });
 });

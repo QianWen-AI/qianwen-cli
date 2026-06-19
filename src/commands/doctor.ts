@@ -62,7 +62,8 @@ async function checkAuth(
   }
 
   // Try to get user identity from server API
-  let identity = 'unknown';
+  const IDENTITY_FALLBACK = 'authenticated (identity unavailable)';
+  let identity = IDENTITY_FALLBACK;
   try {
     const authStatus = await client.getAuthStatus();
     const serverAliyunId = authStatus.user?.aliyunId;
@@ -72,13 +73,13 @@ async function checkAuth(
       (serverEmail && serverEmail.trim()) ||
       (resolved.credentials?.user?.aliyunId && resolved.credentials.user.aliyunId.trim()) ||
       (resolved.credentials?.user?.email && resolved.credentials.user.email.trim()) ||
-      'unknown';
+      IDENTITY_FALLBACK;
   } catch {
     // Fallback to local credentials if server is unreachable
     identity =
       (resolved.credentials?.user?.aliyunId && resolved.credentials.user.aliyunId.trim()) ||
       (resolved.credentials?.user?.email && resolved.credentials.user.email.trim()) ||
-      'unknown';
+      IDENTITY_FALLBACK;
   }
 
   return {
@@ -109,7 +110,7 @@ function checkToken(resolved: ResolvedCredential | null): DoctorCheck {
     };
   }
   const remaining = getTokenRemainingTime(resolved.credentials);
-  // PRD §7.4: warn if token expires within 1 hour
+  // Warn if token expires within 1 hour
   if (isTokenExpiringSoon(resolved.credentials, 60)) {
     return {
       name: 'token',

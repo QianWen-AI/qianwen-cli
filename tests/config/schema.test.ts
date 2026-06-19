@@ -1,8 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { CONFIG_DEFAULTS, VALID_KEYS, PUBLIC_KEYS, isValidKey, isPublicKey, validateConfigValue } from '../../src/config/schema.js';
+import {
+  CONFIG_DEFAULTS,
+  VALID_KEYS,
+  PUBLIC_KEYS,
+  isValidKey,
+  isPublicKey,
+  validateConfigValue,
+} from '../../src/config/schema.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 describe('CONFIG_DEFAULTS', () => {
   it('has correct default values', () => {
@@ -35,6 +46,7 @@ describe('PUBLIC_KEYS', () => {
   it('does not contain internal keys', () => {
     expect(PUBLIC_KEYS).not.toContain('api.endpoint');
     expect(PUBLIC_KEYS).not.toContain('auth.endpoint');
+    expect(PUBLIC_KEYS).not.toContain('cache.ttl');
   });
 
   it('has correct length', () => {
@@ -136,8 +148,6 @@ describe('validateConfigValue', () => {
 
   describe('unknown key', () => {
     it('returns validation error for valid key with invalid value', () => {
-      // TypeScript prevents unknown keys at compile time
-      // At runtime, valid keys with invalid values return error messages
       const result = validateConfigValue('output.format', 'invalid');
       expect(result).toContain('Invalid value');
     });

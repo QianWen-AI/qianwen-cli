@@ -4,7 +4,11 @@ import { makeMockApiClient } from '../helpers/api-client.js';
 import type { ApiClient } from '../../src/api/client.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 const holder: { client: ApiClient } = { client: makeMockApiClient() };
 
@@ -12,9 +16,8 @@ vi.mock('../../src/api/client.js', () => ({
   createClient: async () => holder.client,
 }));
 
-const { registerVersionCommand, registerUpdateCommand } = await import(
-  '../../src/commands/version.js'
-);
+const { registerVersionCommand, registerUpdateCommand } =
+  await import('../../src/commands/version.js');
 
 beforeEach(() => {
   holder.client = makeMockApiClient();

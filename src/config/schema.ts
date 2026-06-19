@@ -45,24 +45,20 @@ export function isPublicKey(key: string): key is ConfigKey {
 /**
  * Validation rules per key.
  */
+
+function isValidUrl(value: string): boolean {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const VALIDATORS: Record<ConfigKey, (value: string) => boolean> = {
   'output.format': (v) => ['auto', 'table', 'json', 'text'].includes(v),
-  'api.endpoint': (v) => {
-    try {
-      new URL(v);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-  'auth.endpoint': (v) => {
-    try {
-      new URL(v);
-      return true;
-    } catch {
-      return false;
-    }
-  },
+  'api.endpoint': isValidUrl,
+  'auth.endpoint': isValidUrl,
   // Non-negative integer milliseconds. '0' disables the file cache.
   'cache.ttl': (v) => /^\d+$/.test(v),
 };

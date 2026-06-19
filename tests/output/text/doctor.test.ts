@@ -3,7 +3,11 @@ import { renderTextDoctor } from '../../../src/output/text/doctor.js';
 import { buildDoctorViewModel } from '../../../src/view-models/doctor.js';
 import { site } from '../../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 function captureStdout(fn: () => void): string {
   const lines: string[] = [];
