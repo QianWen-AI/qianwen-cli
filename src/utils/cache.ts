@@ -17,14 +17,7 @@ export interface CacheOptions {
   ttl: number; // Cache time-to-live (milliseconds)
 }
 
-/**
- * In-memory cache implementation.
- *
- * Features:
- * - Supports a custom TTL (Time To Live)
- * - Automatically cleans up expired entries
- * - Thread-safe (single-threaded Node.js environment)
- */
+/** In-memory cache with TTL-based expiration. */
 export class MemoryCache {
   private store: Map<string, CacheEntry<unknown>> = new Map();
   private cleanupInterval: NodeJS.Timeout | null = null;

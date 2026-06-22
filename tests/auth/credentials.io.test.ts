@@ -5,7 +5,11 @@ import { join } from 'path';
 import type { Credentials } from '../../src/types/auth.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 // ── Test environment ──────────────────────────────────────────────
 let tmpDir: string;

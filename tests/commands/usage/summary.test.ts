@@ -64,7 +64,10 @@ describe('usage summary command (one-shot)', () => {
         getUsageSummary: async () => ({
           period: { from: '2026-04-01', to: '2026-04-20' },
           free_tier: [
-            { model_id: 'qwen3-max', quota: { remaining: 500_000, total: 1_000_000, unit: 'tokens', used_pct: 50 } } as any,
+            {
+              model_id: 'qwen3-max',
+              quota: { remaining: 500_000, total: 1_000_000, unit: 'tokens', used_pct: 50 },
+            } as any,
           ],
           token_plan: { subscribed: false },
           pay_as_you_go: {
@@ -101,7 +104,10 @@ describe('usage summary command (one-shot)', () => {
         getUsageSummary: async () => ({
           period: { from: '2026-04-01', to: '2026-04-20' },
           free_tier: [
-            { model_id: 'qwen3-max', quota: { remaining: 500_000, total: 1_000_000, unit: 'tokens', used_pct: 50 } } as any,
+            {
+              model_id: 'qwen3-max',
+              quota: { remaining: 500_000, total: 1_000_000, unit: 'tokens', used_pct: 50 },
+            } as any,
           ],
           token_plan: { subscribed: false },
           pay_as_you_go: { models: [], total: { cost: 0, currency: 'CNY' } },
@@ -128,7 +134,14 @@ describe('usage summary command (one-shot)', () => {
         },
       });
       const r = await runCommand(buildSummary, [
-        'usage', 'summary', '--from', '2026-03-01', '--to', '2026-03-31', '--format', 'json',
+        'usage',
+        'summary',
+        '--from',
+        '2026-03-01',
+        '--to',
+        '2026-03-31',
+        '--format',
+        'json',
       ]);
       expect(r.exitCode).toBeUndefined();
       expect(captured.from).toBe('2026-03-01');
@@ -190,7 +203,16 @@ describe('usage summary command (one-shot)', () => {
         getUsageSummary: async () => ({
           period: { from: '2026-04-01', to: '2026-04-20' },
           free_tier: [
-            { model_id: 'qwen-free', quota: { remaining: 800_000, total: 1_000_000, unit: 'tokens', used_pct: 20, resetDate: null } },
+            {
+              model_id: 'qwen-free',
+              quota: {
+                remaining: 800_000,
+                total: 1_000_000,
+                unit: 'tokens',
+                used_pct: 20,
+                resetDate: null,
+              },
+            },
           ],
           token_plan: {
             subscribed: true,
@@ -202,7 +224,9 @@ describe('usage summary command (one-shot)', () => {
             resetDate: '2026-06-01T00:00:00Z',
           },
           pay_as_you_go: {
-            models: [{ model_id: 'qwen-payg', usage: { tokens: 150 }, cost: 0.01, currency: 'CNY' }],
+            models: [
+              { model_id: 'qwen-payg', usage: { tokens: 150 }, cost: 0.01, currency: 'CNY' },
+            ],
             total: { cost: 0.01, currency: 'CNY' },
           },
         }),
@@ -237,7 +261,10 @@ describe('usage summary command (one-shot)', () => {
         getUsageSummary: async () => ({
           period: { from: '2026-04-01', to: '2026-04-20' },
           free_tier: [
-            { model_id: 'qwen3-max', quota: { remaining: 500_000, total: 1_000_000, unit: 'tokens', used_pct: 50 } } as any,
+            {
+              model_id: 'qwen3-max',
+              quota: { remaining: 500_000, total: 1_000_000, unit: 'tokens', used_pct: 50 },
+            } as any,
           ],
           token_plan: {
             subscribed: true,
@@ -270,9 +297,7 @@ describe('usage summary command (one-shot)', () => {
       holder.client = makeMockApiClient({
         getUsageSummary: async () => ({
           period: { from: '2026-04-01', to: '2026-04-20' },
-          free_tier: [
-            { model_id: 'qwen-free-only', quota: null } as any,
-          ],
+          free_tier: [{ model_id: 'qwen-free-only', quota: null } as any],
           token_plan: { subscribed: false },
           pay_as_you_go: { models: [], total: { cost: 0, currency: 'CNY' } },
         }),
@@ -372,7 +397,10 @@ describe('usage summary command (one-shot)', () => {
         getUsageSummary: async () => ({
           period: { from: '2026-04-01', to: '2026-04-20' },
           free_tier: [
-            { model_id: 'qwen-only-ft', quota: { remaining: 100, total: 1000, unit: 'tokens', used_pct: 90 } } as any,
+            {
+              model_id: 'qwen-only-ft',
+              quota: { remaining: 100, total: 1000, unit: 'tokens', used_pct: 90 },
+            } as any,
           ],
           token_plan: { subscribed: false },
           pay_as_you_go: { models: [], total: { cost: 0, currency: 'CNY' } },

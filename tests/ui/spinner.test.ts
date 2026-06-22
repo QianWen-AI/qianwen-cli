@@ -88,9 +88,9 @@ describe('withSpinner', () => {
     vi.useFakeTimers();
 
     const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-    const workFn = vi.fn().mockImplementation(
-      () => new Promise(resolve => setTimeout(resolve, 500))
-    );
+    const workFn = vi
+      .fn()
+      .mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 500)));
     const promise = withSpinner('Loading', workFn);
 
     // Initial frame: ⠋
@@ -143,9 +143,9 @@ describe('clearSpinnerLine', () => {
   it('clears the spinner line when a spinner is active', async () => {
     vi.useFakeTimers();
 
-    const workFn = vi.fn().mockImplementation(
-      () => new Promise((resolve) => setTimeout(resolve, 500)),
-    );
+    const workFn = vi
+      .fn()
+      .mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 500)));
     const promise = withSpinner('Loading', workFn);
 
     // Spinner has started — clearSpinnerLine should erase the line

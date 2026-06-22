@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
-import { existsSync, readFileSync, appendFileSync } from 'fs';
+import { existsSync, readFileSync, appendFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { theme } from '../ui/theme.js';
 import { site } from '../site.js';
 import { handleError, invalidArgError } from '../utils/errors.js';
@@ -59,8 +59,7 @@ function generateZshCompletion(): string {
   // `#compdef` magic comment is dropped. Before calling `compdef` we ensure
   // compinit has run — otherwise zsh emits
   // `compdef:153: _comps: assignment to invalid subscript range` on every
-  // command and the noise pollutes Agent stderr parsing (report 6.2 in
-  // agent-experience-review.md).
+  // command and the noise pollutes Agent stderr parsing.
   return `# ${site.cliDisplayName} zsh completion (generated)
 if ! whence compdef >/dev/null 2>&1; then
   autoload -Uz compinit
@@ -73,10 +72,20 @@ ${fnName}() {
   # ── Option value completions (global, position-independent) ──────────────
   case "$prev" in
     --format)      compadd table json text; return ;;
-    --granularity) compadd day month quarter; return ;;
+    --granularity) compadd day month; return ;;
     --period)      compadd today yesterday week month last-month quarter year; return ;;
     --shell)       compadd bash zsh fish; return ;;
-    --input|--output) compadd text image audio video; return ;;
+    --input|--output|--modality) compadd text image audio video; return ;;
+    --charge-type) compadd all postpaid prepaid; return ;;
+    --group-by)    compadd model api-key; return ;;
+    --thinking)    compadd true false; return ;;
+    --upload)      compadd auto oss; return ;;
+    --type)        compadd purchase renew upgrade; return ;;
+    --source)      compadd official custom; return ;;
+    --plan)        compadd token; return ;;
+    --spec-type)   compadd pro standard; return ;;
+    --language)    compadd en zh; return ;;
+    --status)      compadd 0 2xx 4xx 5xx; return ;;
   esac
 
   # ── Top-level dispatch ────────────────────────────────────────────────────
@@ -85,6 +94,16 @@ ${fnName}() {
     'auth:Manage authentication'
     'models:Browse and search models'
     'usage:View usage and billing'
+    'billing:View billing and costs'
+    'subscription:Manage subscriptions'
+    'account:Account information'
+    'api-key:Manage API keys'
+    'workspace:Manage workspaces'
+    'alert:Alert rules and history'
+    'support:Support tickets'
+    'update:Update CLI to the latest version'
+    'docs:Search and view documentation'
+    'run:Run models'
     'config:Manage CLI configuration'
     'doctor:Run diagnostics'
     'completion:Install shell tab completion'
@@ -104,18 +123,23 @@ ${fnName}() {
     auth)
       if (( CURRENT == 3 )); then
         local -a subs
-        subs=('login:Login via Device Flow' 'logout:Remove credentials' 'status:Auth status' 'refresh:Refresh token')
+        subs=('login:Login via Device Flow' 'logout:Remove credentials' 'status:Auth status')
         _describe -t commands 'auth subcommand' subs
         _arguments '(-h --help)'{-h,--help}'[Show help]'
       else
         case "\${words[3]}" in
-          login|logout|status)
+          login)
+            _arguments \\
+              '--format[Output format]:format:(table json text)' \\
+              '--init-only[Output device code and exit]' \\
+              '--complete[Resume pending login session]' \\
+              '--timeout[Polling timeout seconds]:seconds:()' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+          logout|status)
             _arguments \\
               '--format[Output format]:format:(table json text)' \\
               '(-h --help)'{-h,--help}'[Show help]'
-            ;;
-          refresh)
-            _arguments '(-h --help)'{-h,--help}'[Show help]'
             ;;
         esac
       fi
@@ -133,7 +157,6 @@ ${fnName}() {
               '--input[Input modality]:modality:(text image audio video)' \\
               '--output[Output modality]:modality:(text image audio video)' \\
               '--all[Show all models]' \\
-              '--free-tier[Free tier models only]' \\
               '--page[Page number]:n:()' \\
               '--per-page[Models per page]:n:()' \\
               '--verbose[Include extended details]' \\
@@ -168,6 +191,7 @@ ${fnName}() {
           'breakdown:Per-model breakdown by date'
           'free-tier:Free tier quota status'
           'payg:Pay-as-you-go usage'
+          'logs:Browse call logs'
         )
         _describe -t commands 'usage subcommand' subs
       else
@@ -185,6 +209,19 @@ ${fnName}() {
             ;;
           payg)
             _arguments $date_opts '--days[Days to look back]:n:()' $help_opt
+            ;;
+          logs)
+            _arguments \\
+              '--from[Start date]:date:()' \\
+              '--to[End date]:date:()' \\
+              '--period[Period preset]:period:(today yesterday week month last-month quarter year)' \\
+              '--model[Model ID]:model:()' \\
+              '--status[Status filter]:status:(0 2xx 4xx 5xx)' \\
+              '--request-id[Request ID]:id:()' \\
+              '--page[Page number]:n:()' \\
+              '--page-size[Page size]:n:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
             ;;
           breakdown)
             _arguments \\
@@ -209,7 +246,8 @@ ${fnName}() {
       else
         case "\${words[3]}" in
           list) _arguments '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]' ;;
-          get|set|unset) _arguments '1:key:()' '(-h --help)'{-h,--help}'[Show help]' ;;
+          get|unset) _arguments '1:key:()' '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]' ;;
+          set) _arguments '1:key:()' '1:value:()' '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]' ;;
         esac
       fi
       ;;
@@ -224,14 +262,301 @@ ${fnName}() {
       fi
       ;;
 
+    run)
+      if [[ "\${words[3]}" == task ]]; then
+        if (( CURRENT == 4 )); then
+          local -a tsubs
+          tsubs=('get:Get async task status' 'download:Download task artifacts')
+          _describe -t commands 'run task subcommand' tsubs
+        else
+          case "\${words[4]}" in
+            get)
+              _arguments '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]'
+              ;;
+            download)
+              _arguments \\
+                '--output-dir[Output directory]:path:_directories' \\
+                '--output-file[Output file]:path:_files' \\
+                '--overwrite[Overwrite existing files]' \\
+                '--format[Output format]:format:(table json text)' \\
+                '(-h --help)'{-h,--help}'[Show help]'
+              ;;
+          esac
+        fi
+      else
+        _arguments \\
+          '-m[Model identifier]:model:()' \\
+          '--model[Model identifier]:model:()' \\
+          '-s[System prompt]:text:()' \\
+          '--system[System prompt]:text:()' \\
+          '--messages-file[JSON messages file]:path:_files' \\
+          '--history[JSONL history file]:path:_files' \\
+          '--max-tokens[Max output tokens]:num:()' \\
+          '-t[Temperature]:num:()' \\
+          '--temperature[Temperature]:num:()' \\
+          '--no-stream[Disable streaming]' \\
+          '--format[Output format]:format:(table json text)' \\
+          '--api-key[Override API key]:key:()' \\
+          '--endpoint[Override endpoint]:url:()' \\
+          '--modality[Output modality]:modality:(text image audio video)' \\
+          '-f[Attach file]:path:_files' \\
+          '--file[Attach file]:path:_files' \\
+          '-i[Interactive mode]' \\
+          '--interactive[Interactive mode]' \\
+          '--thinking[Reasoning trace]:bool:(true false)' \\
+          '--thinking-budget[Max reasoning tokens]:num:()' \\
+          '--dump-on-exit[Dump log on exit]' \\
+          '--extra-params[Model parameters]:json:()' \\
+          '--voice[TTS voice]:name:()' \\
+          '--upload[Upload strategy]:mode:(auto oss)' \\
+          '-d[Output directory]:path:_directories' \\
+          '--output-dir[Output directory]:path:_directories' \\
+          '-o[Output file]:path:_files' \\
+          '--output-file[Output file]:path:_files' \\
+          '(-h --help)'{-h,--help}'[Show help]'
+      fi
+      ;;
+
+    billing)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('limit:Show billing limit' 'breakdown:Cost breakdown' 'summary:Billing summary')
+        _describe -t commands 'billing subcommand' subs
+      else
+        case "\${words[3]}" in
+          limit)
+            _arguments '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+          breakdown)
+            _arguments \\
+              '--group-by[Group by]:group:(model api-key)' \\
+              '--granularity[Granularity]:granularity:(day month)' \\
+              '--from[Start date]:date:()' \\
+              '--to[End date]:date:()' \\
+              '--period[Period preset]:period:(today yesterday week month last-month quarter year)' \\
+              '--charge-type[Charge type]:type:(all postpaid prepaid)' \\
+              '--top[Top N rows]:n:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+          summary)
+            _arguments \\
+              '--from[Start cycle]:cycle:()' \\
+              '--to[End cycle]:cycle:()' \\
+              '--charge-type[Charge type]:type:(all postpaid prepaid)' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+        esac
+      fi
+      ;;
+
+    subscription)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('status:Subscription status' 'orders:List orders' 'tokenplan:Token Plan details')
+        _describe -t commands 'subscription subcommand' subs
+      else
+        case "\${words[3]}" in
+          status)
+            _arguments \\
+              '--plan[Filter by plan]:kind:(token)' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+          orders)
+            _arguments \\
+              '--from[Start date]:date:()' \\
+              '--to[End date]:date:()' \\
+              '--type[Order type]:kind:(purchase renew upgrade)' \\
+              '--page[Page number]:n:()' \\
+              '--page-size[Page size]:n:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+          tokenplan)
+            if (( CURRENT == 4 )); then
+              local -a tsubs
+              tsubs=('status:Seat-type breakdown' 'seats:List seat instances')
+              _describe -t commands 'tokenplan subcommand' tsubs
+            else
+              case "\${words[4]}" in
+                status)
+                  _arguments '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]'
+                  ;;
+                seats)
+                  _arguments \\
+                    '--spec-type[Seat spec]:type:(pro standard)' \\
+                    '--page[Page number]:n:()' \\
+                    '--page-size[Page size]:n:()' \\
+                    '--format[Output format]:format:(table json text)' \\
+                    '(-h --help)'{-h,--help}'[Show help]'
+                  ;;
+              esac
+            fi
+            ;;
+        esac
+      fi
+      ;;
+
+    account)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('info:Show account info')
+        _describe -t commands 'account subcommand' subs
+      else
+        case "\${words[3]}" in
+          info) _arguments '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]' ;;
+        esac
+      fi
+      ;;
+
+    api-key)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('list:List API keys')
+        _describe -t commands 'api-key subcommand' subs
+      else
+        case "\${words[3]}" in
+          list)
+            _arguments \\
+              '--description[Filter by description]:q:()' \\
+              '--workspace[Filter by workspace]:id:()' \\
+              '--page[Page number]:n:()' \\
+              '--page-size[Page size]:n:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+        esac
+      fi
+      ;;
+
+    workspace)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('list:List workspaces' 'limit:Workspace limits')
+        _describe -t commands 'workspace subcommand' subs
+      else
+        case "\${words[3]}" in
+          list|limit) _arguments '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]' ;;
+        esac
+      fi
+      ;;
+
+    alert)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('rules:List alert rules' 'history:Alert trigger history' 'notifications:Notification history' 'templates:Alert templates')
+        _describe -t commands 'alert subcommand' subs
+      else
+        case "\${words[3]}" in
+          rules)
+            _arguments \\
+              '--resource-type[Resource type]:type:()' \\
+              '--page[Page number]:n:()' \\
+              '--page-size[Page size]:n:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+          history)
+            _arguments \\
+              '--rule-id[Filter by rule ID]:id:()' \\
+              '--from[Start date]:date:()' \\
+              '--to[End date]:date:()' \\
+              '--period[Period preset]:period:(today yesterday week month last-month quarter year)' \\
+              '--page[Page number]:n:()' \\
+              '--page-size[Page size]:n:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+          notifications)
+            _arguments \\
+              '--alert-history-id[Filter by alert history ID]:id:()' \\
+              '--from[Start date]:date:()' \\
+              '--to[End date]:date:()' \\
+              '--next-token[Cursor token]:token:()' \\
+              '--page-size[Page size]:n:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+          templates)
+            _arguments \\
+              '--source[Filter by source]:src:(official custom)' \\
+              '--page[Page number]:n:()' \\
+              '--page-size[Page size]:n:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+        esac
+      fi
+      ;;
+
+    support)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('list:List tickets' 'view:View ticket' 'create:Create ticket' 'reply:Reply to ticket' 'close:Close ticket' 'confirm:Confirm resolution' 'rate:Rate ticket')
+        _describe -t commands 'support subcommand' subs
+      else
+        case "\${words[3]}" in
+          list)
+            _arguments \\
+              '--page[Page number]:n:()' \\
+              '--pageSize[Items per page]:n:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+          view|create|reply|close|confirm)
+            _arguments '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+          rate)
+            _arguments \\
+              '--rating[Satisfaction rating 1-5]:n:()' \\
+              '--comment[Optional comment]:text:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+        esac
+      fi
+      ;;
+
+    docs)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('search:Search docs' 'view:View doc page')
+        _describe -t commands 'docs subcommand' subs
+      else
+        case "\${words[3]}" in
+          search)
+            _arguments \\
+              '1:query:()' \\
+              '--limit[Page size]:n:()' \\
+              '--page[Page number]:n:()' \\
+              '--language[Language]:lang:(en zh)' \\
+              '--view[View result at index]:index:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+          view)
+            _arguments '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+        esac
+      fi
+      ;;
+
     doctor)
-      _arguments '(-h --help)'{-h,--help}'[Show help]'
+      _arguments \\
+        '--format[Output format]:format:(table json text)' \\
+        '(-h --help)'{-h,--help}'[Show help]'
       ;;
 
     version)
       _arguments \\
         '--check[Check for updates]' \\
         '(-h --help)'{-h,--help}'[Show help]'
+      ;;
+
+    update)
+      _arguments '(-h --help)'{-h,--help}'[Show help]'
       ;;
   esac
 }
@@ -256,21 +581,60 @@ function generateBashCompletion(): string {
     --format)
       COMPREPLY=( $(compgen -W "table json text" -- "$cur") ); return 0 ;;
     --granularity)
-      COMPREPLY=( $(compgen -W "day month quarter" -- "$cur") ); return 0 ;;
+      COMPREPLY=( $(compgen -W "day month" -- "$cur") ); return 0 ;;
     --period)
       COMPREPLY=( $(compgen -W "today yesterday week month last-month quarter year" -- "$cur") ); return 0 ;;
     --shell)
       COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") ); return 0 ;;
-    --input|--output)
+    --input|--output|--modality)
       COMPREPLY=( $(compgen -W "text image audio video" -- "$cur") ); return 0 ;;
+    --charge-type)
+      COMPREPLY=( $(compgen -W "all postpaid prepaid" -- "$cur") ); return 0 ;;
+    --group-by)
+      COMPREPLY=( $(compgen -W "model api-key" -- "$cur") ); return 0 ;;
+    --thinking)
+      COMPREPLY=( $(compgen -W "true false" -- "$cur") ); return 0 ;;
+    --upload)
+      COMPREPLY=( $(compgen -W "auto oss" -- "$cur") ); return 0 ;;
+    --type)
+      COMPREPLY=( $(compgen -W "purchase renew upgrade" -- "$cur") ); return 0 ;;
+    --source)
+      COMPREPLY=( $(compgen -W "official custom" -- "$cur") ); return 0 ;;
+    --plan)
+      COMPREPLY=( $(compgen -W "token" -- "$cur") ); return 0 ;;
+    --spec-type)
+      COMPREPLY=( $(compgen -W "pro standard" -- "$cur") ); return 0 ;;
+    --language)
+      COMPREPLY=( $(compgen -W "en zh" -- "$cur") ); return 0 ;;
+    --status)
+      COMPREPLY=( $(compgen -W "0 2xx 4xx 5xx" -- "$cur") ); return 0 ;;
   esac
+
+  # ── run: top-level options + task subcommand ──────────────────────────────
+  # run takes options directly (no fixed subcommand slot), so its flags must be
+  # offered from COMP_CWORD 2 onward — the generic >=3 block below would miss
+  # "$cli run --<TAB>". The "task" subcommand is dispatched explicitly.
+  if [ "$cmd" = "run" ]; then
+    if [ "$sub" = "task" ]; then
+      local tasksub="\${COMP_WORDS[3]}"
+      if [ "$COMP_CWORD" -eq 3 ]; then
+        COMPREPLY=( $(compgen -W "get download" -- "$cur") ); return 0
+      fi
+      case "$tasksub" in
+        get)      COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
+        download) COMPREPLY=( $(compgen -W "--output-dir --output-file --overwrite --format -h --help" -- "$cur") ); return 0 ;;
+      esac
+      return 0
+    fi
+    COMPREPLY=( $(compgen -W "task -m --model -s --system --messages-file --history --max-tokens -t --temperature --no-stream --format --api-key --endpoint --modality -f --file -i --interactive --thinking --thinking-budget --dump-on-exit --extra-params --voice --upload -d --output-dir -o --output-file -h --help" -- "$cur") ); return 0
+  fi
 
   # ── Subcommand option completions ─────────────────────────────────────────
   if [ "$COMP_CWORD" -ge 3 ]; then
     case "$cmd" in
       models)
         case "$sub" in
-          list)   COMPREPLY=( $(compgen -W "--input --output --all --free-tier --page --per-page --verbose --format -h --help" -- "$cur") ); return 0 ;;
+          list)   COMPREPLY=( $(compgen -W "--input --output --all --page --per-page --verbose --format -h --help" -- "$cur") ); return 0 ;;
           info)   COMPREPLY=( $(compgen -W "--model --format -h --help" -- "$cur") ); return 0 ;;
           search) COMPREPLY=( $(compgen -W "--page --per-page --all --format -h --help" -- "$cur") ); return 0 ;;
         esac ;;
@@ -280,30 +644,90 @@ function generateBashCompletion(): string {
           summary|free-tier) COMPREPLY=( $(compgen -W "$date_opts -h --help" -- "$cur") ); return 0 ;;
           payg)              COMPREPLY=( $(compgen -W "$date_opts --days -h --help" -- "$cur") ); return 0 ;;
           breakdown)         COMPREPLY=( $(compgen -W "--model --granularity $date_opts --days -h --help" -- "$cur") ); return 0 ;;
+          logs)              COMPREPLY=( $(compgen -W "$date_opts --model --status --request-id --page --page-size -h --help" -- "$cur") ); return 0 ;;
         esac ;;
       config)
         case "$sub" in
-          list) COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
+          list)      COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
+          get|unset) COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
+          set)       COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
         esac ;;
       completion)
         COMPREPLY=( $(compgen -W "--shell -h --help" -- "$cur") ); return 0 ;;
       auth)
         case "$sub" in
-          login|logout|status) COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
+          login) COMPREPLY=( $(compgen -W "--format --init-only --complete --timeout -h --help" -- "$cur") ); return 0 ;;
+          logout|status) COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
         esac ;;
       doctor)
-        COMPREPLY=( $(compgen -W "-h --help" -- "$cur") ); return 0 ;;
+        COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
       version)
         COMPREPLY=( $(compgen -W "--check -h --help" -- "$cur") ); return 0 ;;
+      billing)
+        case "$sub" in
+          limit)     COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
+          breakdown) COMPREPLY=( $(compgen -W "--group-by --granularity --from --to --period --charge-type --top --format -h --help" -- "$cur") ); return 0 ;;
+          summary)   COMPREPLY=( $(compgen -W "--from --to --charge-type --format -h --help" -- "$cur") ); return 0 ;;
+        esac ;;
+      subscription)
+        local sub3="\${COMP_WORDS[3]}"
+        case "$sub" in
+          status) COMPREPLY=( $(compgen -W "--plan --format -h --help" -- "$cur") ); return 0 ;;
+          orders) COMPREPLY=( $(compgen -W "--from --to --type --page --page-size --format -h --help" -- "$cur") ); return 0 ;;
+          tokenplan)
+            case "$sub3" in
+              status) COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
+              seats)  COMPREPLY=( $(compgen -W "--spec-type --page --page-size --format -h --help" -- "$cur") ); return 0 ;;
+              *)      COMPREPLY=( $(compgen -W "status seats -h --help" -- "$cur") ); return 0 ;;
+            esac ;;
+        esac ;;
+      account)
+        case "$sub" in
+          info) COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
+        esac ;;
+      api-key)
+        case "$sub" in
+          list) COMPREPLY=( $(compgen -W "--description --workspace --page --page-size --format -h --help" -- "$cur") ); return 0 ;;
+        esac ;;
+      workspace)
+        case "$sub" in
+          list|limit) COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
+        esac ;;
+      alert)
+        case "$sub" in
+          rules)         COMPREPLY=( $(compgen -W "--resource-type --page --page-size --format -h --help" -- "$cur") ); return 0 ;;
+          history)       COMPREPLY=( $(compgen -W "--rule-id --from --to --period --page --page-size --format -h --help" -- "$cur") ); return 0 ;;
+          notifications) COMPREPLY=( $(compgen -W "--alert-history-id --from --to --next-token --page-size --format -h --help" -- "$cur") ); return 0 ;;
+          templates)     COMPREPLY=( $(compgen -W "--source --page --page-size --format -h --help" -- "$cur") ); return 0 ;;
+        esac ;;
+      support)
+        case "$sub" in
+          list)    COMPREPLY=( $(compgen -W "--page --pageSize --format -h --help" -- "$cur") ); return 0 ;;
+          rate)    COMPREPLY=( $(compgen -W "--rating --comment --format -h --help" -- "$cur") ); return 0 ;;
+          *)       COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
+        esac ;;
+      docs)
+        case "$sub" in
+          search) COMPREPLY=( $(compgen -W "--limit --page --language --view --format -h --help" -- "$cur") ); return 0 ;;
+          view)   COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
+        esac ;;
     esac
   fi
 
   # ── Subcommand completions ────────────────────────────────────────────────
   if [ "$COMP_CWORD" -eq 2 ]; then
     case "$cmd" in
-      auth)       COMPREPLY=( $(compgen -W "login logout status refresh" -- "$cur") ); return 0 ;;
+      auth)       COMPREPLY=( $(compgen -W "login logout status" -- "$cur") ); return 0 ;;
       models)     COMPREPLY=( $(compgen -W "list info search" -- "$cur") ); return 0 ;;
-      usage)      COMPREPLY=( $(compgen -W "summary breakdown free-tier payg" -- "$cur") ); return 0 ;;
+      usage)      COMPREPLY=( $(compgen -W "summary breakdown free-tier payg logs" -- "$cur") ); return 0 ;;
+      billing)    COMPREPLY=( $(compgen -W "limit breakdown summary" -- "$cur") ); return 0 ;;
+      subscription) COMPREPLY=( $(compgen -W "status orders tokenplan" -- "$cur") ); return 0 ;;
+      account)    COMPREPLY=( $(compgen -W "info" -- "$cur") ); return 0 ;;
+      api-key)    COMPREPLY=( $(compgen -W "list" -- "$cur") ); return 0 ;;
+      workspace)  COMPREPLY=( $(compgen -W "list limit" -- "$cur") ); return 0 ;;
+      alert)      COMPREPLY=( $(compgen -W "rules history notifications templates" -- "$cur") ); return 0 ;;
+      support)    COMPREPLY=( $(compgen -W "list view create reply close confirm rate" -- "$cur") ); return 0 ;;
+      docs)       COMPREPLY=( $(compgen -W "search view" -- "$cur") ); return 0 ;;
       config)     COMPREPLY=( $(compgen -W "list get set unset" -- "$cur") ); return 0 ;;
       completion) COMPREPLY=( $(compgen -W "install generate" -- "$cur") ); return 0 ;;
     esac
@@ -311,7 +735,7 @@ function generateBashCompletion(): string {
 
   # ── Top-level command completions ─────────────────────────────────────────
   if [ "$COMP_CWORD" -eq 1 ]; then
-    COMPREPLY=( $(compgen -W "auth models usage config doctor completion version -h --help" -- "$cur") )
+    COMPREPLY=( $(compgen -W "auth models usage billing subscription account api-key workspace alert support update docs run config doctor completion version -h --help" -- "$cur") )
   fi
 }
 
@@ -336,21 +760,30 @@ function ${helperPrefix}_seen_sub
 end
 
 # ── Top-level commands ────────────────────────────────────────────────────────
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage config doctor completion version update' -f
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage config doctor completion version update' -a auth       -d 'Manage authentication'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage config doctor completion version update' -a models     -d 'Browse and search models'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage config doctor completion version update' -a usage      -d 'View usage and billing'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage config doctor completion version update' -a config     -d 'Manage CLI configuration'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage config doctor completion version update' -a doctor     -d 'Run diagnostics'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage config doctor completion version update' -a completion -d 'Install shell tab completion'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage config doctor completion version update' -a version    -d 'Show CLI version'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -f
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a auth          -d 'Manage authentication'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a models        -d 'Browse and search models'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a usage         -d 'View usage and billing'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a billing       -d 'View billing and costs'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a subscription  -d 'Manage subscriptions'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a account       -d 'Account information'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a api-key       -d 'Manage API keys'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a workspace     -d 'Manage workspaces'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a alert         -d 'Alert rules and history'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a support       -d 'Support tickets'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a update        -d 'Update CLI to latest version'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a docs          -d 'Search documentation'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a run           -d 'Run models'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a config        -d 'Manage CLI configuration'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a doctor        -d 'Run diagnostics'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a completion    -d 'Install shell tab completion'
+complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription account api-key workspace alert support docs run config doctor completion version update' -a version       -d 'Show CLI version'
 
 # ── auth subcommands ──────────────────────────────────────────────────────────
-complete -c ${cli} -n '__fish_seen_subcommand_from auth; and not __fish_seen_subcommand_from login logout status refresh' -f
-complete -c ${cli} -n '__fish_seen_subcommand_from auth; and not __fish_seen_subcommand_from login logout status refresh' -a login   -d 'Login via Device Flow'
-complete -c ${cli} -n '__fish_seen_subcommand_from auth; and not __fish_seen_subcommand_from login logout status refresh' -a logout  -d 'Remove credentials'
-complete -c ${cli} -n '__fish_seen_subcommand_from auth; and not __fish_seen_subcommand_from login logout status refresh' -a status  -d 'Auth status'
-complete -c ${cli} -n '__fish_seen_subcommand_from auth; and not __fish_seen_subcommand_from login logout status refresh' -a refresh -d 'Refresh token'
+complete -c ${cli} -n '__fish_seen_subcommand_from auth; and not __fish_seen_subcommand_from login logout status' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from auth; and not __fish_seen_subcommand_from login logout status' -a login   -d 'Login via Device Flow'
+complete -c ${cli} -n '__fish_seen_subcommand_from auth; and not __fish_seen_subcommand_from login logout status' -a logout  -d 'Remove credentials'
+complete -c ${cli} -n '__fish_seen_subcommand_from auth; and not __fish_seen_subcommand_from login logout status' -a status  -d 'Auth status'
 
 # ── models subcommands ────────────────────────────────────────────────────────
 complete -c ${cli} -n '__fish_seen_subcommand_from models; and not __fish_seen_subcommand_from list info search' -f
@@ -361,7 +794,6 @@ complete -c ${cli} -n '__fish_seen_subcommand_from models; and not __fish_seen_s
 complete -c ${cli} -n '__fish_seen_subcommand_from list'   -l input      -d 'Input modality'   -a 'text image audio video'
 complete -c ${cli} -n '__fish_seen_subcommand_from list'   -l output     -d 'Output modality'  -a 'text image audio video'
 complete -c ${cli} -n '__fish_seen_subcommand_from list'   -l all        -d 'Show all models'
-complete -c ${cli} -n '__fish_seen_subcommand_from list'   -l free-tier  -d 'Free tier only'
 complete -c ${cli} -n '__fish_seen_subcommand_from list'   -l page      -d 'Page number'
 complete -c ${cli} -n '__fish_seen_subcommand_from list'   -l per-page  -d 'Models per page'
 complete -c ${cli} -n '__fish_seen_subcommand_from list'   -l verbose   -d 'Include extended details'
@@ -372,18 +804,25 @@ complete -c ${cli} -n '__fish_seen_subcommand_from search' -l per-page  -d 'Mode
 complete -c ${cli} -n '__fish_seen_subcommand_from search' -l all       -d 'Return all results'
 
 # ── usage subcommands ─────────────────────────────────────────────────────────
-complete -c ${cli} -n '__fish_seen_subcommand_from usage; and not __fish_seen_subcommand_from summary breakdown free-tier payg' -f
-complete -c ${cli} -n '__fish_seen_subcommand_from usage; and not __fish_seen_subcommand_from summary breakdown free-tier payg' -a summary   -d 'Usage summary'
-complete -c ${cli} -n '__fish_seen_subcommand_from usage; and not __fish_seen_subcommand_from summary breakdown free-tier payg' -a breakdown -d 'Per-model breakdown'
-complete -c ${cli} -n '__fish_seen_subcommand_from usage; and not __fish_seen_subcommand_from summary breakdown free-tier payg' -a free-tier -d 'Free tier quota'
-complete -c ${cli} -n '__fish_seen_subcommand_from usage; and not __fish_seen_subcommand_from summary breakdown free-tier payg' -a payg      -d 'Pay-as-you-go usage'
+complete -c ${cli} -n '__fish_seen_subcommand_from usage; and not __fish_seen_subcommand_from summary breakdown free-tier payg logs' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from usage; and not __fish_seen_subcommand_from summary breakdown free-tier payg logs' -a summary   -d 'Usage summary'
+complete -c ${cli} -n '__fish_seen_subcommand_from usage; and not __fish_seen_subcommand_from summary breakdown free-tier payg logs' -a breakdown -d 'Per-model breakdown'
+complete -c ${cli} -n '__fish_seen_subcommand_from usage; and not __fish_seen_subcommand_from summary breakdown free-tier payg logs' -a free-tier -d 'Free tier quota'
+complete -c ${cli} -n '__fish_seen_subcommand_from usage; and not __fish_seen_subcommand_from summary breakdown free-tier payg logs' -a payg      -d 'Pay-as-you-go usage'
+complete -c ${cli} -n '__fish_seen_subcommand_from usage; and not __fish_seen_subcommand_from summary breakdown free-tier payg logs' -a logs      -d 'Browse call logs'
 
-complete -c ${cli} -n '__fish_seen_subcommand_from summary free-tier payg breakdown' -l from   -d 'Start date (YYYY-MM-DD)'
-complete -c ${cli} -n '__fish_seen_subcommand_from summary free-tier payg breakdown' -l to     -d 'End date (YYYY-MM-DD)'
-complete -c ${cli} -n '__fish_seen_subcommand_from summary free-tier payg breakdown' -l period -d 'Period preset' -a 'today yesterday week month last-month quarter year'
-complete -c ${cli} -n '__fish_seen_subcommand_from payg breakdown'                  -l days   -d 'Days to look back'
+complete -c ${cli} -n '__fish_seen_subcommand_from summary free-tier payg breakdown logs' -l from   -d 'Start date (YYYY-MM-DD)'
+complete -c ${cli} -n '__fish_seen_subcommand_from summary free-tier payg breakdown logs' -l to     -d 'End date (YYYY-MM-DD)'
+complete -c ${cli} -n '__fish_seen_subcommand_from summary free-tier payg breakdown logs' -l period -d 'Period preset' -a 'today yesterday week month last-month quarter year'
+complete -c ${cli} -n '__fish_seen_subcommand_from payg breakdown logs'                  -l days   -d 'Days to look back'
 complete -c ${cli} -n '__fish_seen_subcommand_from breakdown'                       -l model       -d 'Model ID (required)'
 complete -c ${cli} -n '__fish_seen_subcommand_from breakdown'                       -l granularity -d 'Time granularity' -a 'day month quarter'
+complete -c ${cli} -n '__fish_seen_subcommand_from logs' -l model -d 'Model ID'
+complete -c ${cli} -n '__fish_seen_subcommand_from logs' -l status -d 'Status filter' -a '0 2xx 4xx 5xx'
+complete -c ${cli} -n '__fish_seen_subcommand_from logs' -l request-id -d 'Request ID'
+complete -c ${cli} -n '__fish_seen_subcommand_from logs' -l page -d 'Page number'
+complete -c ${cli} -n '__fish_seen_subcommand_from logs' -l page-size -d 'Page size'
+complete -c ${cli} -n '__fish_seen_subcommand_from logs' -l format -d 'Output format' -a 'table json text'
 
 # ── config subcommands ────────────────────────────────────────────────────────
 complete -c ${cli} -n '__fish_seen_subcommand_from config; and not __fish_seen_subcommand_from list get set unset' -f
@@ -391,6 +830,7 @@ complete -c ${cli} -n '__fish_seen_subcommand_from config; and not __fish_seen_s
 complete -c ${cli} -n '__fish_seen_subcommand_from config; and not __fish_seen_subcommand_from list get set unset' -a get   -d 'Get a value'
 complete -c ${cli} -n '__fish_seen_subcommand_from config; and not __fish_seen_subcommand_from list get set unset' -a set   -d 'Set a value'
 complete -c ${cli} -n '__fish_seen_subcommand_from config; and not __fish_seen_subcommand_from list get set unset' -a unset -d 'Remove a value'
+complete -c ${cli} -n '__fish_seen_subcommand_from config; and __fish_seen_subcommand_from list get set unset' -l format -d 'Output format' -a 'table json text'
 
 # ── completion subcommands ────────────────────────────────────────────────────
 complete -c ${cli} -n '__fish_seen_subcommand_from completion; and not __fish_seen_subcommand_from install generate' -f
@@ -400,11 +840,173 @@ complete -c ${cli} -n '__fish_seen_subcommand_from install generate' -l shell -d
 
 # ── auth options ─────────────────────────────────────────────────────────────
 complete -c ${cli} -n '__fish_seen_subcommand_from login'  -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from login'  -l init-only -d 'Output device code and exit'
+complete -c ${cli} -n '__fish_seen_subcommand_from login'  -l complete -d 'Resume pending login session'
+complete -c ${cli} -n '__fish_seen_subcommand_from login'  -l timeout -d 'Polling timeout seconds'
 complete -c ${cli} -n '__fish_seen_subcommand_from logout' -l format -d 'Output format' -a 'table json text'
 complete -c ${cli} -n '__fish_seen_subcommand_from status' -l format -d 'Output format' -a 'table json text'
 
+# ── doctor options ───────────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from doctor' -l format -d 'Output format' -a 'table json text'
+
 # ── version options ──────────────────────────────────────────────────────────
 complete -c ${cli} -n '__fish_seen_subcommand_from version' -l check -d 'Check for updates'
+
+# ── run options ──────────────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -s m -l model       -d 'Model identifier'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -s s -l system      -d 'System prompt'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -l messages-file -d 'JSON messages file'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -l history       -d 'JSONL history file'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -l max-tokens    -d 'Max output tokens'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -s t -l temperature -d 'Sampling temperature'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -l no-stream     -d 'Disable streaming'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -l format        -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -l api-key       -d 'Override API key'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -l endpoint      -d 'Override endpoint'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -l modality      -d 'Output modality' -a 'text image audio video'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -s f -l file        -d 'Attach file'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -s i -l interactive -d 'Interactive mode'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -l thinking      -d 'Reasoning trace' -a 'true false'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -l thinking-budget -d 'Max reasoning tokens'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -l dump-on-exit  -d 'Dump log on exit'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -l extra-params  -d 'Model parameters JSON'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -l voice         -d 'TTS voice name'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -l upload        -d 'Upload strategy' -a 'auto oss'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -s d -l output-dir  -d 'Output directory'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and not __fish_seen_subcommand_from task' -s o -l output-file -d 'Output file path'
+
+# ── run task subcommands ──────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and __fish_seen_subcommand_from task; and not __fish_seen_subcommand_from get download' -a get      -d 'Get async task status'
+complete -c ${cli} -n '__fish_seen_subcommand_from run; and __fish_seen_subcommand_from task; and not __fish_seen_subcommand_from get download' -a download -d 'Download task artifacts'
+complete -c ${cli} -n '__fish_seen_subcommand_from task get' -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from task download' -s d -l output-dir  -d 'Output directory'
+complete -c ${cli} -n '__fish_seen_subcommand_from task download' -s o -l output-file -d 'Output file path'
+complete -c ${cli} -n '__fish_seen_subcommand_from task download' -l overwrite -d 'Overwrite existing files'
+complete -c ${cli} -n '__fish_seen_subcommand_from task download' -l format -d 'Output format' -a 'table json text'
+
+# ── billing subcommands ──────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from billing; and not __fish_seen_subcommand_from limit breakdown summary' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from billing; and not __fish_seen_subcommand_from limit breakdown summary' -a limit     -d 'Show billing limit'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing; and not __fish_seen_subcommand_from limit breakdown summary' -a breakdown -d 'Cost breakdown'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing; and not __fish_seen_subcommand_from limit breakdown summary' -a summary   -d 'Billing summary'
+
+complete -c ${cli} -n '__fish_seen_subcommand_from billing limit'     -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing breakdown' -l group-by     -d 'Group by' -a 'model api-key'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing breakdown' -l granularity  -d 'Granularity' -a 'day month'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing breakdown' -l from -d 'Start date'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing breakdown' -l to -d 'End date'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing breakdown' -l period -d 'Period preset' -a 'today yesterday week month last-month quarter year'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing breakdown' -l charge-type -d 'Charge type' -a 'all postpaid prepaid'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing breakdown' -l top -d 'Top N rows'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing breakdown' -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing summary'   -l from -d 'Start cycle'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing summary'   -l to -d 'End cycle'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing summary'   -l charge-type -d 'Charge type' -a 'all postpaid prepaid'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing summary'   -l format -d 'Output format' -a 'table json text'
+
+# ── subscription subcommands ─────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription; and not __fish_seen_subcommand_from status orders tokenplan' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription; and not __fish_seen_subcommand_from status orders tokenplan' -a status    -d 'Subscription status'
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription; and not __fish_seen_subcommand_from status orders tokenplan' -a orders    -d 'List orders'
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription; and not __fish_seen_subcommand_from status orders tokenplan' -a tokenplan -d 'Token Plan details'
+
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription status' -l plan -d 'Filter by plan' -a 'token'
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription status' -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription orders' -l from -d 'Start date'
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription orders' -l to -d 'End date'
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription orders' -l type -d 'Order type' -a 'purchase renew upgrade'
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription orders' -l page -d 'Page number'
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription orders' -l page-size -d 'Page size'
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription orders' -l format -d 'Output format' -a 'table json text'
+
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription tokenplan; and not __fish_seen_subcommand_from status seats' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription tokenplan; and not __fish_seen_subcommand_from status seats' -a status -d 'Seat-type breakdown'
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription tokenplan; and not __fish_seen_subcommand_from status seats' -a seats  -d 'List seat instances'
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription tokenplan status' -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription tokenplan seats' -l spec-type -d 'Seat spec' -a 'pro standard'
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription tokenplan seats' -l page -d 'Page number'
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription tokenplan seats' -l page-size -d 'Page size'
+complete -c ${cli} -n '__fish_seen_subcommand_from subscription tokenplan seats' -l format -d 'Output format' -a 'table json text'
+
+# ── account subcommands ──────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from account; and not __fish_seen_subcommand_from info' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from account; and not __fish_seen_subcommand_from info' -a info -d 'Show account info'
+complete -c ${cli} -n '__fish_seen_subcommand_from account info' -l format -d 'Output format' -a 'table json text'
+
+# ── api-key subcommands ──────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from api-key; and not __fish_seen_subcommand_from list' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from api-key; and not __fish_seen_subcommand_from list' -a list -d 'List API keys'
+complete -c ${cli} -n '__fish_seen_subcommand_from api-key list' -l description -d 'Filter by description'
+complete -c ${cli} -n '__fish_seen_subcommand_from api-key list' -l workspace -d 'Filter by workspace'
+complete -c ${cli} -n '__fish_seen_subcommand_from api-key list' -l page -d 'Page number'
+complete -c ${cli} -n '__fish_seen_subcommand_from api-key list' -l page-size -d 'Page size'
+complete -c ${cli} -n '__fish_seen_subcommand_from api-key list' -l format -d 'Output format' -a 'table json text'
+
+# ── workspace subcommands ────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from workspace; and not __fish_seen_subcommand_from list limit' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from workspace; and not __fish_seen_subcommand_from list limit' -a list  -d 'List workspaces'
+complete -c ${cli} -n '__fish_seen_subcommand_from workspace; and not __fish_seen_subcommand_from list limit' -a limit -d 'Workspace limits'
+complete -c ${cli} -n '__fish_seen_subcommand_from workspace list'  -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from workspace limit' -l format -d 'Output format' -a 'table json text'
+
+# ── alert subcommands ────────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from alert; and not __fish_seen_subcommand_from rules history notifications templates' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from alert; and not __fish_seen_subcommand_from rules history notifications templates' -a rules         -d 'List alert rules'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert; and not __fish_seen_subcommand_from rules history notifications templates' -a history       -d 'Alert trigger history'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert; and not __fish_seen_subcommand_from rules history notifications templates' -a notifications -d 'Notification history'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert; and not __fish_seen_subcommand_from rules history notifications templates' -a templates     -d 'Alert templates'
+
+complete -c ${cli} -n '__fish_seen_subcommand_from alert rules' -l resource-type -d 'Resource type'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert rules' -l page -d 'Page number'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert rules' -l page-size -d 'Page size'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert rules' -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert history' -l rule-id -d 'Filter by rule ID'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert history' -l from -d 'Start date'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert history' -l to -d 'End date'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert history' -l period -d 'Period preset' -a 'today yesterday week month last-month quarter year'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert history' -l page -d 'Page number'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert history' -l page-size -d 'Page size'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert history' -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert notifications' -l alert-history-id -d 'Filter by alert history ID'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert notifications' -l from -d 'Start date'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert notifications' -l to -d 'End date'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert notifications' -l next-token -d 'Cursor token'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert notifications' -l page-size -d 'Page size'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert notifications' -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert templates' -l source -d 'Filter by source' -a 'official custom'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert templates' -l page -d 'Page number'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert templates' -l page-size -d 'Page size'
+complete -c ${cli} -n '__fish_seen_subcommand_from alert templates' -l format -d 'Output format' -a 'table json text'
+
+# ── support subcommands ──────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from support; and not __fish_seen_subcommand_from list view create reply close confirm rate' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from support; and not __fish_seen_subcommand_from list view create reply close confirm rate' -a list    -d 'List tickets'
+complete -c ${cli} -n '__fish_seen_subcommand_from support; and not __fish_seen_subcommand_from list view create reply close confirm rate' -a view    -d 'View ticket'
+complete -c ${cli} -n '__fish_seen_subcommand_from support; and not __fish_seen_subcommand_from list view create reply close confirm rate' -a create  -d 'Create ticket'
+complete -c ${cli} -n '__fish_seen_subcommand_from support; and not __fish_seen_subcommand_from list view create reply close confirm rate' -a reply   -d 'Reply to ticket'
+complete -c ${cli} -n '__fish_seen_subcommand_from support; and not __fish_seen_subcommand_from list view create reply close confirm rate' -a close   -d 'Close ticket'
+complete -c ${cli} -n '__fish_seen_subcommand_from support; and not __fish_seen_subcommand_from list view create reply close confirm rate' -a confirm -d 'Confirm resolution'
+complete -c ${cli} -n '__fish_seen_subcommand_from support; and not __fish_seen_subcommand_from list view create reply close confirm rate' -a rate    -d 'Rate ticket'
+
+complete -c ${cli} -n '__fish_seen_subcommand_from support list' -l page -d 'Page number'
+complete -c ${cli} -n '__fish_seen_subcommand_from support list' -l pageSize -d 'Items per page'
+complete -c ${cli} -n '__fish_seen_subcommand_from support list' -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from support rate' -l rating -d 'Rating 1-5'
+complete -c ${cli} -n '__fish_seen_subcommand_from support rate' -l comment -d 'Optional comment'
+complete -c ${cli} -n '__fish_seen_subcommand_from support rate' -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from support view create reply close confirm' -l format -d 'Output format' -a 'table json text'
+
+# ── docs subcommands ─────────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from docs; and not __fish_seen_subcommand_from search view' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from docs; and not __fish_seen_subcommand_from search view' -a search -d 'Search docs'
+complete -c ${cli} -n '__fish_seen_subcommand_from docs; and not __fish_seen_subcommand_from search view' -a view   -d 'View doc page'
+
+complete -c ${cli} -n '__fish_seen_subcommand_from docs search' -l limit -d 'Page size'
+complete -c ${cli} -n '__fish_seen_subcommand_from docs search' -l page -d 'Page number'
+complete -c ${cli} -n '__fish_seen_subcommand_from docs search' -l language -d 'Language' -a 'en zh'
+complete -c ${cli} -n '__fish_seen_subcommand_from docs search' -l view -d 'View result at index'
+complete -c ${cli} -n '__fish_seen_subcommand_from docs search' -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from docs view' -l format -d 'Output format' -a 'table json text'
 
 # ── Global options ────────────────────────────────────────────────────────────
 complete -c ${cli} -l format -d 'Output format' -a 'table json text'
@@ -442,7 +1044,10 @@ export function registerCompletionCommand(program: Command): void {
       if (!['zsh', 'bash', 'fish'].includes(shell)) {
         const config = getEffectiveConfig();
         const format = resolveFormatFromCommand(completion, config);
-        handleError(invalidArgError(`Unsupported shell '${shell}'. Supported: bash, zsh, fish`), format);
+        handleError(
+          invalidArgError(`Unsupported shell '${shell}'. Supported: bash, zsh, fish`),
+          format,
+        );
       }
 
       console.log(`Detected shell: ${shell}`);
@@ -461,7 +1066,17 @@ export function registerCompletionCommand(program: Command): void {
       }
 
       const completionLine = getCompletionLine(shell);
-      appendFileSync(rcPath, completionLine);
+      try {
+        // Shells like fish keep their rc file under a nested config directory
+        // (~/.config/fish) that may not exist yet on a fresh setup; create it
+        // so the append does not fail with ENOENT.
+        mkdirSync(dirname(rcPath), { recursive: true });
+        appendFileSync(rcPath, completionLine);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        console.error(`Error: Failed to write completion config to ${rcPath}: ${reason}`);
+        process.exit(1);
+      }
 
       const sourceCmd = getSourceCommand(shell);
       console.log(
@@ -484,7 +1099,10 @@ export function registerCompletionCommand(program: Command): void {
       if (!['zsh', 'bash', 'fish'].includes(shell)) {
         const config = getEffectiveConfig();
         const format = resolveFormatFromCommand(completion, config);
-        handleError(invalidArgError(`Unsupported shell '${shell}'. Supported: bash, zsh, fish`), format);
+        handleError(
+          invalidArgError(`Unsupported shell '${shell}'. Supported: bash, zsh, fish`),
+          format,
+        );
       }
 
       process.stdout.write(generateCompletion(shell));

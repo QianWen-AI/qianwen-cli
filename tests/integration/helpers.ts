@@ -120,7 +120,9 @@ export async function runCommandJSON(args: string[]): Promise<{ data: unknown; e
  * Errors must go to stderr so that Agent pipelines (`cmd | jq`) don't see
  * error JSON polluting the data stream.
  */
-export async function runCommandJSONErr(args: string[]): Promise<{ data: unknown; exitCode: number }> {
+export async function runCommandJSONErr(
+  args: string[],
+): Promise<{ data: unknown; exitCode: number }> {
   const result = await runCommand(args);
   const output = result.stderr;
   const jsonMatch = output.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);

@@ -338,9 +338,7 @@ describe('detectNodePackageManager', () => {
       ),
     ).toBe('bun');
     expect(
-      detectNodePackageManager(
-        'C:\\Users\\u\\project\\node_modules\\.pnpm\\foo\\check.js',
-      ),
+      detectNodePackageManager('C:\\Users\\u\\project\\node_modules\\.pnpm\\foo\\check.js'),
     ).toBe('pnpm');
   });
 

@@ -60,8 +60,26 @@ describe('usage free-tier command (one-shot)', () => {
         getUsageSummary: async () => ({
           period: { from: '2026-04-01', to: '2026-04-20' },
           free_tier: [
-            { model_id: 'qwen3-max', quota: { remaining: 500_000, total: 1_000_000, unit: 'tokens', used_pct: 50, resetDate: null } },
-            { model_id: 'qwen3-mini', quota: { remaining: 0, total: 100_000, unit: 'tokens', used_pct: 100, resetDate: null } },
+            {
+              model_id: 'qwen3-max',
+              quota: {
+                remaining: 500_000,
+                total: 1_000_000,
+                unit: 'tokens',
+                used_pct: 50,
+                resetDate: null,
+              },
+            },
+            {
+              model_id: 'qwen3-mini',
+              quota: {
+                remaining: 0,
+                total: 100_000,
+                unit: 'tokens',
+                used_pct: 100,
+                resetDate: null,
+              },
+            },
           ],
           token_plan: { subscribed: false },
           pay_as_you_go: { models: [], total: { cost: 0, currency: 'CNY' } },
@@ -86,7 +104,16 @@ describe('usage free-tier command (one-shot)', () => {
         getUsageSummary: async () => ({
           period: { from: '2026-04-01', to: '2026-04-20' },
           free_tier: [
-            { model_id: 'qwen3-max', quota: { remaining: 500_000, total: 1_000_000, unit: 'tokens', used_pct: 50, resetDate: null } },
+            {
+              model_id: 'qwen3-max',
+              quota: {
+                remaining: 500_000,
+                total: 1_000_000,
+                unit: 'tokens',
+                used_pct: 50,
+                resetDate: null,
+              },
+            },
           ],
           token_plan: { subscribed: false },
           pay_as_you_go: { models: [], total: { cost: 0, currency: 'CNY' } },
@@ -162,7 +189,10 @@ describe('usage free-tier command (one-shot)', () => {
           period: { from: '2026-04-01', to: '2026-04-20' },
           free_tier: [
             // normal row with quota
-            { model_id: 'qwen-with-quota', quota: { remaining: 800, total: 1000, unit: 'tokens', used_pct: 20 } } as any,
+            {
+              model_id: 'qwen-with-quota',
+              quota: { remaining: 800, total: 1000, unit: 'tokens', used_pct: 20 },
+            } as any,
             // isFreeOnly row (quota null)
             { model_id: 'qwen-free-only', quota: null } as any,
           ],
@@ -196,9 +226,18 @@ describe('usage free-tier command (one-shot)', () => {
         getUsageSummary: async () => ({
           period: { from: '2026-04-01', to: '2026-04-20' },
           free_tier: [
-            { model_id: 'm1', quota: { remaining: 100, total: 1000, unit: 'tokens', used_pct: 90 } } as any,
-            { model_id: 'm2', quota: { remaining: 500, total: 1000, unit: 'tokens', used_pct: 50 } } as any,
-            { model_id: 'm3', quota: { remaining: 800, total: 1000, unit: 'tokens', used_pct: 20 } } as any,
+            {
+              model_id: 'm1',
+              quota: { remaining: 100, total: 1000, unit: 'tokens', used_pct: 90 },
+            } as any,
+            {
+              model_id: 'm2',
+              quota: { remaining: 500, total: 1000, unit: 'tokens', used_pct: 50 },
+            } as any,
+            {
+              model_id: 'm3',
+              quota: { remaining: 800, total: 1000, unit: 'tokens', used_pct: 20 },
+            } as any,
           ],
           token_plan: { subscribed: false },
           pay_as_you_go: { models: [], total: { cost: 0, currency: 'CNY' } },

@@ -13,36 +13,37 @@ import { didYouMean } from '../utils/strings.js';
 
 export const TOP_COMMANDS = [
   'auth',
-  'models',
-  'usage',
-  'config',
-  'doctor',
-  'completion',
-  'version',
-  'help',
+  'billing',
   'clear',
+  'completion',
+  'config',
+  'docs',
+  'doctor',
+  'help',
+  'models',
+  'subscription',
+  'update',
+  'usage',
+  'version',
+  'workspace',
 ];
 
 export const SUBCOMMANDS: Record<string, string[]> = {
-  auth: ['login', 'logout', 'status', 'refresh'],
+  auth: ['login', 'logout', 'status'],
   models: ['list', 'info', 'search'],
-  usage: ['summary', 'free-tier', 'payg', 'breakdown'],
+  usage: ['summary', 'free-tier', 'payg', 'breakdown', 'logs'],
+  billing: ['limit', 'breakdown', 'summary'],
+  subscription: ['status', 'orders', 'tokenplan'],
+  'subscription tokenplan': ['status', 'seats'],
+  workspace: ['list', 'limit'],
+  docs: ['search', 'view'],
   config: ['list', 'get', 'set', 'unset'],
   completion: ['install', 'generate'],
 };
 
 /** Available flags per "cmd subcmd". */
 export const COMMAND_FLAGS: Record<string, string[]> = {
-  'models list': [
-    '--input',
-    '--output',
-    '--all',
-    '--free-tier',
-    '--page',
-    '--per-page',
-    '--verbose',
-    '--format',
-  ],
+  'models list': ['--input', '--output', '--all', '--page', '--per-page', '--verbose', '--format'],
   'models info': ['--model', '--format'],
   'models search': ['--page', '--per-page', '--all', '--format'],
   'usage summary': ['--from', '--to', '--period', '--format'],
@@ -57,10 +58,47 @@ export const COMMAND_FLAGS: Record<string, string[]> = {
   ],
   'usage free-tier': ['--from', '--to', '--period', '--format'],
   'usage payg': ['--from', '--to', '--period', '--days', '--format'],
+  'usage logs': [
+    '--from',
+    '--to',
+    '--period',
+    '--model',
+    '--status',
+    '--request-id',
+    '--page',
+    '--page-size',
+    '--format',
+  ],
+  'billing limit': ['--format'],
+  'billing breakdown': [
+    '--granularity',
+    '--group-by',
+    '--from',
+    '--to',
+    '--period',
+    '--charge-type',
+    '--top',
+    '--format',
+  ],
+  'billing summary': ['--from', '--to', '--charge-type', '--format'],
+  'subscription status': ['--plan', '--format'],
+  'subscription orders': ['--from', '--to', '--type', '--page', '--page-size', '--format'],
+  'subscription tokenplan': [],
+  'subscription tokenplan status': ['--format'],
+  'subscription tokenplan seats': ['--spec-type', '--page', '--page-size', '--format'],
+  'workspace list': ['--format'],
+  'workspace limit': ['--format'],
+  'docs search': ['--limit', '--page', '--language', '--view', '--format'],
+  'docs view': ['--format'],
   'config list': ['--format'],
-  'auth login': ['--format'],
+  'config get': ['--format'],
+  'config set': ['--format'],
+  'config unset': ['--format'],
+  'auth login': ['--format', '--init-only', '--complete', '--timeout'],
   'auth logout': ['--format'],
   'auth status': ['--format'],
+  update: [],
+  doctor: ['--format'],
   version: ['--check'],
   'completion install': ['--shell'],
   'completion generate': ['--shell'],
@@ -77,7 +115,30 @@ export const FLAG_VALUES: Record<string, string[]> = {
   '--shell': ['bash', 'zsh', 'fish'],
   '--input': ['text', 'image', 'audio', 'video'],
   '--output': ['text', 'image', 'audio', 'video'],
+  '--modality': ['text', 'image', 'audio', 'video'],
+  '--charge-type': ['all', 'subscription', 'payg'],
+  '--type': ['purchase', 'renew', 'upgrade'],
+  '--language': ['en', 'zh'],
+  '--plan': ['token'],
+  '--spec-type': ['pro', 'standard'],
+  '--status': ['0', '2xx', '4xx', '5xx'],
+  '--thinking': ['true', 'false'],
+  '--upload': ['auto', 'oss'],
+  '--group-by': ['model', 'api-key'],
 };
+
+/** Per-command flag value overrides (takes precedence over FLAG_VALUES). */
+export const COMMAND_FLAG_VALUES: Record<string, Record<string, string[]>> = {
+  'billing breakdown': {
+    '--group-by': ['model', 'api-key'],
+    '--granularity': ['day', 'month'],
+  },
+};
+
+/** Resolve flag values with command-specific overrides. */
+function getFlagValues(cmdKey: string, flag: string): string[] | undefined {
+  return COMMAND_FLAG_VALUES[cmdKey]?.[flag] ?? FLAG_VALUES[flag];
+}
 
 // ── Fuzzy helpers ─────────────────────────────────────────────────────
 
@@ -131,9 +192,21 @@ export function tabCompleter(line: string): [string[], string] {
       const completedTokens = endsWithSpace ? tokens.slice(1) : tokens.slice(1, -1);
       const usedFlags = new Set(completedTokens.filter((t) => t.startsWith('--')));
       const remainingFlags = topFlags.filter((f) => !usedFlags.has(f));
-      if (endsWithSpace) return [remainingFlags, ''];
-      if (tokens.length >= 2 && !endsWithSpace)
-        return [fuzzyFilter(remainingFlags, tokens[tokens.length - 1]), tokens[tokens.length - 1]];
+      if (endsWithSpace) {
+        const prevToken = tokens[tokens.length - 2];
+        const knownValues = FLAG_VALUES[prevToken];
+        if (knownValues) return [knownValues, ''];
+        return [remainingFlags, ''];
+      }
+      if (tokens.length >= 2 && !endsWithSpace) {
+        const partial = tokens[tokens.length - 1];
+        const prevToken = tokens.length >= 3 ? tokens[tokens.length - 2] : null;
+        if (prevToken) {
+          const knownValues = FLAG_VALUES[prevToken];
+          if (knownValues) return [fuzzyFilter(knownValues, partial), partial];
+        }
+        return [fuzzyFilter(remainingFlags, partial), partial];
+      }
     }
     return [[], ''];
   }
@@ -151,6 +224,42 @@ export function tabCompleter(line: string): [string[], string] {
   const sub = tokens[1];
   if (!sub || !subs.includes(sub)) return [[], ''];
 
+  // 3-level subcommand support: e.g. `subscription tokenplan status`.
+  const subSubKey = `${cmd} ${sub}`;
+  const subSubs = SUBCOMMANDS[subSubKey];
+  if (subSubs) {
+    if (tokens.length === 3 && endsWithSpace) {
+      return [[...subSubs, HELP_FLAG], ''];
+    }
+    if (tokens.length === 3 && !endsWithSpace) {
+      return [fuzzyFilter([...subSubs, HELP_FLAG], tokens[2]), tokens[2]];
+    }
+
+    const subsub = tokens[2];
+    if (!subSubs.includes(subsub)) return [[], ''];
+
+    const flagKey3 = `${cmd} ${sub} ${subsub}`;
+    const availableFlags3 = [...(COMMAND_FLAGS[flagKey3] ?? []), HELP_FLAG];
+    const completedTokens3 = endsWithSpace ? tokens.slice(3) : tokens.slice(3, -1);
+    const usedFlags3 = new Set(completedTokens3.filter((t) => t.startsWith('--')));
+    const remainingFlags3 = availableFlags3.filter((f) => !usedFlags3.has(f));
+
+    if (endsWithSpace) {
+      const prevToken3 = tokens[tokens.length - 2];
+      const knownValues3 = FLAG_VALUES[prevToken3];
+      if (knownValues3) return [knownValues3, ''];
+      return [remainingFlags3, ''];
+    }
+
+    const partial3 = tokens[tokens.length - 1];
+    const prev3 = tokens.length >= 4 ? tokens[tokens.length - 2] : null;
+    if (prev3) {
+      const knownValues3 = FLAG_VALUES[prev3];
+      if (knownValues3) return [fuzzyFilter(knownValues3, partial3), partial3];
+    }
+    return [fuzzyFilter(remainingFlags3, partial3), partial3];
+  }
+
   const flagKey = `${cmd} ${sub}`;
   const availableFlags = [...(COMMAND_FLAGS[flagKey] ?? []), HELP_FLAG];
 
@@ -163,7 +272,7 @@ export function tabCompleter(line: string): [string[], string] {
     // string at len-1 came from split on the space). Use it to detect whether
     // we should suggest values for a flag that takes an enumerated argument.
     const prevToken = tokens[tokens.length - 2];
-    const knownValues = FLAG_VALUES[prevToken];
+    const knownValues = getFlagValues(flagKey, prevToken);
     if (knownValues) return [knownValues, ''];
     return [remainingFlags, ''];
   }
@@ -172,7 +281,7 @@ export function tabCompleter(line: string): [string[], string] {
   const prevToken = tokens.length >= 3 ? tokens[tokens.length - 2] : null;
 
   if (prevToken) {
-    const knownValues = FLAG_VALUES[prevToken];
+    const knownValues = getFlagValues(flagKey, prevToken);
     if (knownValues) return [fuzzyFilter(knownValues, partial), partial];
   }
 
@@ -205,9 +314,15 @@ export function getGhostSuffix(line: string): string {
     if (!subs) {
       if (tokens.length >= 2) {
         const topFlags = [...(COMMAND_FLAGS[cmd] ?? []), HELP_FLAG];
-        const usedFlags = new Set(tokens.slice(1, -1).filter((t) => t.startsWith('--')));
-        candidates = topFlags.filter((f) => !usedFlags.has(f));
+        const prevToken = tokens[tokens.length - 2];
         partial = tokens[tokens.length - 1];
+        const knownValues = FLAG_VALUES[prevToken];
+        if (knownValues) {
+          candidates = knownValues;
+        } else {
+          const usedFlags = new Set(tokens.slice(1, -1).filter((t) => t.startsWith('--')));
+          candidates = topFlags.filter((f) => !usedFlags.has(f));
+        }
       } else {
         return '';
       }
@@ -218,17 +333,40 @@ export function getGhostSuffix(line: string): string {
       const sub = tokens[1];
       if (!subs.includes(sub)) return '';
 
-      const flagKey = `${cmd} ${sub}`;
-      const avail = [...(COMMAND_FLAGS[flagKey] ?? []), HELP_FLAG];
-      const prevToken = tokens[tokens.length - 2];
-      partial = tokens[tokens.length - 1];
-
-      const knownValues = FLAG_VALUES[prevToken];
-      if (knownValues) {
-        candidates = knownValues;
+      const subSubKey = `${cmd} ${sub}`;
+      const subSubs = SUBCOMMANDS[subSubKey];
+      if (subSubs) {
+        if (tokens.length === 3) {
+          candidates = [...subSubs, HELP_FLAG];
+          partial = tokens[2];
+        } else {
+          const subsub = tokens[2];
+          if (!subSubs.includes(subsub)) return '';
+          const flagKey3 = `${cmd} ${sub} ${subsub}`;
+          const avail3 = [...(COMMAND_FLAGS[flagKey3] ?? []), HELP_FLAG];
+          const prevToken3 = tokens[tokens.length - 2];
+          partial = tokens[tokens.length - 1];
+          const knownValues3 = FLAG_VALUES[prevToken3];
+          if (knownValues3) {
+            candidates = knownValues3;
+          } else {
+            const usedFlags3 = new Set(tokens.slice(3, -1).filter((t) => t.startsWith('--')));
+            candidates = avail3.filter((f) => !usedFlags3.has(f));
+          }
+        }
       } else {
-        const usedFlags = new Set(tokens.slice(2, -1).filter((t) => t.startsWith('--')));
-        candidates = avail.filter((f) => !usedFlags.has(f));
+        const flagKey = `${cmd} ${sub}`;
+        const avail = [...(COMMAND_FLAGS[flagKey] ?? []), HELP_FLAG];
+        const prevToken = tokens[tokens.length - 2];
+        partial = tokens[tokens.length - 1];
+
+        const knownValues = getFlagValues(flagKey, prevToken);
+        if (knownValues) {
+          candidates = knownValues;
+        } else {
+          const usedFlags = new Set(tokens.slice(2, -1).filter((t) => t.startsWith('--')));
+          candidates = avail.filter((f) => !usedFlags.has(f));
+        }
       }
     }
   }

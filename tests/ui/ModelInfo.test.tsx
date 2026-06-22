@@ -6,7 +6,11 @@ import { ModelInfoInk } from '../../src/ui/ModelInfo.js';
 import type { ModelDetailViewModel } from '../../src/view-models/models.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 function frame(el: React.ReactElement): string {
   const { lastFrame } = render(el);
@@ -47,8 +51,20 @@ describe('ModelInfoInk', () => {
       features: 'Cache · Tools',
       pricingType: 'llm',
       pricingLines: [
-        { cells: { label: '0-128k', input: `${s.currencySymbol}0.50/1M`, output: `${s.currencySymbol}3.00/1M` } },
-        { cells: { label: '128k-1M', input: `${s.currencySymbol}2.00/1M`, output: `${s.currencySymbol}6.00/1M` } },
+        {
+          cells: {
+            label: '0-128k',
+            input: `${s.currencySymbol}0.50/1M`,
+            output: `${s.currencySymbol}3.00/1M`,
+          },
+        },
+        {
+          cells: {
+            label: '128k-1M',
+            input: `${s.currencySymbol}2.00/1M`,
+            output: `${s.currencySymbol}6.00/1M`,
+          },
+        },
       ],
       builtInTools: [
         { name: 'web_search', price: `${s.currencySymbol}10.00 / 1K calls`, api: 'Responses API' },
@@ -124,9 +140,7 @@ describe('ModelInfoInk', () => {
       modalityOutput: 'Text',
       features: '—',
       pricingType: 'llm',
-      pricingLines: [
-        { cells: { label: '\u2014', input: '\u2014', output: '\u2014' } },
-      ],
+      pricingLines: [{ cells: { label: '\u2014', input: '\u2014', output: '\u2014' } }],
       builtInTools: [],
       rateLimits: 'RPM   100',
       metadata: baseMetadata(),
@@ -146,7 +160,9 @@ describe('ModelInfoInk', () => {
       modalityOutput: 'Img',
       features: '—',
       pricingType: 'image',
-      pricingLines: [{ cells: { label: 'Image Generation', price: `${s.currencySymbol}0.03 / image` } }],
+      pricingLines: [
+        { cells: { label: 'Image Generation', price: `${s.currencySymbol}0.03 / image` } },
+      ],
       builtInTools: [],
       rateLimits: 'RPM   60',
       metadata: baseMetadata(),
@@ -192,7 +208,9 @@ describe('ModelInfoInk', () => {
       modalityOutput: 'Audio',
       features: '—',
       pricingType: 'tts',
-      pricingLines: [{ cells: { label: 'TTS', price: `${s.currencySymbol}0.70 / 10,000 characters` } }],
+      pricingLines: [
+        { cells: { label: 'TTS', price: `${s.currencySymbol}0.70 / 10,000 characters` } },
+      ],
       builtInTools: [],
       rateLimits: 'RPM   60',
       metadata: baseMetadata(),
@@ -328,7 +346,13 @@ describe('ModelInfoInk', () => {
       features: '—',
       pricingType: 'llm',
       pricingLines: [
-        { cells: { label: '标准版', input: `${s.currencySymbol}0.50/1M`, output: `${s.currencySymbol}3.00/1M` } },
+        {
+          cells: {
+            label: '标准版',
+            input: `${s.currencySymbol}0.50/1M`,
+            output: `${s.currencySymbol}3.00/1M`,
+          },
+        },
       ],
       builtInTools: [],
       rateLimits: 'RPM   15K',
@@ -355,8 +379,20 @@ describe('ModelInfoInk', () => {
       features: '—',
       pricingType: 'llm',
       pricingLines: [
-        { cells: { label: '标准版', input: `${s.currencySymbol}0.50/1M`, output: `${s.currencySymbol}3.00/1M` } },
-        { cells: { label: '长文本', input: `${s.currencySymbol}1.00/1M`, output: `${s.currencySymbol}4.00/1M` } },
+        {
+          cells: {
+            label: '标准版',
+            input: `${s.currencySymbol}0.50/1M`,
+            output: `${s.currencySymbol}3.00/1M`,
+          },
+        },
+        {
+          cells: {
+            label: '长文本',
+            input: `${s.currencySymbol}1.00/1M`,
+            output: `${s.currencySymbol}4.00/1M`,
+          },
+        },
       ],
       builtInTools: [],
       rateLimits: 'RPM   15K',

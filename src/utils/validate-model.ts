@@ -18,16 +18,7 @@ export function modelNotFoundWithSuggestion(id: string, candidates: string[]): C
   });
 }
 
-/**
- * Validate that `id` exists in the model registry and return the matched Model.
- * Throws CliError on failure:
- * - INVALID_ARGUMENT for empty id
- * - MODEL_NOT_FOUND (with optional did-you-mean) for unknown id
- *
- * Uses ApiClient.listModels which is internally cached, so repeated calls in
- * the same process are cheap. Returning the Model lets callers reuse its
- * metadata (modality, pricing, free_tier) without a second lookup.
- */
+/** Validate that `id` exists in the model registry and return the matched Model, or throw. */
 export async function validateModelId(
   client: Pick<ApiClient, 'listModels'>,
   id: string,

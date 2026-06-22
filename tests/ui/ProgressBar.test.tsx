@@ -46,7 +46,9 @@ describe('ProgressBar', () => {
   });
 
   it('honors custom width', () => {
-    const out = frame(<ProgressBar percentage={50} mode="remaining" width={10} showLabel={false} />);
+    const out = frame(
+      <ProgressBar percentage={50} mode="remaining" width={10} showLabel={false} />,
+    );
     // 10 wide × 50% = 5 + 5
     expect(out).toContain('█'.repeat(5));
     expect(out).toContain('░'.repeat(5));
@@ -58,7 +60,9 @@ describe('ProgressBar', () => {
   });
 
   it('omits label when showLabel=false even if label provided', () => {
-    const out = frame(<ProgressBar percentage={85} mode="remaining" label="85% left" showLabel={false} />);
+    const out = frame(
+      <ProgressBar percentage={85} mode="remaining" label="85% left" showLabel={false} />,
+    );
     expect(out).not.toContain('85%');
   });
 

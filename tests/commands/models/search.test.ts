@@ -12,18 +12,54 @@ vi.mock('../../../src/auth/credentials.js', () => ({
   ensureAuthenticated: () => ({ access_token: 't', expires_at: '2099-01-01T00:00:00Z' }),
 }));
 
+// Spy on the interactive (TUI) renderer so we can assert it is NOT entered when
+// a JSON-only flag forces the format up to JSON.
+const mockRenderInteractive = vi.fn();
+vi.mock('../../../src/ui/render.js', () => ({
+  renderInteractive: mockRenderInteractive,
+  renderWithInk: vi.fn(),
+  renderWithInkSync: vi.fn(),
+}));
+
+// Spy on the JSON sink with a passthrough so existing stdout-parsing tests keep
+// working while promotion tests can assert the JSON path was taken.
+const mockPrintJSON = vi.fn((data: unknown) => {
+  // eslint-disable-next-line no-console
+  console.log(JSON.stringify(data, null, 2));
+});
+vi.mock('../../../src/output/json.js', () => ({
+  printJSON: (data: unknown) => mockPrintJSON(data),
+}));
+
+// Keep the spinner inert: under a TTY it would start an animation interval.
+vi.mock('../../../src/ui/spinner.js', () => ({
+  withSpinner: async (_label: string, fn: () => Promise<unknown>) => fn(),
+  clearSpinnerLine: vi.fn(),
+}));
+
 const { modelsSearchAction } = await import('../../../src/commands/models/search.js');
 
 const originalIsTTY = process.stdout.isTTY;
 
 beforeEach(() => {
   holder.client = makeMockApiClient();
+  mockRenderInteractive.mockReset();
+  mockPrintJSON.mockReset();
+  mockPrintJSON.mockImplementation((data: unknown) => {
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify(data, null, 2));
+  });
   Object.defineProperty(process.stdout, 'isTTY', { value: false, writable: true });
 });
 
 afterEach(() => {
   Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, writable: true });
 });
+
+/** Force the interactive (TTY) path so the auto-detected format is `table`. */
+function forceTTY() {
+  Object.defineProperty(process.stdout, 'isTTY', { value: true, writable: true });
+}
 
 function setupCmd(program: any) {
   program
@@ -71,14 +107,7 @@ describe('models search command', () => {
       fetchQuotasForModels: async (ms) => ms,
     });
 
-    const r = await runCommand(setupCmd, [
-      'models',
-      'search',
-      'm',
-      '--format',
-      'json',
-      '--all',
-    ]);
+    const r = await runCommand(setupCmd, ['models', 'search', 'm', '--format', 'json', '--all']);
     expect(r.exitCode).toBeUndefined();
     const payload = JSON.parse(r.stdout);
     expect(payload.all).toBe(true);
@@ -167,7 +196,12 @@ describe('models search command', () => {
       getModels: async () => models as any,
     });
     const r = await runCommand(setupCmd, [
-      'models', 'search', 'q', '--format=text', '--page', '99',
+      'models',
+      'search',
+      'q',
+      '--format=text',
+      '--page',
+      '99',
     ]);
     expect(r.exitCode).toBeUndefined();
     expect(r.stderr).toMatch(/exceeds total pages/i);
@@ -182,5 +216,57 @@ describe('models search command', () => {
     const r = await runCommand(setupCmd, ['models', 'search', 'x', '--format', 'json']);
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toContain('search-fail');
+  });
+});
+
+// ── JSON-only flag auto-promotion under TTY ───────────────────────────────
+//
+// `--all` is a JSON-only flag (search has no --verbose). In a TTY the default
+// format is `table`, which historically routed to the interactive renderer and
+// silently dropped `--all`. The contract: when `--all` is present and the
+// resolved format is not `json`, the command must promote to JSON, emit a stderr
+// advisory containing "JSON", and take the JSON path WITHOUT entering the TUI.
+//
+// The decisive regression guard is `renderInteractive` NOT being called paired
+// with `printJSON` being called: an implementation that keeps rendering the
+// table would call renderInteractive → red.
+describe('models search — JSON-only flag auto-promotion (TTY)', () => {
+  it('TTY + --all (no --format) promotes to JSON: printJSON called, renderInteractive NOT called + advisory', async () => {
+    forceTTY();
+    const models = Array.from({ length: 8 }, (_, i) =>
+      makeModel({ id: `s-auto-${i}`, pricing: { tiers: [] } as any }),
+    );
+    holder.client = makeMockApiClient({
+      searchModels: async () => ({ models, total: 8 }),
+      fetchQuotasForModels: async (ms) => ms,
+    });
+
+    const r = await runCommand(setupCmd, ['models', 'search', 'qwen', '--all']);
+
+    expect(r.exitCode).toBeUndefined();
+    expect(mockRenderInteractive).not.toHaveBeenCalled();
+    expect(mockPrintJSON).toHaveBeenCalledTimes(1);
+    const payload = mockPrintJSON.mock.calls[0][0] as { all: boolean; models: unknown[] };
+    expect(payload.all).toBe(true);
+    expect(payload.models).toHaveLength(8);
+    expect(r.stderr).toContain('JSON');
+  });
+
+  it('regression guard: TTY without --all enters the TUI (renderInteractive called, no JSON promotion)', async () => {
+    forceTTY();
+    const models = [
+      makeModel({ id: 's-tui-a', pricing: { tiers: [] } as any }),
+      makeModel({ id: 's-tui-b', pricing: { tiers: [] } as any }),
+    ];
+    holder.client = makeMockApiClient({
+      searchModels: async () => ({ models, total: 2 }),
+      fetchQuotasForModels: async (ms) => ms,
+    });
+
+    const r = await runCommand(setupCmd, ['models', 'search', 'qwen']);
+
+    expect(r.exitCode).toBeUndefined();
+    expect(mockRenderInteractive).toHaveBeenCalledTimes(1);
+    expect(mockPrintJSON).not.toHaveBeenCalled();
   });
 });

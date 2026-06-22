@@ -20,20 +20,12 @@ export function isReplMode(): boolean {
   return _isRepl;
 }
 
-/**
- * Return the appropriate login command hint for the current runtime mode.
- * - REPL:     `"login"`
- * - One-shot: `"qianwen login"`
- */
+/** Return the login command hint appropriate for the current runtime mode. */
 export function loginCommand(): string {
   return _isRepl ? 'login' : `${site.cliName} login`;
 }
 
-/**
- * Format a CLI command for display in user-facing messages.
- * - REPL:     returns `cmd` as-is (e.g. `"auth logout"`)
- * - One-shot: returns with prefix (e.g. `"qianwen auth logout"`)
- */
+/** Format a CLI command for display, adding the binary prefix in one-shot mode. */
 export function formatCmd(cmd: string): string {
   return _isRepl ? cmd : `${site.cliName} ${cmd}`;
 }

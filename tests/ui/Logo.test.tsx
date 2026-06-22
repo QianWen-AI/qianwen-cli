@@ -4,7 +4,11 @@ import { render } from 'ink-testing-library';
 import { Logo } from '../../src/ui/Logo.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 describe('Logo component', () => {
   it('renders the box border characters', () => {

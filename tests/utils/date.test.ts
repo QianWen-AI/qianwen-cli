@@ -5,13 +5,16 @@ import {
   validateDateRange,
   formatDate,
   formatRelativeTime,
+  normalizeToFullDate,
 } from '../../src/utils/date.js';
 
 // formatDate uses toISOString() which is always UTC.
 // parsePeriod uses local-time constructors (new Date(y,m,d)).
 // To keep tests deterministic we fix the timezone to UTC.
 const originalTZ = process.env.TZ;
-beforeAll(() => { process.env.TZ = 'UTC'; });
+beforeAll(() => {
+  process.env.TZ = 'UTC';
+});
 afterAll(() => {
   if (originalTZ === undefined) delete process.env.TZ;
   else process.env.TZ = originalTZ;

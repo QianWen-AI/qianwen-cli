@@ -6,7 +6,11 @@ import {
 import type { ModelsListResponse, ModelDetail } from '../../src/types/model.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 describe('buildModelListViewModel', () => {
   const mockResponse: ModelsListResponse = {
@@ -21,8 +25,22 @@ describe('buildModelListViewModel', () => {
         },
         pricing: {
           tiers: [
-            { label: '≤ 256K tokens', input: 0.50, output: 3.00, cache_creation: 0.625, cache_read: 0.05, unit: 'USD/1M tokens' },
-            { label: '256K – 1M tokens', input: 2.00, output: 6.00, cache_creation: 2.50, cache_read: 0.20, unit: 'USD/1M tokens' },
+            {
+              label: '≤ 256K tokens',
+              input: 0.5,
+              output: 3.0,
+              cache_creation: 0.625,
+              cache_read: 0.05,
+              unit: 'USD/1M tokens',
+            },
+            {
+              label: '256K – 1M tokens',
+              input: 2.0,
+              output: 6.0,
+              cache_creation: 2.5,
+              cache_read: 0.2,
+              unit: 'USD/1M tokens',
+            },
           ],
         },
       },
@@ -95,15 +113,17 @@ describe('buildModelListViewModel', () => {
 
   it('calculates freeTierRemainingPct correctly', () => {
     const vm = buildModelListViewModel({
-      models: [{
-        id: 'test',
-        modality: { input: ['text'], output: ['text'] },
-        can_try: true,
-        free_tier: {
-          mode: 'standard',
-          quota: { remaining: 333000, total: 1000000, unit: 'tokens', used_pct: 66.7 },
+      models: [
+        {
+          id: 'test',
+          modality: { input: ['text'], output: ['text'] },
+          can_try: true,
+          free_tier: {
+            mode: 'standard',
+            quota: { remaining: 333000, total: 1000000, unit: 'tokens', used_pct: 66.7 },
+          },
         },
-      }],
+      ],
       total: 1,
     });
     expect(vm.rows[0].freeTierRemainingPct).toBe(33.3);
@@ -111,12 +131,14 @@ describe('buildModelListViewModel', () => {
 
   it('returns undefined freeTierRemainingPct when no quota', () => {
     const vm = buildModelListViewModel({
-      models: [{
-        id: 'test',
-        modality: { input: ['text'], output: ['text'] },
-        can_try: true,
-        free_tier: { mode: 'only', quota: null },
-      }],
+      models: [
+        {
+          id: 'test',
+          modality: { input: ['text'], output: ['text'] },
+          can_try: true,
+          free_tier: { mode: 'only', quota: null },
+        },
+      ],
       total: 1,
     });
     expect(vm.rows[0].freeTierRemainingPct).toBeUndefined();
@@ -133,14 +155,27 @@ describe('buildModelDetailViewModel', () => {
     can_try: true,
     free_tier: {
       mode: 'standard',
-      quota: { remaining: 850000, total: 1000000, unit: 'tokens', used_pct: 15, resetDate: '2026-05-01' },
+      quota: {
+        remaining: 850000,
+        total: 1000000,
+        unit: 'tokens',
+        used_pct: 15,
+        resetDate: '2026-05-01',
+      },
     },
     pricing: {
       tiers: [
-        { label: '≤ 256K tokens', input: 0.50, output: 3.00, cache_creation: 0.625, cache_read: 0.05, unit: 'USD/1M tokens' },
+        {
+          label: '≤ 256K tokens',
+          input: 0.5,
+          output: 3.0,
+          cache_creation: 0.625,
+          cache_read: 0.05,
+          unit: 'USD/1M tokens',
+        },
       ],
       built_in_tools: [
-        { name: 'web_search', price: 10.00, unit: 'USD/1K calls', api: 'Responses API' },
+        { name: 'web_search', price: 10.0, unit: 'USD/1K calls', api: 'Responses API' },
         { name: 'code_interpreter', price: 0, unit: 'free', api: 'Responses API' },
       ],
     },
@@ -240,9 +275,7 @@ describe('buildModelDetailViewModel', () => {
       ...mockDetail,
       pricing: {
         tiers: [],
-        built_in_tools: [
-          { name: 'search', price: 5.00, unit: 'USD/per request', api: 'Chat API' },
-        ],
+        built_in_tools: [{ name: 'search', price: 5.0, unit: 'USD/per request', api: 'Chat API' }],
       },
     };
     const vm = buildModelDetailViewModel(detail);

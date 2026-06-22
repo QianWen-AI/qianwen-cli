@@ -5,7 +5,11 @@ import stripAnsi from 'strip-ansi';
 import { StatusLine } from '../../src/ui/StatusLine.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 describe('StatusLine component', () => {
   it('renders pass status with label and detail', () => {
@@ -56,8 +60,12 @@ describe('StatusLine component', () => {
   it('renders distinguishable visible symbols for pass vs fail (✓ vs ✗ family)', () => {
     // ink-testing-library strips ANSI in non-TTY by default, so we assert on
     // the visible characters of the leading symbol slot, NOT on color escapes.
-    const passOut = stripAnsi(render(<StatusLine status="pass" label="x" detail="y" />).lastFrame() ?? '');
-    const failOut = stripAnsi(render(<StatusLine status="fail" label="x" detail="y" />).lastFrame() ?? '');
+    const passOut = stripAnsi(
+      render(<StatusLine status="pass" label="x" detail="y" />).lastFrame() ?? '',
+    );
+    const failOut = stripAnsi(
+      render(<StatusLine status="fail" label="x" detail="y" />).lastFrame() ?? '',
+    );
     // Both must contain the label/detail
     expect(passOut).toContain('x');
     expect(failOut).toContain('x');
@@ -74,12 +82,12 @@ describe('StatusLine component', () => {
   });
 
   it('action hint appears with visible separation from detail', () => {
-    const withAction = stripAnsi(render(
-      <StatusLine status="fail" label="t" detail="d" action="Run: foo" />,
-    ).lastFrame() ?? '');
-    const withoutAction = stripAnsi(render(
-      <StatusLine status="fail" label="t" detail="d" />,
-    ).lastFrame() ?? '');
+    const withAction = stripAnsi(
+      render(<StatusLine status="fail" label="t" detail="d" action="Run: foo" />).lastFrame() ?? '',
+    );
+    const withoutAction = stripAnsi(
+      render(<StatusLine status="fail" label="t" detail="d" />).lastFrame() ?? '',
+    );
     // The action variant must contain 'Run: foo' (which the no-action variant lacks)
     expect(withAction).toContain('Run: foo');
     expect(withoutAction).not.toContain('Run: foo');

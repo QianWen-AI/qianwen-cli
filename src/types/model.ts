@@ -18,18 +18,10 @@ export interface FreeTierQuota {
   unit: string; // 'tokens' | 'images' | 'seconds' | 'characters'
   used_pct: number;
   status?: 'valid' | 'exhaust' | 'expire'; // quota status: valid/exhaust/expire
-  // ISO 8601 UTC timestamp ("2026-06-17T00:00:00.000Z"). Always present in JSON
-  // output — `null` when the model has no reset date — so Agents don't need to
-  // distinguish "field missing" from "no reset" (report 6.4).
+  // ISO 8601 UTC timestamp. Present as `null` when the model has no reset date.
   resetDate?: string | null;
 }
 
-// Pricing - multiple variants based on model type
-// LLM tiered pricing.
-//
-// `cache_creation` / `cache_read` are always present (null when the model has
-// no cache pricing) so Agents comparing tiers across model versions don't have
-// to branch on field existence — see report 6.6.
 export interface PricingTier {
   label: string;
   input: number;
@@ -62,7 +54,15 @@ export interface PricingSummary {
   cheapest_input: number;
   cheapest_output: number;
   unit: string;
-  billing_type: 'token' | 'image' | 'second' | 'character' | 'free' | 'itemized' | 'no_pricing' | 'unknown';
+  billing_type:
+    | 'token'
+    | 'image'
+    | 'second'
+    | 'character'
+    | 'free'
+    | 'itemized'
+    | 'no_pricing'
+    | 'unknown';
 }
 
 // Different pricing structures. Every variant carries a `summary` for

@@ -44,7 +44,11 @@ describe('validateModelId', () => {
   it('thrown error is a CliError instance', async () => {
     const client = makeClient(['qwen3-max']);
     let thrown: unknown;
-    try { await validateModelId(client, 'nope'); } catch (e) { thrown = e; }
+    try {
+      await validateModelId(client, 'nope');
+    } catch (e) {
+      thrown = e;
+    }
     expect(thrown).toBeInstanceOf(CliError);
   });
 });

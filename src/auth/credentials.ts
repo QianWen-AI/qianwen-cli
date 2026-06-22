@@ -1,10 +1,3 @@
-// ============================================================
-// Credential Storage Center — layered write/read/migration
-// Tier 1 (keychain available): keychain only
-// Tier 2 (keychain unavailable): AES-256-GCM encrypted file
-// QIANWEN_KEYRING=plaintext: plaintext file (debug mode)
-// ============================================================
-
 import { readFileSync, existsSync, unlinkSync } from 'fs';
 import { getCredentialsPath } from '../config/paths.js';
 import {
@@ -65,7 +58,7 @@ export function resolveCredentials(): ResolvedCredential | null {
     // TTL check: discard cache and re-read from storage if TTL exceeded (detect external logout, etc.)
     if (Date.now() - _cacheTimestamp > CREDENTIALS_CACHE_TTL_MS) {
       _resolvedCache = undefined;
-      // REPL long-running process: cached token may expire during the session, needs re-resolution
+      // Refresh credentials if expired.
     } else if (
       _resolvedCache !== null &&
       _resolvedCache.credentials &&
@@ -77,7 +70,7 @@ export function resolveCredentials(): ResolvedCredential | null {
     }
   }
 
-  const result = _resolveCredentialsUncached();
+  const result = resolveCredentialsUncached();
   _resolvedCache = result;
   _cacheTimestamp = Date.now();
   return result;
@@ -86,7 +79,7 @@ export function resolveCredentials(): ResolvedCredential | null {
 /**
  * Actual credential resolution logic (uncached).
  */
-function _resolveCredentialsUncached(): ResolvedCredential | null {
+function resolveCredentialsUncached(): ResolvedCredential | null {
   // Priority 1: System Keychain (only if available)
   if (isKeychainAvailable()) {
     const keychainData = readFromKeychain();
@@ -231,17 +224,6 @@ export function readCredentials(): Credentials | null {
 
 /**
  * Write credentials to the appropriate storage tier with automatic fallback.
- *
- * Strategy:
- *   1. QIANWEN_KEYRING=plaintext → plaintext file (debug mode)
- *   2. Keychain CLI present → try keychain, then verify by reading back.
- *      If the readback fails or returns a different value (i.e. the keychain
- *      silently failed — common in SSH/headless/locked-keychain scenarios),
- *      delete any partial entry and fall through to the encrypted file.
- *   3. Otherwise (or on keychain failure) → encrypted file.
- *
- * The write-then-readback pattern replaces the old startup-time probe and
- * gives correct behavior without paying the probe cost on every CLI invocation.
  */
 export function writeCredentials(credentials: Credentials): void {
   // Clear cache to ensure subsequent reads reflect the new credentials
@@ -267,13 +249,7 @@ export function writeCredentials(credentials: Credentials): void {
 
 /**
  * Attempt to write to the keychain and verify by reading back.
- * Returns true only when the readback exactly matches the written payload —
- * this catches the common macOS failure mode where `security add-generic-password`
- * returns 0 but the value is not actually persisted (SSH session, locked
- * keychain, unreachable SecurityAgent).
- *
- * On verification failure, best-effort deletes any partial entry so the
- * encrypted-file fallback isn't shadowed by stale keychain data.
+ * Returns true only when the readback exactly matches the written payload.
  */
 function tryWriteToKeychainVerified(payload: string): boolean {
   if (!writeToKeychain(payload)) return false;
@@ -298,10 +274,8 @@ export function deleteCredentials(): boolean {
   // Clear cache to ensure subsequent reads reflect credential deletion
   clearCredentialsCache();
 
-  // 1. Delete from keychain (silent failure is acceptable)
   deleteFromKeychain();
 
-  // 2. Delete credential file (encrypted or plaintext)
   const path = getCredentialsPath();
   if (!existsSync(path)) return false;
 
@@ -397,19 +371,22 @@ export function ensureAuthenticated(): Credentials {
     throw tokenExpiredError();
   }
 
-  warnIfTokenExpiringSoon(resolved.credentials);
+  const warning = getTokenExpiryWarning(resolved.credentials);
+  if (warning && process.stderr.isTTY) {
+    process.stderr.write(warning);
+  }
 
   return resolved.credentials;
 }
 
 /**
- * Warn on stderr if token expires within 4 hours (PRD §6.4).
- * Only outputs in TTY mode; non-TTY (Agent) stays silent to keep stdout clean.
+ * Compute the token-expiry warning message.
+ * Pure function — returns the warning text when the token expires within
+ * 4 hours, or null otherwise. The caller is responsible for deciding
+ * whether and where to emit the message (e.g. stderr in TTY mode).
  */
-export function warnIfTokenExpiringSoon(credentials: Credentials): void {
+export function getTokenExpiryWarning(credentials: Credentials): string | null {
   const EXPIRY_WARNING_HOURS = 4;
-
-  if (!process.stderr.isTTY) return;
 
   const expiresAt = new Date(credentials.expires_at);
   const now = new Date();
@@ -418,6 +395,7 @@ export function warnIfTokenExpiringSoon(credentials: Credentials): void {
 
   if (diffMs > 0 && diffMs <= thresholdMs) {
     const remaining = getTokenRemainingTime(credentials);
-    process.stderr.write(`  ⚠ Token expires in ${remaining} · run auth login to refresh\n`);
+    return `  ⚠ Token expires in ${remaining} · run auth login to refresh\n`;
   }
+  return null;
 }

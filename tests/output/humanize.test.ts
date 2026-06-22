@@ -10,7 +10,11 @@ import {
 } from '../../src/output/humanize.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 describe('humanizeNumber', () => {
   it('returns raw number for values < 1000', () => {
@@ -65,8 +69,8 @@ describe('humanizeWithUnit', () => {
 
 describe('formatPrice / formatCost', () => {
   it('formats prices via formatAmount (full precision, no trailing zeros)', () => {
-    expect(formatPrice(0.50)).toBe(`${s.currencySymbol}0.5`);
-    expect(formatPrice(2.00)).toBe(`${s.currencySymbol}2`);
+    expect(formatPrice(0.5)).toBe(`${s.currencySymbol}0.5`);
+    expect(formatPrice(2.0)).toBe(`${s.currencySymbol}2`);
     expect(formatPrice(0.14)).toBe(`${s.currencySymbol}0.14`);
   });
 

@@ -29,7 +29,14 @@ export async function modelsSearchAction(
   options: ModelsSearchOptions,
 ): Promise<void> {
   const config = getEffectiveConfig();
-  const format = resolveFormat(options.format, config['output.format']);
+  let format = resolveFormat(options.format, config['output.format']);
+
+  // --all is a JSON-only flag; in any non-JSON format it would be silently
+  // dropped. Promote to JSON and tell the user on stderr.
+  if (options.all && format !== 'json') {
+    format = 'json';
+    process.stderr.write('Note: --all forces JSON output (--all is JSON-only).\n');
+  }
 
   try {
     await ensureAuthenticated();

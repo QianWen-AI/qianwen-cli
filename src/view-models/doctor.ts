@@ -75,11 +75,7 @@ export function formatCheckLabel(name: string): string {
   return CHECK_LABEL_MAP[name] || name;
 }
 
-/**
- * Compute exit code based on check results (PRD §7.4).
- * Priority: auth/token fail → 2, network fail → 3, other fail → 1, else → 0.
- * Exported for use by command layer.
- */
+/** Compute exit code from check results (auth→2, network→3, other→1, pass→0). */
 export function computeExitCode(checks: DoctorCheck[]): number {
   const hasAuthFail = checks.some(
     (c) => (c.name === 'auth' || c.name === 'token') && c.status === 'fail',

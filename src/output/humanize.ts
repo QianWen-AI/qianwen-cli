@@ -5,7 +5,6 @@ const CUR = site.features.currency === 'CNY' ? '¥' : '$';
 
 /**
  * Humanize a number for TTY display.
- * Rules from PRD §9.4:
  * - >= 1,000,000 → X.XM (1 decimal, drop .0)
  * - >= 1,000 → X.XK (1 decimal, drop .0)
  * - < 1,000 → raw number
@@ -85,7 +84,10 @@ export function formatCost(amount: number): string {
  * Format a currency amount with ¥ prefix and 2 decimal places.
  * For very small amounts (< 0.01), show more precision.
  */
-export function humanizeCurrency(amount: number, currency: string = site.features.currency): string {
+export function humanizeCurrency(
+  amount: number,
+  currency: string = site.features.currency,
+): string {
   const symbol = currency === 'CNY' ? '¥' : '$';
   if (amount < 0.01 && amount > 0) {
     return `${symbol}${amount.toFixed(5)}`;
@@ -141,13 +143,15 @@ export function formatNextReset(isoDate: string): string {
  * Format a numeric price amount for display.
  *
  * Modes:
- * - 'full' (default): use toPrecision(10) + parseFloat to strip floating-point
- *   noise and trailing zeros. Produces the shortest accurate representation
- *   (e.g. 0.4 instead of 0.40).
+ * - 'full' (default): use toPrecision(15) to preserve all meaningful digits
+ *   while removing FP noise and trailing zeros. Produces the shortest accurate
+ *   representation (e.g. 0.4 instead of 0.40).
  * - 'fixed': classic toFixed(2) for fixed 2-decimal display.
  */
 export function formatAmount(value: number, mode: 'full' | 'fixed' = 'full'): string {
   if (!Number.isFinite(value)) return '0';
   if (mode === 'fixed') return value.toFixed(2);
-  return String(parseFloat(value.toPrecision(10)));
+  // Use toPrecision(15) to preserve all meaningful digits while removing FP noise
+  const cleaned = parseFloat(value.toPrecision(15));
+  return String(cleaned);
 }

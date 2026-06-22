@@ -13,7 +13,7 @@ function getExamples(program: Command, path: string[]): string[] {
   for (const name of path) {
     cur = cur?.commands.find((c) => c.name() === name);
   }
-  return ((cur as WithExamples | undefined)?._examples) ?? [];
+  return (cur as WithExamples | undefined)?._examples ?? [];
 }
 
 // These assertions MUST run before any setReplMode() call in this file.
@@ -37,7 +37,10 @@ describe('help examples — oneshot mode (default)', () => {
       const examples = getExamples(program, path);
       expect(examples.length, `examples missing for ${path.join(' ')}`).toBeGreaterThan(0);
       for (const ex of examples) {
-        expect(ex.startsWith(`${site.cliName} `), `oneshot example "${ex}" should start with "${site.cliName} "`).toBe(true);
+        expect(
+          ex.startsWith(`${site.cliName} `),
+          `oneshot example "${ex}" should start with "${site.cliName} "`,
+        ).toBe(true);
       }
     }
   });
@@ -62,7 +65,10 @@ describe('help examples — REPL mode', () => {
       const examples = getExamples(program, path);
       expect(examples.length, `examples missing for ${path.join(' ')}`).toBeGreaterThan(0);
       for (const ex of examples) {
-        expect(ex.startsWith(`${site.cliName} `), `REPL example "${ex}" should NOT start with "${site.cliName} "`).toBe(false);
+        expect(
+          ex.startsWith(`${site.cliName} `),
+          `REPL example "${ex}" should NOT start with "${site.cliName} "`,
+        ).toBe(false);
       }
     }
   });

@@ -45,7 +45,8 @@ beforeEach(() => {
 /** Build a Commander subtree mirroring `qianwen usage breakdown ...`. */
 function buildBreakdown(program: import('commander').Command) {
   const usage = program.command('usage');
-  const breakdown = usage.command('breakdown')
+  const breakdown = usage
+    .command('breakdown')
     .option('--model <id>')
     .option('--granularity <g>')
     .option('--from <date>')
@@ -66,8 +67,14 @@ describe('usage breakdown command (one-shot)', () => {
         }),
       });
 
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--model', 'qwen3-ma', '--format', 'json']);
+      const r = await runCommand(buildBreakdown, [
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen3-ma',
+        '--format',
+        'json',
+      ]);
 
       expect(r.exitCode).toBe(1);
       // Errors must go to stderr so Agent pipelines (`cmd | jq`) don't see
@@ -89,15 +96,19 @@ describe('usage breakdown command (one-shot)', () => {
           model_id: 'qwen3.6-plus',
           period: { from: '2026-04-01', to: '2026-04-20' },
           granularity: 'day',
-          rows: [
-            { period: '2026-04-18', tokens_in: 5_800_000, cost: 2.93, currency: 'CNY' },
-          ],
+          rows: [{ period: '2026-04-18', tokens_in: 5_800_000, cost: 2.93, currency: 'CNY' }],
           total: { tokens_in: 5_800_000, cost: 2.93, currency: 'CNY' },
         }),
       });
 
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--model', 'qwen3.6-plus', '--format', 'json']);
+      const r = await runCommand(buildBreakdown, [
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen3.6-plus',
+        '--format',
+        'json',
+      ]);
 
       expect(r.exitCode).toBeUndefined();
       expect(r.stderr).toBe('');
@@ -112,8 +123,14 @@ describe('usage breakdown command (one-shot)', () => {
         listModels: async () => ({ models: [makeModel({ id: 'qwen3-max' })], total: 1 }),
       });
 
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--model', 'qwen3-max', '--format', 'json']);
+      const r = await runCommand(buildBreakdown, [
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen3-max',
+        '--format',
+        'json',
+      ]);
 
       expect(r.exitCode).toBeUndefined();
       const payload = JSON.parse(r.stdout);
@@ -130,8 +147,14 @@ describe('usage breakdown command (one-shot)', () => {
         }),
       });
 
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--model', 'qwen3-ma', '--format', 'text']);
+      const r = await runCommand(buildBreakdown, [
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen3-ma',
+        '--format',
+        'text',
+      ]);
 
       expect(r.exitCode).toBe(1);
       expect(r.stdout).toBe('');
@@ -143,8 +166,14 @@ describe('usage breakdown command (one-shot)', () => {
         listModels: async () => ({ models: [makeModel({ id: 'qwen3-max' })], total: 1 }),
       });
 
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--model', 'qwen3-max', '--format', 'text']);
+      const r = await runCommand(buildBreakdown, [
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen3-max',
+        '--format',
+        'text',
+      ]);
 
       expect(r.exitCode).toBeUndefined();
       expect(r.stderr).toBe('');
@@ -159,15 +188,19 @@ describe('usage breakdown command (one-shot)', () => {
           model_id: 'qwen3.6-plus',
           period: { from: '2026-04-01', to: '2026-04-20' },
           granularity: 'day',
-          rows: [
-            { period: '2026-04-18', tokens_in: 5_800_000, cost: 2.93, currency: 'CNY' },
-          ],
+          rows: [{ period: '2026-04-18', tokens_in: 5_800_000, cost: 2.93, currency: 'CNY' }],
           total: { tokens_in: 5_800_000, cost: 2.93, currency: 'CNY' },
         }),
       });
 
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--model', 'qwen3.6-plus', '--format', 'text']);
+      const r = await runCommand(buildBreakdown, [
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen3.6-plus',
+        '--format',
+        'text',
+      ]);
 
       expect(r.exitCode).toBeUndefined();
       expect(r.stdout).toContain('5.8M');
@@ -177,8 +210,7 @@ describe('usage breakdown command (one-shot)', () => {
 
   describe('argument validation', () => {
     it('missing --model → error to stderr (JSON format), exit 1', async () => {
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--format', 'json']);
+      const r = await runCommand(buildBreakdown, ['usage', 'breakdown', '--format', 'json']);
       expect(r.exitCode).toBe(1);
       expect(r.stdout).toBe('');
       expect(r.stderr).toContain('Missing required option: --model');
@@ -188,8 +220,16 @@ describe('usage breakdown command (one-shot)', () => {
       holder.client = makeMockApiClient({
         listModels: async () => ({ models: [makeModel({ id: 'qwen3.6-plus' })], total: 1 }),
       });
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--model', 'qwen3.6-plus', '--granularity', 'bogus', '--format', 'json']);
+      const r = await runCommand(buildBreakdown, [
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen3.6-plus',
+        '--granularity',
+        'bogus',
+        '--format',
+        'json',
+      ]);
       expect(r.exitCode).toBe(1);
       expect(r.stdout).toBe('');
       expect(r.stderr).toMatch(/Invalid granularity 'bogus'/);
@@ -200,17 +240,28 @@ describe('usage breakdown command (one-shot)', () => {
     it('image model + zero rows → headers reflect Images, not Tokens', async () => {
       holder.client = makeMockApiClient({
         listModels: async () => ({
-          models: [makeModel({
-            id: 'qwen-image-2.0-pro',
-            modality: { input: ['text'], output: ['image'] },
-            free_tier: { mode: 'standard', quota: { remaining: 0, total: 100, unit: 'images', used_pct: 0 } },
-          })],
+          models: [
+            makeModel({
+              id: 'qwen-image-2.0-pro',
+              modality: { input: ['text'], output: ['image'] },
+              free_tier: {
+                mode: 'standard',
+                quota: { remaining: 0, total: 100, unit: 'images', used_pct: 0 },
+              },
+            }),
+          ],
           total: 1,
         }),
       });
 
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--model', 'qwen-image-2.0-pro', '--format', 'text']);
+      const r = await runCommand(buildBreakdown, [
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen-image-2.0-pro',
+        '--format',
+        'text',
+      ]);
 
       expect(r.exitCode).toBeUndefined();
       expect(r.stdout).toContain('Images');
@@ -238,8 +289,16 @@ describe('usage breakdown command (one-shot)', () => {
           };
         },
       });
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--model', 'qwen3-max', '--granularity', 'month', '--format', 'json']);
+      const r = await runCommand(buildBreakdown, [
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen3-max',
+        '--granularity',
+        'month',
+        '--format',
+        'json',
+      ]);
       expect(r.exitCode).toBeUndefined();
       expect(capturedGran).toBe('month');
     });
@@ -248,8 +307,16 @@ describe('usage breakdown command (one-shot)', () => {
       holder.client = makeMockApiClient({
         listModels: async () => ({ models: [makeModel({ id: 'qwen3-max' })], total: 1 }),
       });
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--model', 'qwen3-max', '--granularity', 'quarter', '--format', 'json']);
+      const r = await runCommand(buildBreakdown, [
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen3-max',
+        '--granularity',
+        'quarter',
+        '--format',
+        'json',
+      ]);
       expect(r.exitCode).toBeUndefined();
     });
   });
@@ -259,8 +326,16 @@ describe('usage breakdown command (one-shot)', () => {
       holder.client = makeMockApiClient({
         listModels: async () => ({ models: [makeModel({ id: 'qwen3-max' })], total: 1 }),
       });
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--model', 'qwen3-max', '--days', '30', '--format', 'json']);
+      const r = await runCommand(buildBreakdown, [
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen3-max',
+        '--days',
+        '30',
+        '--format',
+        'json',
+      ]);
       expect(r.exitCode).toBeUndefined();
       expect(r.stderr).toBe('');
     });
@@ -274,8 +349,14 @@ describe('usage breakdown command (one-shot)', () => {
           throw new Error('breakdown-fail');
         },
       });
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--model', 'qwen3-max', '--format', 'json']);
+      const r = await runCommand(buildBreakdown, [
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen3-max',
+        '--format',
+        'json',
+      ]);
       expect(r.exitCode).toBe(1);
       expect(r.stderr).toContain('breakdown-fail');
     });
@@ -300,8 +381,14 @@ describe('usage breakdown command (one-shot)', () => {
           total: { tokens_in: 7_000_000, cost: 3.54, currency: 'CNY' },
         }),
       });
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--model', 'qwen3.6-plus', '--format', 'table']);
+      const r = await runCommand(buildBreakdown, [
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen3.6-plus',
+        '--format',
+        'table',
+      ]);
       expect(r.exitCode).toBeUndefined();
       expect(renderWithInkSpy).toHaveBeenCalledTimes(1);
       const el = renderWithInkSpy.mock.calls[0][0];
@@ -316,8 +403,14 @@ describe('usage breakdown command (one-shot)', () => {
         listModels: async () => ({ models: [makeModel({ id: 'qwen3-max' })], total: 1 }),
         // default empty getUsageBreakdown returns no rows
       });
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--model', 'qwen3-max', '--format', 'table']);
+      const r = await runCommand(buildBreakdown, [
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen3-max',
+        '--format',
+        'table',
+      ]);
       expect(r.exitCode).toBeUndefined();
       expect(renderWithInkSpy).toHaveBeenCalledTimes(1);
       const el = renderWithInkSpy.mock.calls[0][0];
@@ -340,8 +433,16 @@ describe('usage breakdown command (one-shot)', () => {
           total: { tokens_in: 600, cost: 0.06, currency: 'CNY' },
         }),
       });
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--model', 'qwen3-max', '--granularity', 'month', '--format', 'table']);
+      const r = await runCommand(buildBreakdown, [
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen3-max',
+        '--granularity',
+        'month',
+        '--format',
+        'table',
+      ]);
       expect(r.exitCode).toBeUndefined();
       expect(renderWithInkSpy).toHaveBeenCalledTimes(1);
       const el = renderWithInkSpy.mock.calls[0][0];
@@ -358,14 +459,18 @@ describe('usage breakdown command (one-shot)', () => {
           model_id: 'qwen3-max',
           period: { from: '2026-01-01', to: todayIso },
           granularity: 'day',
-          rows: [
-            { period: todayIso, tokens_in: 1000, cost: 0.1, currency: 'CNY' },
-          ],
+          rows: [{ period: todayIso, tokens_in: 1000, cost: 0.1, currency: 'CNY' }],
           total: { tokens_in: 1000, cost: 0.1, currency: 'CNY' },
         }),
       });
-      const r = await runCommand(buildBreakdown,
-        ['usage', 'breakdown', '--model', 'qwen3-max', '--format', 'table']);
+      const r = await runCommand(buildBreakdown, [
+        'usage',
+        'breakdown',
+        '--model',
+        'qwen3-max',
+        '--format',
+        'table',
+      ]);
       expect(r.exitCode).toBeUndefined();
       expect(renderWithInkSpy).toHaveBeenCalledTimes(1);
       // Don't strictly assert isCurrent flag (depends on TZ); just ensure no crash

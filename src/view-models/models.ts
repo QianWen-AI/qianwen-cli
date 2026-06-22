@@ -22,7 +22,7 @@ const UNIT_SHORT: Record<string, string> = {
   character: 'char',
   second: 'sec',
   // Chinese units (pass-through)
-  '个': '个',
+  个: '个',
 };
 
 /**
@@ -78,8 +78,7 @@ export function formatFreeTier(model: Model): string {
  */
 export function formatPriceFromPricing(pricing: Pricing, isFreeOnly: boolean): string {
   const DASH = '\u2014';
-  const isValidNum = (v: unknown): v is number =>
-    typeof v === 'number' && Number.isFinite(v);
+  const isValidNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
   if (isFreeOnly) return 'Free';
 
@@ -111,7 +110,11 @@ export function formatPriceFromPricing(pricing: Pricing, isFreeOnly: boolean): s
     return `${CUR}${formatAmount(min)}-${formatAmount(max)} /sec`;
   }
 
-  if ('per_image_tiers' in pricing && pricing.per_image_tiers && pricing.per_image_tiers!.length > 0) {
+  if (
+    'per_image_tiers' in pricing &&
+    pricing.per_image_tiers &&
+    pricing.per_image_tiers!.length > 0
+  ) {
     const tiers = pricing.per_image_tiers!;
     const prices = tiers.map((t) => t.price).filter(isValidNum);
     if (prices.length === 0) return DASH;
@@ -433,7 +436,8 @@ function buildPricingLines(pricing: Pricing): PricingLineViewModel[] {
       if (hasCache) {
         cells.cacheCreation =
           tier.cache_creation != null ? `${CUR}${formatAmount(tier.cache_creation)}/1M` : '—';
-        cells.cacheRead = tier.cache_read != null ? `${CUR}${formatAmount(tier.cache_read)}/1M` : '—';
+        cells.cacheRead =
+          tier.cache_read != null ? `${CUR}${formatAmount(tier.cache_read)}/1M` : '—';
       }
       return { cells };
     });
@@ -448,7 +452,11 @@ function buildPricingLines(pricing: Pricing): PricingLineViewModel[] {
     }));
   }
 
-  if ('per_image_tiers' in pricing && pricing.per_image_tiers && pricing.per_image_tiers.length > 0) {
+  if (
+    'per_image_tiers' in pricing &&
+    pricing.per_image_tiers &&
+    pricing.per_image_tiers.length > 0
+  ) {
     return pricing.per_image_tiers.map((t) => ({
       cells: {
         label: t.label,

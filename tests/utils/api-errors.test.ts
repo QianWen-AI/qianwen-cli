@@ -4,7 +4,11 @@ import { CliError } from '../../src/utils/errors.js';
 import { EXIT_CODES } from '../../src/utils/exit-codes.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 describe('classifyHttpError', () => {
   it('passes through existing CliError unchanged', () => {

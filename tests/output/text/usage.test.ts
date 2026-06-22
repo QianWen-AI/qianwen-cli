@@ -10,7 +10,11 @@ import {
 import type { UsageSummaryResponse, UsageBreakdownResponse } from '../../../src/types/usage.js';
 import { site } from '../../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 // Captures console.log output produced by renderText* functions, so tests can
 // assert on the rendered string. The pure render functions are themselves
@@ -93,7 +97,10 @@ describe('renderTextUsageSummary', () => {
   });
 
   it('skips Token Plan section when not subscribed', () => {
-    const response: UsageSummaryResponse = { ...baseResponse, token_plan: { subscribed: false } } as any;
+    const response: UsageSummaryResponse = {
+      ...baseResponse,
+      token_plan: { subscribed: false },
+    } as any;
     const vm = buildUsageSummaryViewModel(response);
     const out = captureStdout(() => renderTextUsageSummary(vm));
     expect(out).not.toContain('Token Plan');
@@ -129,7 +136,10 @@ describe('renderTextUsageSummary', () => {
   });
 
   it('skips Token Plan section when not subscribed', () => {
-    const response: UsageSummaryResponse = { ...baseResponse, token_plan: { subscribed: false } } as any;
+    const response: UsageSummaryResponse = {
+      ...baseResponse,
+      token_plan: { subscribed: false },
+    } as any;
     const vm = buildUsageSummaryViewModel(response);
     const out = captureStdout(() => renderTextUsageSummary(vm));
     expect(out).not.toContain('Token Plan');
@@ -172,5 +182,4 @@ describe('renderTextUsageBreakdown', () => {
     const out = captureStdout(() => renderTextUsageBreakdown(vm));
     expect(out).toContain('No usage in this period');
   });
-
 });

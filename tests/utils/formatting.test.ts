@@ -1,28 +1,40 @@
 import { describe, it, expect } from 'vitest';
-import {
-  splitPrice,
-  formatFreeTier,
-  formatPriceFromPricing,
-} from '../../src/utils/formatting.js';
+import { splitPrice, formatFreeTier, formatPriceFromPricing } from '../../src/utils/formatting.js';
 import { formatFreeTierSplit } from '../../src/view-models/models.js';
 import type { Model, Pricing } from '../../src/types/model.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 describe('splitPrice', () => {
   it('splits price with unit', () => {
-    expect(splitPrice(`${s.currencySymbol}0.50 /1M tok`)).toEqual({ amount: `${s.currencySymbol}0.50`, unit: '/1M tok' });
-    expect(splitPrice(`${s.currencySymbol}0.03 /img`)).toEqual({ amount: `${s.currencySymbol}0.03`, unit: '/img' });
+    expect(splitPrice(`${s.currencySymbol}0.50 /1M tok`)).toEqual({
+      amount: `${s.currencySymbol}0.50`,
+      unit: '/1M tok',
+    });
+    expect(splitPrice(`${s.currencySymbol}0.03 /img`)).toEqual({
+      amount: `${s.currencySymbol}0.03`,
+      unit: '/img',
+    });
   });
 
   it('handles range prices', () => {
-    expect(splitPrice(`${s.currencySymbol}0.50-2.00 /1M tok`)).toEqual({ amount: `${s.currencySymbol}0.50-2.00`, unit: '/1M tok' });
+    expect(splitPrice(`${s.currencySymbol}0.50-2.00 /1M tok`)).toEqual({
+      amount: `${s.currencySymbol}0.50-2.00`,
+      unit: '/1M tok',
+    });
   });
 
   it('handles input/output separator in price', () => {
     // "${s.currencySymbol}0.10 / ${s.currencySymbol}0.40 /1M tok" should split at LAST ' /'
-    expect(splitPrice(`${s.currencySymbol}0.10 / ${s.currencySymbol}0.40 /1M tok`)).toEqual({ amount: `${s.currencySymbol}0.10 / ${s.currencySymbol}0.40`, unit: '/1M tok' });
+    expect(splitPrice(`${s.currencySymbol}0.10 / ${s.currencySymbol}0.40 /1M tok`)).toEqual({
+      amount: `${s.currencySymbol}0.10 / ${s.currencySymbol}0.40`,
+      unit: '/1M tok',
+    });
   });
 
   it('returns empty unit for Free and dash', () => {
@@ -31,7 +43,10 @@ describe('splitPrice', () => {
   });
 
   it('handles price without separator', () => {
-    expect(splitPrice(`${s.currencySymbol}0.05`)).toEqual({ amount: `${s.currencySymbol}0.05`, unit: '' });
+    expect(splitPrice(`${s.currencySymbol}0.05`)).toEqual({
+      amount: `${s.currencySymbol}0.05`,
+      unit: '',
+    });
   });
 });
 
@@ -210,7 +225,9 @@ describe('formatPriceFromPricing', () => {
     const pricing: Pricing = {
       tiers: [{ label: 'std', input: 0.5, output: 2, unit: `/${s.currency}/1M tok` }],
     };
-    expect(formatPriceFromPricing(pricing, false)).toBe(`${s.currencySymbol}0.5 / ${s.currencySymbol}2 /1M tok`);
+    expect(formatPriceFromPricing(pricing, false)).toBe(
+      `${s.currencySymbol}0.5 / ${s.currencySymbol}2 /1M tok`,
+    );
   });
 
   it('marks multi-tier LLM pricing with "+" suffix and uses cheapest input', () => {
@@ -220,7 +237,9 @@ describe('formatPriceFromPricing', () => {
         { label: '128k-256k', input: 1.6, output: 8, unit: `/${s.currency}/1M tok` },
       ],
     };
-    expect(formatPriceFromPricing(pricing, false)).toBe(`${s.currencySymbol}0.8 / ${s.currencySymbol}4 + /1M tok`);
+    expect(formatPriceFromPricing(pricing, false)).toBe(
+      `${s.currencySymbol}0.8 / ${s.currencySymbol}4 + /1M tok`,
+    );
   });
 
   it('formats per_second video pricing — single resolution', () => {

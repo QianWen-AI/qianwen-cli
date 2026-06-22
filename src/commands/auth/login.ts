@@ -2,11 +2,11 @@ import { exec } from 'child_process';
 import chalk from 'chalk';
 import { Command } from 'commander';
 import {
-  executeDeviceFlow,
-  executeDeviceFlowInitOnly,
-  executeDeviceFlowComplete,
-  type DeviceFlowCompleteOptions,
-} from '../../auth/device-flow.js';
+  executeLogin,
+  executeLoginInitOnly,
+  executeLoginComplete,
+  type LoginCompleteOptions,
+} from '../../auth/login-flow.js';
 import {
   resolveCredentials,
   isTokenExpired,
@@ -22,6 +22,7 @@ import { theme } from '../../ui/theme.js';
 import { createClient } from '../../api/client.js';
 import { resetGlobalCache } from '../../utils/cache.js';
 import type { ResolvedFormat } from '../../types/config.js';
+import type { AuthStatus } from '../../types/auth.js';
 
 export function registerLoginCommand(parent: Command): void {
   parent
@@ -29,7 +30,7 @@ export function registerLoginCommand(parent: Command): void {
     .description(`Login to ${site.cliDisplayName} via Device Flow`)
     .option('--format <fmt>', 'Output format: table, json, text (default: auto)')
     .option('--init-only', 'Output device code and exit immediately (for non-interactive use)')
-    .option('--complete', 'Resume and complete a pending device-flow login')
+    .option('--complete', 'Resume and complete a pending login session')
     .option(
       '--timeout <seconds>',
       'Polling timeout in seconds for --complete (default: 120)',
@@ -52,8 +53,7 @@ export function registerLoginCommand(parent: Command): void {
         autoInitOnly = true;
         format = 'json';
         process.stderr.write(
-          'Non-interactive environment detected. Running in --init-only mode.\n' +
-            'Open the URL in browser and authorize. After that, run `' + formatCmd('auth login --complete') + '` to confirm authentication status.\n',
+          'Non-interactive environment detected. Running in --init-only mode.\n',
         );
       }
 
@@ -83,34 +83,40 @@ async function runLogin(format: ResolvedFormat): Promise<void> {
   if (resolved && resolved.credentials && !isTokenExpired(resolved.credentials)) {
     const remaining = getTokenRemainingTime(resolved.credentials);
 
-    const client = await createClient();
-    const status = await client.getAuthStatus();
-    const aliyunId = status.user?.aliyunId ?? resolved.credentials.user.aliyunId ?? 'unknown';
+    let status: AuthStatus | undefined;
+    try {
+      const client = await createClient();
+      status = await client.getAuthStatus();
+    } catch {
+      // Server-side verification failed; fall through to re-login.
+    }
 
-    if (format === 'json') {
-      printJSON({
-        events: [
-          {
+    if (status) {
+      const aliyunId = status.user?.aliyunId ?? resolved.credentials.user.aliyunId ?? 'unknown';
+
+      if (format === 'json') {
+        process.stdout.write(
+          JSON.stringify({
             event: 'already_authenticated',
             authenticated: true,
             source: resolved.source,
             server_verified: status.server_verified,
             user: { aliyunId },
             token: { expires_at: resolved.credentials.expires_at, remaining },
-          },
-        ],
-      });
-    } else {
-      console.log('');
-      console.log(
-        `  ${theme.success(theme.symbols.pass)} Already authenticated as ${theme.bold(aliyunId)}`,
-      );
-      console.log(`  Token expires in ${remaining}`);
-      console.log(`  Credential source: ${resolved.source}`);
-      console.log(`  To re-login, run: ${chalk.bold(formatCmd('auth logout'))} first`);
-      console.log('');
+          }) + '\n',
+        );
+      } else {
+        console.log('');
+        console.log(
+          `  ${theme.success(theme.symbols.pass)} Already authenticated as ${theme.bold(aliyunId)}`,
+        );
+        console.log(`  Token expires in ${remaining}`);
+        console.log(`  Credential source: ${resolved.source}`);
+        console.log(`  To re-login, run: ${chalk.bold(formatCmd('auth logout'))} first`);
+        console.log('');
+      }
+      return;
     }
-    return;
   }
 
   if (format === 'json') {
@@ -150,6 +156,7 @@ async function fetchUserIdentifier(): Promise<string> {
     const response = await fetch(`${baseUrl}/api/account/info.json`, {
       headers: { Authorization: `Bearer ${creds.access_token}` },
       signal: controller.signal,
+      redirect: 'error',
     });
     if (response.ok) {
       const json = (await response.json()) as { data?: { aliyunId?: string } };
@@ -166,7 +173,7 @@ async function fetchUserIdentifier(): Promise<string> {
 async function runLoginInteractive(): Promise<void> {
   let authCompleted = false;
 
-  const success = await executeDeviceFlow({
+  const success = await executeLogin({
     onCodeReceived({ verificationUrl, expiresIn }) {
       const _minutes = Math.floor(expiresIn / 60);
       console.log('');
@@ -218,36 +225,41 @@ async function runLoginInteractive(): Promise<void> {
 }
 
 async function runLoginJSON(): Promise<void> {
-  // Collect all events and output as a single JSON document at the end
-  const events: Record<string, unknown>[] = [];
+  // Track user from onSuccess callback; the success event is deferred until
+  // after fetchUserIdentifier() resolves the authoritative identity, since the
+  // poll response may carry an empty user. Same pattern as runLoginComplete().
+  const callbackUser = { aliyunId: '', email: '', received: false };
 
-  const success = await executeDeviceFlow({
+  const success = await executeLogin({
     onCodeReceived({ verificationUrl, expiresIn }) {
-      events.push({
+      emitEvent({
         event: 'device_code',
         verification_url: verificationUrl,
         expires_in: expiresIn,
+        expires_in_seconds: expiresIn,
       });
+      if (process.stdout.isTTY) {
+        process.stderr.write('Opening browser to authorize...\n');
+        openBrowser(verificationUrl);
+      }
     },
     onPolling() {
       // No output in JSON mode during polling
     },
     onSuccess(user) {
-      events.push({
-        event: 'success',
-        authenticated: true,
-        user: { aliyunId: user.aliyunId || user.email },
-      });
+      callbackUser.aliyunId = user.aliyunId;
+      callbackUser.email = user.email;
+      callbackUser.received = true;
     },
     onError(error) {
-      events.push({
+      emitEvent({
         event: 'error',
         authenticated: false,
         error,
       });
     },
     onExpired() {
-      events.push({
+      emitEvent({
         event: 'expired',
         authenticated: false,
         error: 'Device code expired. Please try again.',
@@ -255,12 +267,20 @@ async function runLoginJSON(): Promise<void> {
     },
   });
 
-  printJSON({ events });
+  if (success && callbackUser.received) {
+    const identifier = await fetchUserIdentifier();
+    const displayId = identifier || callbackUser.aliyunId || callbackUser.email;
+    emitEvent({ event: 'success', authenticated: true, user: { aliyunId: displayId } });
+  }
 
   if (!success) {
     resetGlobalCache();
     process.exitCode = 1;
   }
+}
+
+function emitEvent(event: Record<string, unknown>): void {
+  process.stdout.write(JSON.stringify(event) + '\n');
 }
 
 /**
@@ -272,31 +292,45 @@ async function runLoginInitOnly(): Promise<void> {
   const resolved = resolveCredentials();
   if (resolved && resolved.credentials && !isTokenExpired(resolved.credentials)) {
     const remaining = getTokenRemainingTime(resolved.credentials);
-    const client = await createClient();
-    const status = await client.getAuthStatus();
-    const aliyunId = status.user?.aliyunId ?? resolved.credentials.user.aliyunId ?? 'unknown';
-    printJSON({
-      events: [
-        {
-          event: 'already_authenticated',
-          authenticated: true,
-          source: resolved.source,
-          server_verified: status.server_verified,
-          user: { aliyunId },
-          token: { expires_at: resolved.credentials.expires_at, remaining },
-        },
-      ],
-    });
-    return;
+    let status: AuthStatus | undefined;
+    try {
+      const client = await createClient();
+      status = await client.getAuthStatus();
+    } catch {
+      // Server-side verification failed; fall through to init flow.
+    }
+
+    if (status) {
+      const aliyunId = status.user?.aliyunId ?? resolved.credentials.user.aliyunId ?? 'unknown';
+      printJSON({
+        events: [
+          {
+            event: 'already_authenticated',
+            authenticated: true,
+            source: resolved.source,
+            server_verified: status.server_verified,
+            user: { aliyunId },
+            token: { expires_at: resolved.credentials.expires_at, remaining },
+          },
+        ],
+      });
+      return;
+    }
   }
 
-  const initResponse = await executeDeviceFlowInitOnly();
+  const initResponse = await executeLoginInitOnly();
+  const completeCmd = formatCmd('auth login --complete');
+  process.stderr.write(
+    `Open the URL to authorize, then run \`${completeCmd}\` to complete login.\n`,
+  );
   printJSON({
     events: [
       {
         event: 'device_code',
         verification_url: initResponse.verification_url,
         expires_in: initResponse.expires_in,
+        expires_in_seconds: initResponse.expires_in,
+        next_step: completeCmd,
       },
     ],
   });
@@ -320,10 +354,10 @@ async function runLoginComplete(format: ResolvedFormat, timeoutSeconds?: number)
   };
 
   try {
-    const completeOptions: DeviceFlowCompleteOptions = {};
+    const completeOptions: LoginCompleteOptions = {};
     if (timeoutSeconds) completeOptions.timeoutSeconds = timeoutSeconds;
 
-    success = await executeDeviceFlowComplete(
+    success = await executeLoginComplete(
       {
         onCodeReceived() {
           // Not used in --complete mode
@@ -357,7 +391,9 @@ async function runLoginComplete(format: ResolvedFormat, timeoutSeconds?: number)
               event: 'expired',
               authenticated: false,
               message:
-                "Device code has expired. Please run '" + formatCmd('auth login') + "' to start a new login flow.",
+                "Device code has expired. Please run '" +
+                formatCmd('auth login') +
+                "' to start a new login flow.",
             });
           } else {
             console.log('');

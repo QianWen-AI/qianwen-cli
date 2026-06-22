@@ -36,7 +36,12 @@ function buildSet(program: import('commander').Command) {
 describe('config set command', () => {
   it('valid key + value (JSON) → returns ok=true, persists value', async () => {
     const r = await runCommand(buildSet, [
-      'config', 'set', 'output.format', 'json', '--format', 'json',
+      'config',
+      'set',
+      'output.format',
+      'json',
+      '--format',
+      'json',
     ]);
     expect(r.exitCode).toBeUndefined();
     const payload = JSON.parse(r.stdout);
@@ -48,7 +53,12 @@ describe('config set command', () => {
 
   it('valid key + value (text) → prints checkmark', async () => {
     const r = await runCommand(buildSet, [
-      'config', 'set', 'output.format', 'text', '--format', 'text',
+      'config',
+      'set',
+      'output.format',
+      'text',
+      '--format',
+      'text',
     ]);
     expect(r.exitCode).toBeUndefined();
     expect(r.stdout).toMatch(/Set output\.format = text/);
@@ -56,7 +66,12 @@ describe('config set command', () => {
 
   it('unknown key → CONFIG_ERROR, exit 4, no persist', async () => {
     const r = await runCommand(buildSet, [
-      'config', 'set', 'nonexistent.key', 'foo', '--format', 'json',
+      'config',
+      'set',
+      'nonexistent.key',
+      'foo',
+      '--format',
+      'json',
     ]);
     expect(r.exitCode).toBe(4);
     expect(r.stderr).toContain('CONFIG_ERROR');
@@ -65,7 +80,12 @@ describe('config set command', () => {
 
   it('invalid value → CONFIG_ERROR with validation message, exit 4', async () => {
     const r = await runCommand(buildSet, [
-      'config', 'set', 'output.format', 'bogus', '--format', 'json',
+      'config',
+      'set',
+      'output.format',
+      'bogus',
+      '--format',
+      'json',
     ]);
     expect(r.exitCode).toBe(4);
     expect(r.stderr).toContain('CONFIG_ERROR');

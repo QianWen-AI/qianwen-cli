@@ -1,16 +1,29 @@
-import chalk from 'chalk';
+import chalk, { Chalk } from 'chalk';
 import { site } from '../site.js';
 
 const t = site.uiTheme;
 
+// Forced-color chalk instance: always emits ANSI escape codes regardless of
+// stdout TTY detection. Required for output that may be intercepted by an
+// upstream writer (e.g., Commander's configureOutput.writeOut) before
+// reaching the terminal — the default chalk instance would silently strip
+// styles in that path.
+const forcedChalk = new Chalk({ level: 3 });
+
 /** Raw color hex values for Ink <Text color={}> props */
 export const colors = {
   brand: t.sectionTitle, // Section / Card titles (saturated variant)
-  border: t.border,      // Section dividers, Card frames
+  border: t.border, // Section dividers, Card frames
   muted: t.muted,
-  ghost: '#9CA3AF',      // gray-400 — REPL ghost/suggestion text (site-neutral)
+  ghost: '#9CA3AF', // gray-400 — REPL ghost/suggestion text (site-neutral)
   headerBg: t.tableHeader.bg,
   headerFg: t.tableHeader.fg,
+  success: t.success,
+  error: t.error,
+  warning: t.warning,
+  accent: t.accent,
+  codeBg: 'gray',
+  codeFg: 'white',
 } as const;
 
 export const theme = {
@@ -59,13 +72,22 @@ export const theme = {
     empty: '░',
   },
 
+  // Help text styling — applied where output may be captured by Commander
+  // before reaching the TTY, so a forced-color chalk instance is used.
+  // Hex values follow the qianwen brand blue ramp (saturated → lighter).
+  help: {
+    sectionTitle: forcedChalk.hex(t.sectionTitle).bold,
+    groupTitle: forcedChalk.hex('#5B7BF7').bold,
+    commandName: forcedChalk.hex('#8BA3FA').bold,
+  },
+
   // Modality type colors — one fixed color per type, high-saturation, non-overlapping
   // NOTE: Currently unused in Ink components; reserved for future modality-aware rendering.
   modalityColors: {
-    text: chalk.hex('#C4B5FD'),      // violet-300  — on-brand light purple
-    image: chalk.hex('#FBB040'),     // amber-400   — warm, visual
-    video: chalk.hex('#F472B6'),     // pink-400    — dynamic / motion
-    audio: chalk.hex('#34D399'),     // emerald-400 — sound / wave
+    text: chalk.hex('#C4B5FD'), // violet-300  — on-brand light purple
+    image: chalk.hex('#FBB040'), // amber-400   — warm, visual
+    video: chalk.hex('#F472B6'), // pink-400    — dynamic / motion
+    audio: chalk.hex('#34D399'), // emerald-400 — sound / wave
     embedding: chalk.hex('#60A5FA'), // blue-400    — vector / data
   } as Record<string, (text: string) => string>,
 };

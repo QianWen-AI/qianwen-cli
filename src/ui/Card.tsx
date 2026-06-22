@@ -2,7 +2,6 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import chalk from 'chalk';
 import { theme } from './theme.js';
-import { site } from '../site.js';
 import { padEndVisible } from './textWrap.js';
 
 export interface CardProps {
@@ -61,9 +60,7 @@ export function CardLine({ children, lines, boldLine, width = 80 }: CardLineProp
         {lines.map((line, i) => {
           const padded = padEndVisible(line, innerWidth);
           const styled = boldLine ? chalk.bold(padded) : padded;
-          return (
-            <Text key={i}>{`${borderChar}  ${styled}  ${borderChar}`}</Text>
-          );
+          return <Text key={i}>{`${borderChar}  ${styled}  ${borderChar}`}</Text>;
         })}
       </Box>
     );
@@ -114,7 +111,7 @@ export function Section({ title, children, width = 80 }: SectionProps) {
   const { left, middle, right } = buildSectionTitleParts(title, safeWidth);
 
   // Render title as a single <Text> to avoid Yoga layout drift with CJK chars
-  const sectionTitleLine = `${left}${chalk.bold.hex(site.uiTheme.sectionTitle)(middle)}${right}`;
+  const sectionTitleLine = `${left}${theme.brand.bold(middle)}${right}`;
 
   return (
     <Box flexDirection="column">

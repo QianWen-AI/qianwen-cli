@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { theme, colors } from './theme.js';
 import { visibleWidth } from './textWrap.js';
+import { useTerminalSize } from './useTerminalSize.js';
 
 export interface SectionProps {
   title: string;
@@ -22,9 +23,8 @@ export interface SectionProps {
  *   footer
  */
 export function Section({ title, subtitle, children, footer, paddingLeft = 2 }: SectionProps) {
-  // Calculate total width from terminal or use default
-  const terminalWidth = process.stdout.columns ?? 80;
-  const sectionWidth = terminalWidth - paddingLeft;
+  const { columns } = useTerminalSize();
+  const sectionWidth = columns - paddingLeft;
 
   const titlePart = subtitle ? `${title}  ${theme.symbols.dot}  ${subtitle}` : title;
   const titleLen = visibleWidth(titlePart);
@@ -32,13 +32,10 @@ export function Section({ title, subtitle, children, footer, paddingLeft = 2 }: 
 
   return (
     <Box flexDirection="column" paddingLeft={paddingLeft}>
-      {/* ── Title bar: Title ──────────────── */}
       <Box>
-        {/* Title (+ optional subtitle) in bold brand color */}
         <Text bold color={colors.brand}>
           {titlePart}
         </Text>
-        {/* Fill line in border color */}
         <Text color={colors.border}>{'─'.repeat(Math.max(1, dashesAfter))}</Text>
       </Box>
 
@@ -46,12 +43,14 @@ export function Section({ title, subtitle, children, footer, paddingLeft = 2 }: 
       <Box flexDirection="column">{children}</Box>
 
       {/* Footer separator */}
-      {footer && <Text color={colors.border}>{'─'.repeat(sectionWidth)}</Text>}
+      {footer && <Text color={colors.border}>{'─'.repeat(Math.max(0, sectionWidth))}</Text>}
 
       {/* Footer text */}
       {footer && (
         <Box>
-          <Text color={colors.muted}>{footer}</Text>
+          <Text color={colors.muted} wrap="truncate-end">
+            {footer}
+          </Text>
         </Box>
       )}
     </Box>

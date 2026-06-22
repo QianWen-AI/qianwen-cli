@@ -119,7 +119,7 @@ export function classifyHttpError(error: unknown, url?: string): CliError {
  */
 function httpDetail(status: number, statusText: string, url?: string, error?: Error): string {
   // When the error message starts with "HTTP <status>:", it was constructed
-  // by http-client.ts and contains the full diagnostic (URL + response body).
+  // by base-client.ts and contains the full diagnostic (URL + response body).
   // Use it directly to preserve all detail.
   if (error?.message && /^HTTP \d+:/.test(error.message)) {
     return buildDetail(error.message, url, error);

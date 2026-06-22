@@ -2,12 +2,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { runCommand } from '../../helpers/run-command.js';
 import { site } from '../../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 vi.mock('../../../src/config/manager.js', () => ({
   getConfigEntries: () => [
     { key: 'output.format', value: 'auto', source: 'default' },
-    { key: 'api.endpoint', value: 'https://example.com', source: 'global', sourcePath: `~/${s.configDirName}/config.json` },
+    {
+      key: 'api.endpoint',
+      value: 'https://example.com',
+      source: 'global',
+      sourcePath: `~/${s.configDirName}/config.json`,
+    },
   ],
   getConfigValue: () => 'auto',
 }));

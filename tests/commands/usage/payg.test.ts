@@ -215,9 +215,7 @@ describe('usage payg command (one-shot)', () => {
           free_tier: [],
           token_plan: { subscribed: false },
           pay_as_you_go: {
-            models: [
-              { model_id: 'm1', usage: { tokens: 15 }, cost: 0.001, currency: 'CNY' },
-            ],
+            models: [{ model_id: 'm1', usage: { tokens: 15 }, cost: 0.001, currency: 'CNY' }],
             total: { cost: 0.001, currency: 'CNY' },
           },
         }),

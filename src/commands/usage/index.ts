@@ -3,11 +3,13 @@ import { usageSummaryAction } from './summary.js';
 import { usageBreakdownAction } from './breakdown.js';
 import { usageFreeTierAction } from './free-tier.js';
 import { usagePaygAction } from './payg.js';
+import { usageLogsAction } from './logs.js';
 
 export { usageSummaryAction } from './summary.js';
 export { usageBreakdownAction } from './breakdown.js';
 export { usageFreeTierAction } from './free-tier.js';
 export { usagePaygAction } from './payg.js';
+export { usageLogsAction } from './logs.js';
 
 /**
  * Register usage command actions onto existing usage subcommands.
@@ -18,9 +20,11 @@ export function registerUsageActions(
   breakdownCmd: Command,
   freeTierCmd: Command,
   paygCmd: Command,
+  logsCmd: Command,
 ): void {
   summaryCmd.action(usageSummaryAction(summaryCmd));
   breakdownCmd.action(usageBreakdownAction(breakdownCmd));
   freeTierCmd.action(usageFreeTierAction(freeTierCmd));
   paygCmd.action(usagePaygAction(paygCmd));
+  logsCmd.action(usageLogsAction(logsCmd));
 }

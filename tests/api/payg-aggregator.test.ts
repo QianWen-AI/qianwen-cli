@@ -22,7 +22,7 @@ describe('aggregatePaygByModel (summary view)', () => {
     const items: PaygItem[] = [
       item({ modelId: 'qwen3.6-plus', usageValue: 5_000_000, cost: 2.5, billingUnit: 'tokens' }),
       item({ modelId: 'qwen3.6-plus', usageValue: 4_500_000, cost: 2.3, billingUnit: 'tokens' }),
-      item({ modelId: 'wan2.6-t2v',   usageValue: 10,        cost: 0.0, billingUnit: 'seconds' }),
+      item({ modelId: 'wan2.6-t2v', usageValue: 10, cost: 0.0, billingUnit: 'seconds' }),
     ];
     const r = aggregatePaygByModel(items);
 
@@ -47,7 +47,7 @@ describe('aggregatePaygByModel (summary view)', () => {
 
   it('uses unit name as the usage key for non-token billing', () => {
     const items: PaygItem[] = [
-      item({ modelId: 'img', usageValue: 5,  billingUnit: 'images' }),
+      item({ modelId: 'img', usageValue: 5, billingUnit: 'images' }),
       item({ modelId: 'img', usageValue: 10, billingUnit: 'images' }),
     ];
     const r = aggregatePaygByModel(items);
@@ -56,9 +56,9 @@ describe('aggregatePaygByModel (summary view)', () => {
 
   it('total aggregates cost across all models', () => {
     const items: PaygItem[] = [
-      item({ modelId: 'a', cost: 1.10, usageValue: 1 }),
-      item({ modelId: 'a', cost: 2.20, usageValue: 1 }),
-      item({ modelId: 'b', cost: 0.30, usageValue: 1 }),
+      item({ modelId: 'a', cost: 1.1, usageValue: 1 }),
+      item({ modelId: 'a', cost: 2.2, usageValue: 1 }),
+      item({ modelId: 'b', cost: 0.3, usageValue: 1 }),
     ];
     const r = aggregatePaygByModel(items);
     expect(r.total.cost).toBeCloseTo(3.6, 6);
@@ -84,8 +84,20 @@ describe('aggregatePaygByModel (summary view)', () => {
 describe('aggregatePaygByDate (breakdown view)', () => {
   it('groups by billingDate and bundles non-token usage', () => {
     const items: PaygItem[] = [
-      item({ billingDate: '2026-04-01', modelId: 'wan2.6-t2v', usageValue: 10, cost: 0,    billingUnit: 'seconds' }),
-      item({ billingDate: '2026-04-02', modelId: 'wan2.6-t2v', usageValue: 5,  cost: 0,    billingUnit: 'seconds' }),
+      item({
+        billingDate: '2026-04-01',
+        modelId: 'wan2.6-t2v',
+        usageValue: 10,
+        cost: 0,
+        billingUnit: 'seconds',
+      }),
+      item({
+        billingDate: '2026-04-02',
+        modelId: 'wan2.6-t2v',
+        usageValue: 5,
+        cost: 0,
+        billingUnit: 'seconds',
+      }),
     ];
     const rows = aggregatePaygByDate(items);
     expect(rows).toHaveLength(2);
@@ -108,7 +120,7 @@ describe('aggregatePaygByDate (breakdown view)', () => {
   it('puts token usage into tokens_in (top-level), other units flat with their unit name', () => {
     const items: PaygItem[] = [
       item({ billingDate: '2026-04-01', usageValue: 1000, billingUnit: 'tokens' }),
-      item({ billingDate: '2026-04-02', usageValue: 7,    billingUnit: 'images' }),
+      item({ billingDate: '2026-04-02', usageValue: 7, billingUnit: 'images' }),
     ];
     const rows = aggregatePaygByDate(items);
     expect(rows[0].tokens_in).toBe(1000);
@@ -119,7 +131,7 @@ describe('aggregatePaygByDate (breakdown view)', () => {
     // Defensive default: ambiguous days fall back to tokens.
     const items: PaygItem[] = [
       item({ billingDate: '2026-04-01', usageValue: 100, billingUnit: 'tokens' }),
-      item({ billingDate: '2026-04-01', usageValue: 5,   billingUnit: 'images' }),
+      item({ billingDate: '2026-04-01', usageValue: 5, billingUnit: 'images' }),
     ];
     const rows = aggregatePaygByDate(items);
     expect(rows[0].billingUnit).toBe('tokens');
@@ -153,8 +165,20 @@ describe('aggregatePaygByDate (breakdown view)', () => {
 describe('aggregatePaygByDate — voices + dynamic units (otherUsage)', () => {
   it('puts voices count into a flat voices column', () => {
     const items: PaygItem[] = [
-      item({ billingDate: '2026-04-01', modelId: 'cosyvoice-v3', usageValue: 3, cost: 0.05, billingUnit: 'voices' }),
-      item({ billingDate: '2026-04-01', modelId: 'cosyvoice-v3', usageValue: 2, cost: 0.04, billingUnit: 'voices' }),
+      item({
+        billingDate: '2026-04-01',
+        modelId: 'cosyvoice-v3',
+        usageValue: 3,
+        cost: 0.05,
+        billingUnit: 'voices',
+      }),
+      item({
+        billingDate: '2026-04-01',
+        modelId: 'cosyvoice-v3',
+        usageValue: 2,
+        cost: 0.04,
+        billingUnit: 'voices',
+      }),
     ];
     const rows = aggregatePaygByDate(items);
     expect(rows).toHaveLength(1);
@@ -167,8 +191,20 @@ describe('aggregatePaygByDate — voices + dynamic units (otherUsage)', () => {
     // Simulates the inferBillingUnit "Per <quantity> <unit>" fallback path,
     // where stepUnit like "Per 1 call" yields billingUnit='call'.
     const items: PaygItem[] = [
-      item({ billingDate: '2026-04-01', modelId: 'svc-x', usageValue: 200, cost: 0.20, billingUnit: 'call' }),
-      item({ billingDate: '2026-04-01', modelId: 'svc-x', usageValue: 50,  cost: 0.05, billingUnit: 'call' }),
+      item({
+        billingDate: '2026-04-01',
+        modelId: 'svc-x',
+        usageValue: 200,
+        cost: 0.2,
+        billingUnit: 'call',
+      }),
+      item({
+        billingDate: '2026-04-01',
+        modelId: 'svc-x',
+        usageValue: 50,
+        cost: 0.05,
+        billingUnit: 'call',
+      }),
     ];
     const rows = aggregatePaygByDate(items);
     expect(rows[0].billingUnit).toBe('call');
@@ -179,8 +215,8 @@ describe('aggregatePaygByDate — voices + dynamic units (otherUsage)', () => {
 
   it('summary view also accepts voices and dynamic unit keys', () => {
     const items: PaygItem[] = [
-      item({ modelId: 'cosyvoice-v3', usageValue: 4, cost: 0.10, billingUnit: 'voices' }),
-      item({ modelId: 'svc-y',        usageValue: 7, cost: 0.07, billingUnit: 'request' }),
+      item({ modelId: 'cosyvoice-v3', usageValue: 4, cost: 0.1, billingUnit: 'voices' }),
+      item({ modelId: 'svc-y', usageValue: 7, cost: 0.07, billingUnit: 'request' }),
     ];
     const r = aggregatePaygByModel(items);
     const voice = r.models.find((m) => m.model_id === 'cosyvoice-v3')!;
@@ -193,9 +229,27 @@ describe('aggregatePaygByDate — voices + dynamic units (otherUsage)', () => {
 describe('summary and breakdown reconcile on shared input', () => {
   it('per-model totals from summary == sum of breakdown for that model', () => {
     const items: PaygItem[] = [
-      item({ billingDate: '2026-04-01', modelId: 'm', usageValue: 100, cost: 0.10, billingUnit: 'tokens' }),
-      item({ billingDate: '2026-04-02', modelId: 'm', usageValue: 200, cost: 0.20, billingUnit: 'tokens' }),
-      item({ billingDate: '2026-04-03', modelId: 'm', usageValue: 300, cost: 0.30, billingUnit: 'tokens' }),
+      item({
+        billingDate: '2026-04-01',
+        modelId: 'm',
+        usageValue: 100,
+        cost: 0.1,
+        billingUnit: 'tokens',
+      }),
+      item({
+        billingDate: '2026-04-02',
+        modelId: 'm',
+        usageValue: 200,
+        cost: 0.2,
+        billingUnit: 'tokens',
+      }),
+      item({
+        billingDate: '2026-04-03',
+        modelId: 'm',
+        usageValue: 300,
+        cost: 0.3,
+        billingUnit: 'tokens',
+      }),
     ];
     const summary = aggregatePaygByModel(items);
     const breakdown = aggregatePaygByDate(items.filter((i) => i.modelId === 'm'));

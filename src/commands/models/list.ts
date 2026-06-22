@@ -31,7 +31,14 @@ export interface ModelsListOptions {
 
 export async function modelsListAction(options: ModelsListOptions): Promise<void> {
   const config = getEffectiveConfig();
-  const format = resolveFormat(options.format, config['output.format']);
+  let format = resolveFormat(options.format, config['output.format']);
+
+  // --all and --verbose are JSON-only flags; in any non-JSON format they would
+  // be silently dropped. Promote to JSON and tell the user on stderr.
+  if ((options.all || options.verbose) && format !== 'json') {
+    format = 'json';
+    process.stderr.write('Note: --all/--verbose forces JSON output (these flags are JSON-only).\n');
+  }
 
   try {
     if (options.input) validateModalityFlag('--input', options.input);

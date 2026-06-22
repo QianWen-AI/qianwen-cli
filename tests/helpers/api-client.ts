@@ -34,13 +34,23 @@ export function makeMockApiClient(overrides: Partial<ApiClient> = {}): ApiClient
       rows: [],
       total: { cost: 0, currency: 'CNY' },
     }),
+    getUsageLogs: async (opts) => ({
+      totalCount: 0,
+      page: opts.page ?? 1,
+      pageSize: opts.pageSize ?? 20,
+      period: { from: opts.from, to: opts.to },
+      items: [],
+    }),
 
     getAuthStatus: async () => ({ authenticated: true, server_verified: true }),
-    deviceFlowInit: async () => ({
-      token: 't', verification_url: '', expires_in: 600, interval: 5,
+    loginInit: async () => ({
+      token: 't',
+      verification_url: '',
+      expires_in: 600,
+      interval: 5,
+      auth_mode: 'pkce' as const,
     }),
-    deviceFlowPoll: async () => ({ status: 'authorization_pending' }),
-    setPkceVerifier: () => { /* no-op for tests */ },
+    loginPoll: async () => ({ status: 'authorization_pending' }),
     revokeSession: async () => true,
 
     ping: async () => ({ latency: 1, reachable: true, hostname: 'test' }),

@@ -6,6 +6,7 @@ import { getEffectiveConfig } from './config/manager.js';
 import { VERSION } from './index.js';
 import { flushDebugReport, clearDebugBuffer } from './api/debug-buffer.js';
 import { SUBCOMMANDS, tabCompleter, getGhostSuffix, unknownCommandMsg } from './repl/completer.js';
+import { surfaceCommanderError } from './repl/repl-error.js';
 import { setReplMode } from './utils/runtime-mode.js';
 import chalk from 'chalk';
 import { site } from './site.js';
@@ -57,6 +58,7 @@ async function resolveUserDisplay(): Promise<string> {
     const response = await fetch(`${baseUrl}/api/account/info.json`, {
       headers: { Authorization: `Bearer ${creds.access_token}` },
       signal: controller.signal,
+      redirect: 'error',
     });
     clearTimeout(timeout);
     if (response.ok) {
@@ -125,8 +127,18 @@ export async function startRepl(): Promise<void> {
         const line: string = (rl as any).line ?? '';
         ghostSuffix = getGhostSuffix(line);
         if (ghostSuffix) {
-          // Save cursor pos, write dim ghost, restore cursor pos
-          process.stdout.write('\x1b7' + chalk.italic.hex(colors.ghost)(ghostSuffix) + '\x1b8');
+          if (process.stdout.hasColors?.()) {
+            // Save cursor pos, write dim ghost, restore cursor pos
+            process.stdout.write('\x1b7' + chalk.italic.hex(colors.ghost)(ghostSuffix) + '\x1b8');
+          } else {
+            // ConHost / no-color terminals lack DECSC/DECRC support: emit the
+            // ghost text then walk the cursor back via CSI CUB to keep the
+            // input column anchored.
+            const ghostWidth = displayWidth(ghostSuffix);
+            process.stdout.write(
+              chalk.italic.hex(colors.ghost)(ghostSuffix) + `\x1b[${ghostWidth}D`,
+            );
+          }
         }
       });
     });
@@ -312,13 +324,16 @@ export async function startRepl(): Promise<void> {
         } else if (err.code === 'commander.unknownCommand') {
           console.log(unknownCommandMsg(input));
         } else if (err.exitCode !== undefined && err.exitCode !== 0) {
-          // HandledError — handleError() already printed the message
+          // HandledError already printed via handleError(); commander.* errors
+          // (validation, missingArgument, ...) are silenced by writeErr and need
+          // explicit surfacing here, otherwise the REPL stays mute.
+          const msg = surfaceCommanderError(err);
+          if (msg) console.error(`  Error: ${msg}`);
         } else {
           // Unexpected error — format according to verbosity
           replErrorDisplay(err);
         }
       } finally {
-        executingCommand = false;
         flushDebugReport();
         clearDebugBuffer();
       }
@@ -350,14 +365,27 @@ export async function startRepl(): Promise<void> {
     (rl as any).line = '';
     (rl as any).cursor = 0;
     rl.prompt();
+    // Defer clearing executingCommand until stdin is fully restored and the
+    // prompt has been redrawn, otherwise a spurious readline 'close' event
+    // emitted during Ink's teardown could race rl.on('close') into realExit.
+    executingCommand = false;
   });
 
   // Start
   rl.prompt();
 }
 
+/**
+ * Wrap ANSI escape sequences with readline-safe markers (\x01..\x02)
+ * so that readline correctly computes the visible prompt width.
+ */
+function wrapAnsiForReadline(str: string): string {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/(\x1b\[[0-9;]*m)/g, '\x01$1\x02');
+}
+
 function getPrompt(): string {
-  return brand(site.replPrompt);
+  return wrapAnsiForReadline(brand(site.replPrompt));
 }
 
 /** Returns the terminal display width of a string (CJK chars count as 2 columns). */
@@ -427,7 +455,9 @@ function printLogo(userDisplay: string): void {
   const { leftLines, rightLines, leftWidth, rightWidth, combinedWidth: INNER } = site.asciiArt;
 
   // Merge left + right into single lines
-  const combined = leftLines.map((l, i) => l.padEnd(leftWidth) + ' ' + (rightLines[i] ?? '').padEnd(rightWidth));
+  const combined = leftLines.map(
+    (l, i) => l.padEnd(leftWidth) + ' ' + (rightLines[i] ?? '').padEnd(rightWidth),
+  );
 
   // Box inner width must fit both the ASCII art and the bottom split row (84 chars).
   const BOX_INNER = Math.max(INNER, 84);

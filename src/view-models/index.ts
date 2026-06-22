@@ -41,3 +41,11 @@ export {
   buildDoctorViewModel,
 } from './doctor.js';
 export type { DoctorViewModel, DoctorCheckViewModel, DoctorCheck } from './doctor.js';
+
+// Sub-domain barrel re-exports: billing / subscription /
+// workspace / docs. Pure data-shape transforms; no React,
+// no I/O. Existing model/usage/doctor exports above remain untouched.
+export * from './billing/index.js';
+export * from './subscription/index.js';
+export * from './workspace/index.js';
+export * from './docs/index.js';

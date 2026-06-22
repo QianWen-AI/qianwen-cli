@@ -37,10 +37,12 @@ function resolveFormatFromAncestors(cmd: import('commander').Command): string | 
 
 function buildInfo(program: import('commander').Command) {
   const models = program.command('models');
-  const info = models.command('info')
-    .argument('<id>')
-    .option('--format <fmt>');
-  info.action(async function (this: import('commander').Command, id: string, opts: { format?: string }) {
+  const info = models.command('info').argument('<id>').option('--format <fmt>');
+  info.action(async function (
+    this: import('commander').Command,
+    id: string,
+    opts: { format?: string },
+  ) {
     opts.format = opts.format ?? resolveFormatFromAncestors(this);
     await modelsInfoAction(id, opts);
   });
@@ -53,7 +55,10 @@ function fullDetail(id: string): ModelDetail {
     tags: ['flagship'],
     modality: { input: ['text'], output: ['text'] },
     can_try: true,
-    free_tier: { mode: 'standard', quota: { remaining: 0, total: 1_000_000, unit: 'tokens', used_pct: 100 } },
+    free_tier: {
+      mode: 'standard',
+      quota: { remaining: 0, total: 1_000_000, unit: 'tokens', used_pct: 100 },
+    },
     pricing: { tiers: [{ label: 'default', input: 0.5, output: 3, unit: 'USD/1M tokens' }] },
     features: ['function-calling'],
     rate_limits: { rpm: 1000 },
@@ -72,8 +77,7 @@ describe('models info command (one-shot)', () => {
         // getModel throws by default ('not found')
       });
 
-      const r = await runCommand(buildInfo,
-        ['models', 'info', 'qwen3-ma', '--format', 'json']);
+      const r = await runCommand(buildInfo, ['models', 'info', 'qwen3-ma', '--format', 'json']);
 
       expect(r.exitCode).toBe(1);
       // Errors must go to stderr so Agent pipelines (`cmd | jq`) don't see
@@ -90,8 +94,7 @@ describe('models info command (one-shot)', () => {
         getModel: async () => detail,
       });
 
-      const r = await runCommand(buildInfo,
-        ['models', 'info', 'qwen3.6-plus', '--format', 'json']);
+      const r = await runCommand(buildInfo, ['models', 'info', 'qwen3.6-plus', '--format', 'json']);
 
       expect(r.exitCode).toBeUndefined();
       expect(r.stderr).toBe('');
@@ -108,8 +111,13 @@ describe('models info command (one-shot)', () => {
         }),
       });
 
-      const r = await runCommand(buildInfo,
-        ['models', 'info', 'totally-different-name-zzz', '--format', 'json']);
+      const r = await runCommand(buildInfo, [
+        'models',
+        'info',
+        'totally-different-name-zzz',
+        '--format',
+        'json',
+      ]);
 
       expect(r.exitCode).toBe(1);
       expect(r.stdout).toBe('');
@@ -128,8 +136,7 @@ describe('models info command (one-shot)', () => {
         }),
       });
 
-      const r = await runCommand(buildInfo,
-        ['models', 'info', 'qwen3-ma', '--format', 'text']);
+      const r = await runCommand(buildInfo, ['models', 'info', 'qwen3-ma', '--format', 'text']);
 
       expect(r.exitCode).toBe(1);
       expect(r.stdout).toBe('');
@@ -141,8 +148,7 @@ describe('models info command (one-shot)', () => {
         getModel: async () => fullDetail('qwen3.6-plus'),
       });
 
-      const r = await runCommand(buildInfo,
-        ['models', 'info', 'qwen3.6-plus', '--format', 'text']);
+      const r = await runCommand(buildInfo, ['models', 'info', 'qwen3.6-plus', '--format', 'text']);
 
       expect(r.exitCode).toBeUndefined();
       expect(r.stdout).toContain('qwen3.6-plus');

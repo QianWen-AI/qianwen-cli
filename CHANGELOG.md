@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-19
+
+### Added
+
+- `docs search` / `docs view` commands for browsing QianWen documentation
+- `billing summary`, `billing breakdown`, `billing limit` commands
+- `workspace list` / `workspace limit` commands
+- `subscription status`, `subscription orders`, `subscription tokenplan` commands
+- `usage logs` command for detailed API call history
+- Interactive paginated tables for long list outputs
+
+### Changed
+
+- Expanded model metadata in `models info` with pricing and capability details
+
+### Fixed
+
+- Windows ConHost terminal compatibility for interactive UI
+- Usage logs timestamp precision (full datetime)
+
 ## [1.0.1] - 2026-05-20
 
 ### Added

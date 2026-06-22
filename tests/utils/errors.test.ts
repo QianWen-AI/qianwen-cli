@@ -14,7 +14,11 @@ import {
 import { EXIT_CODES } from '../../src/utils/exit-codes.js';
 import { site } from '../../src/site.js';
 
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
+const s = {
+  ...site,
+  ...site.features,
+  currencySymbol: site.features.currency === 'CNY' ? '¥' : '$',
+};
 
 describe('CliError', () => {
   it('creates error with correct properties', () => {
@@ -175,9 +179,13 @@ describe('handleError', () => {
     // JSON errors must go to stderr so Agent pipelines (`cmd | jq`) don't see
     // them mixed into the data stream.
     expect(stderrSpy).toHaveBeenCalledWith(
-      JSON.stringify({
-        error: { code: 'AUTH_REQUIRED', message: 'Not authenticated', exit_code: 2 },
-      }, null, 2) + '\n'
+      JSON.stringify(
+        {
+          error: { code: 'AUTH_REQUIRED', message: 'Not authenticated', exit_code: 2 },
+        },
+        null,
+        2,
+      ) + '\n',
     );
     expect(thrown.exitCode).toBe(2);
   });
@@ -218,9 +226,13 @@ describe('handleError', () => {
 
     // verbose mode: preserves raw error message in JSON output
     expect(stderrSpy).toHaveBeenCalledWith(
-      JSON.stringify({
-        error: { code: 'UNKNOWN_ERROR', message: 'Something went wrong', exit_code: 1 },
-      }, null, 2) + '\n'
+      JSON.stringify(
+        {
+          error: { code: 'UNKNOWN_ERROR', message: 'Something went wrong', exit_code: 1 },
+        },
+        null,
+        2,
+      ) + '\n',
     );
     expect(thrown.exitCode).toBe(1);
   });
@@ -343,9 +355,7 @@ describe('handleError with error verbosity', () => {
 
     const thrown = catchHandledError(err, 'table');
     expect(consoleErrorSpy).not.toHaveBeenCalled();
-    expect(stderrSpy).not.toHaveBeenCalledWith(
-      expect.stringContaining('NETWORK_ERROR')
-    );
+    expect(stderrSpy).not.toHaveBeenCalledWith(expect.stringContaining('NETWORK_ERROR'));
     expect(thrown.exitCode).toBe(3);
   });
 
@@ -362,9 +372,7 @@ describe('handleError with error verbosity', () => {
     });
 
     const thrown = catchHandledError(err, 'table');
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('HTTP 500')
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('HTTP 500'));
     expect(thrown.exitCode).toBe(3);
   });
 
@@ -373,7 +381,9 @@ describe('handleError with error verbosity', () => {
 
     process.env[`${envPrefix}_ERROR_VERBOSITY`] = 'graceful';
 
-    const err = new Error('HTTP 403: Forbidden\n  URL: https://secret.internal/api\n  Response: {"detail":"token expired"}');
+    const err = new Error(
+      'HTTP 403: Forbidden\n  URL: https://secret.internal/api\n  Response: {"detail":"token expired"}',
+    );
 
     const thrown = catchHandledError(err, 'table');
     const output = (consoleErrorSpy.mock.calls[0] as any[])[0];
@@ -459,9 +469,13 @@ describe('handleError graceful mode (explicit)', () => {
     const thrown = catchHandledError(new Error('Something went wrong'), 'json');
 
     expect(stderrSpy).toHaveBeenCalledWith(
-      JSON.stringify({
-        error: { code: 'UNKNOWN_ERROR', message: 'An unexpected error occurred.', exit_code: 1 },
-      }, null, 2) + '\n'
+      JSON.stringify(
+        {
+          error: { code: 'UNKNOWN_ERROR', message: 'An unexpected error occurred.', exit_code: 1 },
+        },
+        null,
+        2,
+      ) + '\n',
     );
     expect(thrown.exitCode).toBe(1);
   });
@@ -480,7 +494,9 @@ describe('handleError graceful mode (explicit)', () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     process.env[`${envPrefix}_ERROR_VERBOSITY`] = 'graceful';
 
-    const err = new Error('HTTP 401: Unauthorized\n  URL: https://internal.api/secret\n  Response: {"token":"abc"}');
+    const err = new Error(
+      'HTTP 401: Unauthorized\n  URL: https://internal.api/secret\n  Response: {"token":"abc"}',
+    );
 
     const thrown = catchHandledError(err, 'table');
     const output = (consoleErrorSpy.mock.calls[0] as any[])[0];
@@ -504,5 +520,107 @@ describe('handleError graceful mode (explicit)', () => {
 
     expect(consoleErrorSpy).toHaveBeenCalledWith('Error: Not authenticated');
     expect(thrown.exitCode).toBe(2);
+  });
+});
+
+describe('handleError — interactive-exit sentinel guard', () => {
+  const SENTINEL_CODE = 'repl.exit.intercepted';
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('re-throws the original sentinel error verbatim (does not convert to HandledError)', () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    // The interactive shell raises this sentinel when it intercepts a
+    // process.exit call. handleError must let it bubble untouched so the
+    // shell's top-level catch can swallow it.
+    const sentinel = Object.assign(new Error('process.exit intercepted'), {
+      code: SENTINEL_CODE,
+    });
+
+    let caught: unknown;
+    try {
+      handleError(sentinel, 'text');
+    } catch (e) {
+      caught = e;
+    }
+
+    // The thrown value MUST be the exact original object (identity), not a
+    // wrapped/converted error.
+    expect(caught).toBe(sentinel);
+    expect(caught).not.toBeInstanceOf(HandledError);
+    expect((caught as { code?: string }).code).toBe(SENTINEL_CODE);
+
+    // The sentinel must never reach any user-visible output channel.
+    const consoleArgs = consoleErrorSpy.mock.calls.map((c) => String(c[0]));
+    const stderrArgs = stderrSpy.mock.calls.map((c) => String(c[0]));
+    expect(consoleArgs.some((s) => s.includes('intercepted'))).toBe(false);
+    expect(stderrArgs.some((s) => s.includes('intercepted'))).toBe(false);
+  });
+
+  it('re-throws the sentinel regardless of output format (json)', () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    const sentinel = Object.assign(new Error('process.exit intercepted'), {
+      code: SENTINEL_CODE,
+    });
+
+    let caught: unknown;
+    try {
+      handleError(sentinel, 'json');
+    } catch (e) {
+      caught = e;
+    }
+
+    expect(caught).toBe(sentinel);
+    expect(caught).not.toBeInstanceOf(HandledError);
+
+    const consoleArgs = consoleErrorSpy.mock.calls.map((c) => String(c[0]));
+    const stderrArgs = stderrSpy.mock.calls.map((c) => String(c[0]));
+    expect(consoleArgs.some((s) => s.includes('intercepted'))).toBe(false);
+    expect(stderrArgs.some((s) => s.includes('intercepted'))).toBe(false);
+  });
+
+  it('does not affect ordinary auth errors (regression guard)', () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const err = authRequiredError();
+
+    let caught: unknown;
+    try {
+      handleError(err, 'text');
+    } catch (e) {
+      caught = e;
+    }
+
+    // Ordinary errors still follow the existing path: printed + HandledError.
+    expect(caught).toBeInstanceOf(HandledError);
+    expect((caught as HandledError).exitCode).toBe(EXIT_CODES.AUTH_FAILURE);
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Error: Not authenticated. Run: qianwen login');
+  });
+
+  it('does not affect ordinary business errors (regression guard)', () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const err = new CliError({
+      code: 'MODEL_NOT_FOUND',
+      message: "Model 'qwen3.6-plus' not found.",
+      exitCode: EXIT_CODES.GENERAL_ERROR,
+    });
+
+    let caught: unknown;
+    try {
+      handleError(err, 'table');
+    } catch (e) {
+      caught = e;
+    }
+
+    expect(caught).toBeInstanceOf(HandledError);
+    expect((caught as HandledError).exitCode).toBe(EXIT_CODES.GENERAL_ERROR);
+    expect(consoleErrorSpy).toHaveBeenCalledWith("Error: Model 'qwen3.6-plus' not found.");
   });
 });

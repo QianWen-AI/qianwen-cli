@@ -37,7 +37,6 @@ async function runLogout(format: ResolvedFormat): Promise<void> {
     return;
   }
 
-  // Step 1: Server-side token revocation (best-effort)
   try {
     const client = await createClient();
     await client.revokeSession();
@@ -45,7 +44,6 @@ async function runLogout(format: ResolvedFormat): Promise<void> {
     // Best-effort: network failure is acceptable, local cleanup proceeds
   }
 
-  // Step 2: Local credential cleanup (always proceeds — clears both keychain and file)
   deleteCredentials();
 
   if (format === 'json') {

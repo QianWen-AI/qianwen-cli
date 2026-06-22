@@ -2,18 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { site } from '../../src/site.js';
-
-const s = { ...site, ...site.features, currencySymbol: site.features.currency === 'CNY' ? '¥' : '$' };
 
 // ── Test environment ──────────────────────────────────────────────
 let tmpDir: string;
 let pendingPath: string;
 
 const apiClient = {
-  deviceFlowInit: vi.fn(),
-  deviceFlowPoll: vi.fn(),
-  setPkceVerifier: vi.fn(),
+  loginInit: vi.fn(),
+  loginPoll: vi.fn(),
 };
 
 const writeCredsMock = vi.fn();
@@ -31,13 +27,13 @@ vi.mock('../../src/config/paths.js', () => ({
 }));
 
 const {
-  executeDeviceFlow,
-  executeDeviceFlowInitOnly,
-  executeDeviceFlowComplete,
+  executeLogin,
+  executeLoginInitOnly,
+  executeLoginComplete,
   writePendingState,
   readPendingState,
   removePendingState,
-} = await import('../../src/auth/device-flow.js');
+} = await import('../../src/auth/login-flow.js');
 
 function makeCallbacks() {
   return {
@@ -50,11 +46,10 @@ function makeCallbacks() {
 }
 
 beforeEach(() => {
-  tmpDir = mkdtempSync(join(tmpdir(), `${s.cliName}-deviceflow-`));
-  pendingPath = join(tmpDir, '.device-flow-pending');
-  apiClient.deviceFlowInit.mockReset();
-  apiClient.deviceFlowPoll.mockReset();
-  apiClient.setPkceVerifier.mockReset();
+  tmpDir = mkdtempSync(join(tmpdir(), 'qianwen-loginflow-'));
+  pendingPath = join(tmpDir, '.login-pending');
+  apiClient.loginInit.mockReset();
+  apiClient.loginPoll.mockReset();
   writeCredsMock.mockReset();
   vi.useFakeTimers();
 });
@@ -114,16 +109,16 @@ describe('writePendingState / readPendingState / removePendingState', () => {
   });
 });
 
-// ── executeDeviceFlow ──────────────────────────────────────────────
-describe('executeDeviceFlow', () => {
+// ── executeLogin ───────────────────────────────────────────────────
+describe('executeLogin', () => {
   it('completes successfully on first poll', async () => {
-    apiClient.deviceFlowInit.mockResolvedValue({
+    apiClient.loginInit.mockResolvedValue({
       token: 'init-tok',
       verification_url: 'https://x',
       expires_in: 600,
       interval: 1,
     });
-    apiClient.deviceFlowPoll.mockResolvedValueOnce({
+    apiClient.loginPoll.mockResolvedValueOnce({
       status: 'complete',
       credentials: {
         access_token: 'final-token',
@@ -133,7 +128,7 @@ describe('executeDeviceFlow', () => {
     });
 
     const cb = makeCallbacks();
-    const promise = executeDeviceFlow(cb);
+    const promise = executeLogin(cb);
     // sleep = interval*1000 + jitter (0~999ms); advance enough to cover worst case
     await vi.advanceTimersByTimeAsync(2500);
     const ok = await promise;
@@ -148,16 +143,16 @@ describe('executeDeviceFlow', () => {
   });
 
   it('handles access_denied', async () => {
-    apiClient.deviceFlowInit.mockResolvedValue({
+    apiClient.loginInit.mockResolvedValue({
       token: 't',
       verification_url: 'u',
       expires_in: 600,
       interval: 1,
     });
-    apiClient.deviceFlowPoll.mockResolvedValueOnce({ status: 'access_denied' });
+    apiClient.loginPoll.mockResolvedValueOnce({ status: 'access_denied' });
 
     const cb = makeCallbacks();
-    const promise = executeDeviceFlow(cb);
+    const promise = executeLogin(cb);
     await vi.advanceTimersByTimeAsync(2500);
     const ok = await promise;
 
@@ -166,16 +161,16 @@ describe('executeDeviceFlow', () => {
   });
 
   it('handles expired_token', async () => {
-    apiClient.deviceFlowInit.mockResolvedValue({
+    apiClient.loginInit.mockResolvedValue({
       token: 't',
       verification_url: 'u',
       expires_in: 600,
       interval: 1,
     });
-    apiClient.deviceFlowPoll.mockResolvedValueOnce({ status: 'expired_token' });
+    apiClient.loginPoll.mockResolvedValueOnce({ status: 'expired_token' });
 
     const cb = makeCallbacks();
-    const promise = executeDeviceFlow(cb);
+    const promise = executeLogin(cb);
     await vi.advanceTimersByTimeAsync(2500);
     const ok = await promise;
 
@@ -184,25 +179,23 @@ describe('executeDeviceFlow', () => {
   });
 
   it('handles slow_down by increasing interval and retrying', async () => {
-    apiClient.deviceFlowInit.mockResolvedValue({
+    apiClient.loginInit.mockResolvedValue({
       token: 't',
       verification_url: 'u',
       expires_in: 600,
       interval: 1,
     });
-    apiClient.deviceFlowPoll
-      .mockResolvedValueOnce({ status: 'slow_down' })
-      .mockResolvedValueOnce({
-        status: 'complete',
-        credentials: {
-          access_token: 'tok',
-          expires_at: '2099-01-01T00:00:00Z',
-          user: { email: 'x', aliyunId: 'y' },
-        },
-      });
+    apiClient.loginPoll.mockResolvedValueOnce({ status: 'slow_down' }).mockResolvedValueOnce({
+      status: 'complete',
+      credentials: {
+        access_token: 'tok',
+        expires_at: '2099-01-01T00:00:00Z',
+        user: { email: 'x', aliyunId: 'y' },
+      },
+    });
 
     const cb = makeCallbacks();
-    const promise = executeDeviceFlow(cb);
+    const promise = executeLogin(cb);
     // 1st poll @ ~1s+jitter (slow_down → interval becomes 6)
     await vi.advanceTimersByTimeAsync(2500);
     // 2nd poll @ ~6s+jitter
@@ -211,14 +204,14 @@ describe('executeDeviceFlow', () => {
 
     expect(ok).toBe(true);
     expect(cb.onSuccess).toHaveBeenCalled();
-    expect(apiClient.deviceFlowPoll).toHaveBeenCalledTimes(2);
+    expect(apiClient.loginPoll).toHaveBeenCalledTimes(2);
   });
 
   it('returns false when init throws', async () => {
-    apiClient.deviceFlowInit.mockRejectedValue(new Error('init failed'));
+    apiClient.loginInit.mockRejectedValue(new Error('init failed'));
 
     const cb = makeCallbacks();
-    const ok = await executeDeviceFlow(cb);
+    const ok = await executeLogin(cb);
 
     expect(ok).toBe(false);
     expect(cb.onError).toHaveBeenCalledWith(expect.stringContaining('init failed'));
@@ -229,13 +222,13 @@ describe('executeDeviceFlow', () => {
     // jitter = floor(0.5 * 1000) = 500ms, on top of interval=1s → total wait = 1500ms.
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
-    apiClient.deviceFlowInit.mockResolvedValue({
+    apiClient.loginInit.mockResolvedValue({
       token: 't',
       verification_url: 'u',
       expires_in: 600,
       interval: 1,
     });
-    apiClient.deviceFlowPoll.mockResolvedValueOnce({
+    apiClient.loginPoll.mockResolvedValueOnce({
       status: 'complete',
       credentials: {
         access_token: 'tok',
@@ -245,18 +238,18 @@ describe('executeDeviceFlow', () => {
     });
 
     const cb = makeCallbacks();
-    const promise = executeDeviceFlow(cb);
+    const promise = executeLogin(cb);
 
     // Advance just under expected wait (1000 + 500 = 1500ms) — poll should NOT have fired
     await vi.advanceTimersByTimeAsync(1499);
-    expect(apiClient.deviceFlowPoll).not.toHaveBeenCalled();
+    expect(apiClient.loginPoll).not.toHaveBeenCalled();
 
     // Cross the threshold — poll fires
     await vi.advanceTimersByTimeAsync(2);
     const ok = await promise;
 
     expect(ok).toBe(true);
-    expect(apiClient.deviceFlowPoll).toHaveBeenCalledTimes(1);
+    expect(apiClient.loginPoll).toHaveBeenCalledTimes(1);
     // Math.random must have been consulted at least once (jitter computation)
     expect(randomSpy).toHaveBeenCalled();
 
@@ -268,13 +261,13 @@ describe('executeDeviceFlow', () => {
     // With interval=1s and POLL_JITTER_MS=1000, max sleep = 1000 + 999 = 1999ms.
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.999);
 
-    apiClient.deviceFlowInit.mockResolvedValue({
+    apiClient.loginInit.mockResolvedValue({
       token: 't',
       verification_url: 'u',
       expires_in: 600,
       interval: 1,
     });
-    apiClient.deviceFlowPoll.mockResolvedValueOnce({
+    apiClient.loginPoll.mockResolvedValueOnce({
       status: 'complete',
       credentials: {
         access_token: 'tok',
@@ -284,11 +277,11 @@ describe('executeDeviceFlow', () => {
     });
 
     const cb = makeCallbacks();
-    const promise = executeDeviceFlow(cb);
+    const promise = executeLogin(cb);
 
     // Just under 2000ms — poll must not yet have fired
     await vi.advanceTimersByTimeAsync(1998);
-    expect(apiClient.deviceFlowPoll).not.toHaveBeenCalled();
+    expect(apiClient.loginPoll).not.toHaveBeenCalled();
 
     // Cross threshold
     await vi.advanceTimersByTimeAsync(3);
@@ -303,13 +296,13 @@ describe('executeDeviceFlow', () => {
     // sleep = interval + 0 = interval (no jitter contribution).
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
 
-    apiClient.deviceFlowInit.mockResolvedValue({
+    apiClient.loginInit.mockResolvedValue({
       token: 't',
       verification_url: 'u',
       expires_in: 600,
       interval: 1, // base = 1000ms
     });
-    apiClient.deviceFlowPoll
+    apiClient.loginPoll
       // 1st poll: throws transient → failCount becomes 1
       .mockRejectedValueOnce(new Error('transient 503'))
       // 2nd poll: pending → failCount resets to 0
@@ -325,7 +318,7 @@ describe('executeDeviceFlow', () => {
       });
 
     const cb = makeCallbacks();
-    const promise = executeDeviceFlow(cb);
+    const promise = executeLogin(cb);
 
     // With random=0, every sleep = intervalMs exactly = 1000ms.
     // Sequence of polls all fire at base interval (1000ms each), regardless of failCount.
@@ -334,7 +327,7 @@ describe('executeDeviceFlow', () => {
     const ok = await promise;
 
     expect(ok).toBe(true);
-    expect(apiClient.deviceFlowPoll).toHaveBeenCalledTimes(3);
+    expect(apiClient.loginPoll).toHaveBeenCalledTimes(3);
     expect(cb.onSuccess).toHaveBeenCalledTimes(1);
 
     randomSpy.mockRestore();
@@ -344,13 +337,13 @@ describe('executeDeviceFlow', () => {
     // Use random=0.999 to drive sleep to upper bound, then verify exact poll-firing time.
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.999);
 
-    apiClient.deviceFlowInit.mockResolvedValue({
+    apiClient.loginInit.mockResolvedValue({
       token: 't',
       verification_url: 'u',
       expires_in: 600,
       interval: 1, // base = 1000ms
     });
-    apiClient.deviceFlowPoll
+    apiClient.loginPoll
       .mockRejectedValueOnce(new Error('503')) // 1st throws → failCount=1
       .mockResolvedValueOnce({
         status: 'complete',
@@ -362,20 +355,20 @@ describe('executeDeviceFlow', () => {
       });
 
     const cb = makeCallbacks();
-    const promise = executeDeviceFlow(cb);
+    const promise = executeLogin(cb);
 
     // 1st sleep: normal window=POLL_JITTER_MS=1000, max sleep = 1000 + 999 = 1999ms
     // After 1st throw, failCount=1, window = min(1000*2, 30000) = 2000, max sleep = 1000 + 1999 = 2999ms
     // Total to fire 2nd poll: 1999 + 2999 = 4998ms
     // Advance 4900ms — only 1st poll should have fired
     await vi.advanceTimersByTimeAsync(4900);
-    expect(apiClient.deviceFlowPoll).toHaveBeenCalledTimes(1);
+    expect(apiClient.loginPoll).toHaveBeenCalledTimes(1);
 
     // Advance past 4998ms threshold
     await vi.advanceTimersByTimeAsync(200);
     const ok = await promise;
     expect(ok).toBe(true);
-    expect(apiClient.deviceFlowPoll).toHaveBeenCalledTimes(2);
+    expect(apiClient.loginPoll).toHaveBeenCalledTimes(2);
 
     randomSpy.mockRestore();
   });
@@ -386,13 +379,13 @@ describe('executeDeviceFlow', () => {
     // verify CAP behavior via a separate pure-function-style assertion below.
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
 
-    apiClient.deviceFlowInit.mockResolvedValue({
+    apiClient.loginInit.mockResolvedValue({
       token: 't',
       verification_url: 'u',
       expires_in: 6000,
       interval: 5, // base = 5000ms
     });
-    apiClient.deviceFlowPoll
+    apiClient.loginPoll
       .mockRejectedValueOnce(new Error('503'))
       .mockRejectedValueOnce(new Error('503'))
       .mockRejectedValueOnce(new Error('503'))
@@ -407,14 +400,14 @@ describe('executeDeviceFlow', () => {
       });
 
     const cb = makeCallbacks();
-    const promise = executeDeviceFlow(cb);
+    const promise = executeLogin(cb);
 
     // With random=0, all 5 sleeps = 5000ms each. Total = 25000ms minimum.
     await vi.advanceTimersByTimeAsync(30000);
     const ok = await promise;
 
     expect(ok).toBe(true);
-    expect(apiClient.deviceFlowPoll).toHaveBeenCalledTimes(5);
+    expect(apiClient.loginPoll).toHaveBeenCalledTimes(5);
     expect(cb.onSuccess).toHaveBeenCalledTimes(1);
 
     randomSpy.mockRestore();
@@ -428,13 +421,13 @@ describe('executeDeviceFlow', () => {
     const sleepSpy = vi.spyOn(globalThis, 'setTimeout');
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
-    apiClient.deviceFlowInit.mockResolvedValue({
+    apiClient.loginInit.mockResolvedValue({
       token: 't',
       verification_url: 'u',
       expires_in: 600,
       interval: 5, // base = 5000ms
     });
-    apiClient.deviceFlowPoll
+    apiClient.loginPoll
       .mockRejectedValueOnce(new Error('503')) // failCount → 1
       .mockRejectedValueOnce(new Error('503')) // failCount → 2
       .mockRejectedValueOnce(new Error('503')) // failCount → 3
@@ -449,7 +442,7 @@ describe('executeDeviceFlow', () => {
       });
 
     const cb = makeCallbacks();
-    const promise = executeDeviceFlow(cb);
+    const promise = executeLogin(cb);
 
     // Drain everything
     await vi.advanceTimersByTimeAsync(200000);
@@ -478,10 +471,10 @@ describe('executeDeviceFlow', () => {
   });
 });
 
-// ── executeDeviceFlowInitOnly ──────────────────────────────────────
-describe('executeDeviceFlowInitOnly', () => {
+// ── executeLoginInitOnly ───────────────────────────────────────────
+describe('executeLoginInitOnly', () => {
   it('persists pending state and returns init response', async () => {
-    apiClient.deviceFlowInit.mockResolvedValue({
+    apiClient.loginInit.mockResolvedValue({
       token: 'tok-init',
       verification_url: 'https://verify',
       expires_in: 600,
@@ -489,7 +482,7 @@ describe('executeDeviceFlowInitOnly', () => {
       code_verifier: 'v',
     });
 
-    const r = await executeDeviceFlowInitOnly();
+    const r = await executeLoginInitOnly();
     expect(r.token).toBe('tok-init');
     expect(existsSync(pendingPath)).toBe(true);
 
@@ -498,16 +491,32 @@ describe('executeDeviceFlowInitOnly', () => {
   });
 });
 
-// ── executeDeviceFlowComplete ──────────────────────────────────────
-describe('executeDeviceFlowComplete', () => {
-  it('errors when no pending session exists', async () => {
+// ── executeLoginComplete ───────────────────────────────────────────
+describe('executeLoginComplete', () => {
+  it('reports no-session error when pending file is absent (not onExpired)', async () => {
+    // Regression guard for the source-discrimination contract: a missing pending
+    // file must surface as the "no session" error, never as an expiry. This pins
+    // the negative branch so an over-correction that routes everything to
+    // onExpired would be caught.
+    expect(existsSync(pendingPath)).toBe(false);
+
     const cb = makeCallbacks();
-    const ok = await executeDeviceFlowComplete(cb);
+    const ok = await executeLoginComplete(cb);
+
     expect(ok).toBe(false);
     expect(cb.onError).toHaveBeenCalledWith(expect.stringContaining('No pending'));
+    expect(cb.onExpired).not.toHaveBeenCalled();
   });
 
-  it('expires when pending state is past expires_in', async () => {
+  it('reports expiry via onExpired when a present pending file is expired (not no-session error)', async () => {
+    // Core contract: the pending file exists on disk but is past expires_in.
+    // readPendingState() deletes the stale file and returns null, so both the
+    // "expired" and "never started" cases observe a null state downstream.
+    // The SUT must distinguish them using a pre-read existence snapshot and
+    // surface the genuine cause (expiry) rather than masking it as
+    // "No pending login session found". Asserting onExpired — rather than
+    // merely "did not crash" — is what makes this test fail against the
+    // pre-fix behaviour that routes the expired file to onError('No pending').
     writeFileSync(
       pendingPath,
       JSON.stringify({
@@ -519,12 +528,17 @@ describe('executeDeviceFlowComplete', () => {
       }),
       'utf-8',
     );
+    expect(existsSync(pendingPath)).toBe(true);
 
     const cb = makeCallbacks();
-    const ok = await executeDeviceFlowComplete(cb);
+    const ok = await executeLoginComplete(cb);
+
     expect(ok).toBe(false);
-    // readPendingState already removed it; either way onExpired/onError surfaces
-    expect(cb.onError.mock.calls.length + cb.onExpired.mock.calls.length).toBeGreaterThan(0);
+    expect(cb.onExpired).toHaveBeenCalledTimes(1);
+    // The genuine cause must not be masked as a "never started" error.
+    expect(cb.onError).not.toHaveBeenCalledWith(expect.stringContaining('No pending'));
+    // No network polling should occur once the session is known to be expired.
+    expect(apiClient.loginPoll).not.toHaveBeenCalled();
   });
 
   it('completes successfully on first poll, removes pending state', async () => {
@@ -540,7 +554,7 @@ describe('executeDeviceFlowComplete', () => {
       }),
       'utf-8',
     );
-    apiClient.deviceFlowPoll.mockResolvedValueOnce({
+    apiClient.loginPoll.mockResolvedValueOnce({
       status: 'complete',
       credentials: {
         access_token: 'final',
@@ -550,13 +564,12 @@ describe('executeDeviceFlowComplete', () => {
     });
 
     const cb = makeCallbacks();
-    const promise = executeDeviceFlowComplete(cb, { timeoutSeconds: 5 });
+    const promise = executeLoginComplete(cb, { timeoutSeconds: 5 });
     // sleep = interval*1000 + jitter (0~999ms); advance enough to cover worst case
     await vi.advanceTimersByTimeAsync(2500);
     const ok = await promise;
 
     expect(ok).toBe(true);
-    expect(apiClient.setPkceVerifier).toHaveBeenCalledWith('verifier-x');
     expect(writeCredsMock).toHaveBeenCalled();
     expect(existsSync(pendingPath)).toBe(false);
   });
@@ -573,10 +586,10 @@ describe('executeDeviceFlowComplete', () => {
       }),
       'utf-8',
     );
-    apiClient.deviceFlowPoll.mockResolvedValueOnce({ status: 'access_denied' });
+    apiClient.loginPoll.mockResolvedValueOnce({ status: 'access_denied' });
 
     const cb = makeCallbacks();
-    const promise = executeDeviceFlowComplete(cb, { timeoutSeconds: 5 });
+    const promise = executeLoginComplete(cb, { timeoutSeconds: 5 });
     await vi.advanceTimersByTimeAsync(2500);
     const ok = await promise;
 

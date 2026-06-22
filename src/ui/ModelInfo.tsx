@@ -4,6 +4,7 @@ import { Card, CardLine, Section as CardSection } from './Card.js';
 import { theme, colors, buildProgressBar } from './theme.js';
 import { wrapTextWithIndent, visibleWidth, padEndVisible } from './textWrap.js';
 import { renderWithInk } from './render.js';
+import { useTerminalSize } from './useTerminalSize.js';
 import type {
   ModelDetailViewModel,
   PricingLineViewModel,
@@ -55,7 +56,8 @@ function kv(label: string, value: string, labelWidth: number): string {
  */
 export function ModelInfoInk({ vm }: ModelInfoInkProps) {
   const paddingLeft = 2;
-  const terminalWidth = Math.max(20, process.stdout.columns ?? 80);
+  const { columns } = useTerminalSize();
+  const terminalWidth = Math.max(20, columns);
   const w = Math.max(20, Math.min(terminalWidth - paddingLeft, 80));
   const innerWidth = Math.max(0, w - 6);
 
@@ -163,9 +165,7 @@ function FreeTierContent({ vm, width }: { vm: ModelDetailViewModel; width: numbe
   if (ft.mode === 'only') {
     return (
       <CardLine width={width}>
-        <Text>
-          {theme.success('FreeTier Only')}
-        </Text>
+        <Text>{theme.success('FreeTier Only')}</Text>
       </CardLine>
     );
   }
@@ -268,14 +268,29 @@ function LlmPricing({
 
   // Column widths (content only — separators ` │ ` are added between)
   // Use visibleWidth so CJK labels (e.g. "标准版") are measured correctly
-  const COL_TIER = maxVisibleWidth(pricingLines.map((l) => l.cells.label), 4);
-  const COL_IN = maxVisibleWidth(pricingLines.map((l) => l.cells.input), 5);
-  const COL_OUT = maxVisibleWidth(pricingLines.map((l) => l.cells.output), 6);
+  const COL_TIER = maxVisibleWidth(
+    pricingLines.map((l) => l.cells.label),
+    4,
+  );
+  const COL_IN = maxVisibleWidth(
+    pricingLines.map((l) => l.cells.input),
+    5,
+  );
+  const COL_OUT = maxVisibleWidth(
+    pricingLines.map((l) => l.cells.output),
+    6,
+  );
   const COL_CC = hasCache
-    ? maxVisibleWidth(pricingLines.map((l) => l.cells.cacheCreation ?? '—'), 11)
+    ? maxVisibleWidth(
+        pricingLines.map((l) => l.cells.cacheCreation ?? '—'),
+        11,
+      )
     : 0;
   const COL_CR = hasCache
-    ? maxVisibleWidth(pricingLines.map((l) => l.cells.cacheRead ?? '—'), 10)
+    ? maxVisibleWidth(
+        pricingLines.map((l) => l.cells.cacheRead ?? '—'),
+        10,
+      )
     : 0;
   const priceCols = hasCache
     ? [COL_TIER, COL_IN, COL_OUT, COL_CC, COL_CR]
@@ -290,7 +305,11 @@ function LlmPricing({
         padEndVisible('Cache Write', COL_CC),
         padEndVisible('Cache Read', COL_CR),
       ]
-    : [padEndVisible('Tier', COL_TIER), padEndVisible('Input', COL_IN), padEndVisible('Output', COL_OUT)];
+    : [
+        padEndVisible('Tier', COL_TIER),
+        padEndVisible('Input', COL_IN),
+        padEndVisible('Output', COL_OUT),
+      ];
   const headerStr = hParts.join(' │ ').padEnd(innerWidth);
 
   // Row builder: COL_DIV (dark purple ` │ `) between cells
@@ -329,9 +348,18 @@ function LlmPricing({
 
   // Built-in Tools
   if (builtInTools.length > 0) {
-    const COL_TNAME = maxVisibleWidth(builtInTools.map((t) => t.name), 4);
-    const COL_TPRICE = maxVisibleWidth(builtInTools.map((t) => t.price), 5);
-    const COL_TAPI = maxVisibleWidth(builtInTools.map((t) => t.api), 3);
+    const COL_TNAME = maxVisibleWidth(
+      builtInTools.map((t) => t.name),
+      4,
+    );
+    const COL_TPRICE = maxVisibleWidth(
+      builtInTools.map((t) => t.price),
+      5,
+    );
+    const COL_TAPI = maxVisibleWidth(
+      builtInTools.map((t) => t.api),
+      3,
+    );
 
     const toolHeaderStr = [
       padEndVisible('Name', COL_TNAME),
@@ -386,8 +414,14 @@ function ImageTieredPricing({
   width: number;
 }) {
   const innerWidth = Math.max(0, width - 6);
-  const COL_BRACKET = maxVisibleWidth(pricingLines.map((l) => l.cells.label), 10);
-  const COL_PRICE = maxVisibleWidth(pricingLines.map((l) => l.cells.price), 5);
+  const COL_BRACKET = maxVisibleWidth(
+    pricingLines.map((l) => l.cells.label),
+    10,
+  );
+  const COL_PRICE = maxVisibleWidth(
+    pricingLines.map((l) => l.cells.price),
+    5,
+  );
 
   const headerStr = [padEndVisible('Tier', COL_BRACKET), padEndVisible('Price', COL_PRICE)]
     .join(' │ ')
@@ -406,7 +440,9 @@ function ImageTieredPricing({
       {pricingLines.map((line, i) => (
         <CardLine key={`price-${i}`} width={width}>
           <Text>
-            {[padEndVisible(line.cells.label, COL_BRACKET), theme.accent(line.cells.price)].join(COL_DIV)}
+            {[padEndVisible(line.cells.label, COL_BRACKET), theme.accent(line.cells.price)].join(
+              COL_DIV,
+            )}
           </Text>
         </CardLine>
       ))}
@@ -426,8 +462,14 @@ function ItemizedPricingTable({
   width: number;
 }) {
   const innerWidth = Math.max(0, width - 6);
-  const COL_ITEM = maxVisibleWidth(pricingLines.map((l) => l.cells.label), 4);
-  const COL_PRICE = maxVisibleWidth(pricingLines.map((l) => l.cells.price), 5);
+  const COL_ITEM = maxVisibleWidth(
+    pricingLines.map((l) => l.cells.label),
+    4,
+  );
+  const COL_PRICE = maxVisibleWidth(
+    pricingLines.map((l) => l.cells.price),
+    5,
+  );
 
   const headerStr = [padEndVisible('Item', COL_ITEM), padEndVisible('Price', COL_PRICE)]
     .join(' │ ')
@@ -446,7 +488,9 @@ function ItemizedPricingTable({
       {pricingLines.map((line, i) => (
         <CardLine key={`price-${i}`} width={width}>
           <Text>
-            {[padEndVisible(line.cells.label, COL_ITEM), theme.accent(line.cells.price)].join(COL_DIV)}
+            {[padEndVisible(line.cells.label, COL_ITEM), theme.accent(line.cells.price)].join(
+              COL_DIV,
+            )}
           </Text>
         </CardLine>
       ))}
@@ -462,8 +506,14 @@ function VideoPricing({
   width: number;
 }) {
   const innerWidth = Math.max(0, width - 6);
-  const COL_RES = maxVisibleWidth(pricingLines.map((l) => l.cells.resolution), 10);
-  const COL_PRICE = maxVisibleWidth(pricingLines.map((l) => l.cells.price), 5);
+  const COL_RES = maxVisibleWidth(
+    pricingLines.map((l) => l.cells.resolution),
+    10,
+  );
+  const COL_PRICE = maxVisibleWidth(
+    pricingLines.map((l) => l.cells.price),
+    5,
+  );
 
   const headerStr = [padEndVisible('Resolution', COL_RES), padEndVisible('Price', COL_PRICE)]
     .join(' │ ')
@@ -482,7 +532,9 @@ function VideoPricing({
       {pricingLines.map((line, i) => (
         <CardLine key={`price-${i}`} width={width}>
           <Text>
-            {[padEndVisible(line.cells.resolution, COL_RES), theme.accent(line.cells.price)].join(COL_DIV)}
+            {[padEndVisible(line.cells.resolution, COL_RES), theme.accent(line.cells.price)].join(
+              COL_DIV,
+            )}
           </Text>
         </CardLine>
       ))}

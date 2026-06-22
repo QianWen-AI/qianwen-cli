@@ -15,9 +15,15 @@ describe('renderTextModelDetail - Free Tier', () => {
     can_try: true,
     free_tier: {
       mode: 'standard',
-      quota: { remaining: 850000, total: 1000000, unit: 'tokens', used_pct: 15, resetDate: '2026-05-01' },
+      quota: {
+        remaining: 850000,
+        total: 1000000,
+        unit: 'tokens',
+        used_pct: 15,
+        resetDate: '2026-05-01',
+      },
     },
-    pricing: { tiers: [{ label: 'Default', input: 0.50, output: 1.00, unit: 'USD/1M tokens' }] },
+    pricing: { tiers: [{ label: 'Default', input: 0.5, output: 1.0, unit: 'USD/1M tokens' }] },
     context: { context_window: 128000 },
     rate_limits: { rpm: 10000 },
     metadata: { version_tag: 'v1', open_source: true, updated: '2026-01-01' },

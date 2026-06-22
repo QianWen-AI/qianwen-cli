@@ -12,9 +12,9 @@ describe('levenshtein', () => {
   });
 
   it('counts single-character edits', () => {
-    expect(levenshtein('cat', 'cot')).toBe(1);   // substitution
-    expect(levenshtein('cat', 'cats')).toBe(1);  // insertion
-    expect(levenshtein('cats', 'cat')).toBe(1);  // deletion
+    expect(levenshtein('cat', 'cot')).toBe(1); // substitution
+    expect(levenshtein('cat', 'cats')).toBe(1); // insertion
+    expect(levenshtein('cats', 'cat')).toBe(1); // deletion
   });
 
   it('handles real model id typos', () => {

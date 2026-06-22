@@ -10,11 +10,11 @@
  *   const mock = mockFetch({
  *     'data/v2/api.json': (req) => {
  *       const body = JSON.parse(req.body);
- *       if (body.action === 'ListModelSeries') return { code: '200', data: { Data: [] } };
- *       if (body.action === 'DescribeFqInstance') return { code: '200', data: { Data: [] } };
+ *       if (body.action === 'ListItems') return { code: '200', data: { Data: [] } };
+ *       if (body.action === 'DescribeItem') return { code: '200', data: { Data: [] } };
  *       return { code: '500', message: 'unknown action' };
  *     },
- *     'alioth.alicdn.com/model-mapping': () => ({}),
+ *     'cdn.example/model-mapping': () => ({}),
  *   });
  *   // ...run code under test...
  *   expect(mock.calls).toHaveLength(2);

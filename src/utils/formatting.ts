@@ -39,7 +39,7 @@ const UNIT_SHORT: Record<string, string> = {
   '10k word': 'char',
   '10k words': 'char',
   // Chinese units (pass-through, no abbreviation)
-  '个': '个',
+  个: '个',
 };
 
 function abbrevUnit(unit: string): string {

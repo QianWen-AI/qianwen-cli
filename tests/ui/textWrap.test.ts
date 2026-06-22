@@ -7,6 +7,7 @@ import {
   padEndVisible,
   padStartVisible,
   isCJKCodePoint,
+  truncateByDisplayWidth,
 } from '../../src/ui/textWrap.js';
 
 describe('stripAnsi', () => {
@@ -49,6 +50,87 @@ describe('visibleWidth', () => {
   it('counts fullwidth forms as width 2', () => {
     // Fullwidth exclamation mark U+FF01
     expect(visibleWidth('\uff01')).toBe(2);
+  });
+
+  it('counts emoji-presentation symbols as width 2', () => {
+    // BMP emoji with Emoji_Presentation property: renders as 2 columns
+    expect(visibleWidth('❌')).toBe(2); // U+274C
+    expect(visibleWidth('☕')).toBe(2); // U+2615
+    // Text-presentation symbols (no Emoji_Presentation): width 1
+    expect(visibleWidth('✔')).toBe(1); // U+2714
+    expect(visibleWidth('✖')).toBe(1); // U+2716
+    // Text symbol + VS16: still width 1 in xterm.js (no emoji glyph in Menlo)
+    expect(visibleWidth('\u2716\uFE0F')).toBe(1); // ✖️ U+2716+FE0F
+  });
+
+  it('counts classic SMP emoji as width 2', () => {
+    // U+1F300–1F64F, U+1F680–1F6FF: terminal renders as 2 columns
+    expect(visibleWidth('💻')).toBe(2); // U+1F4BB
+    expect(visibleWidth('🍔')).toBe(2); // U+1F354
+    expect(visibleWidth('🚀')).toBe(2); // U+1F680
+    expect(visibleWidth('😀')).toBe(2); // U+1F600
+  });
+
+  it('counts newer SMP emoji (U+1F900+) as width 2', () => {
+    // All Emoji_Presentation chars render as 2 columns in modern terminals
+    expect(visibleWidth('🧑')).toBe(2); // U+1F9D1
+    expect(visibleWidth('🤖')).toBe(2); // U+1F916
+    expect(visibleWidth('🦊')).toBe(2); // U+1F98A
+  });
+
+  it('counts ZWJ sequences by component emoji width (xterm.js decomposes)', () => {
+    // 🧑‍💻 = U+1F9D1 ZWJ U+1F4BB — xterm.js renders as 2 separate glyphs: 2+2=4
+    expect(visibleWidth('🧑\u200D💻')).toBe(4);
+    // 👨‍👩‍👧‍👦 = family ZWJ — 4 emoji components: 2×4=8
+    expect(visibleWidth('👨\u200D👩\u200D👧\u200D👦')).toBe(8);
+  });
+
+  it('counts middle dot (U+00B7) as width 1 (xterm.js primary target)', () => {
+    expect(visibleWidth('·')).toBe(1);
+    // "Role" = 4, " " = 1, "·" = 1, " " = 1, "Name" = 4, total = 11
+    expect(visibleWidth('Role · Name')).toBe(11);
+  });
+
+  it('counts keycap sequences as width 1 (xterm.js renders text-style)', () => {
+    // 2️⃣ = 0032 + FE0F + 20E3 — keycap sequence renders as 1 col in xterm.js
+    expect(visibleWidth('2\uFE0F\u20E3')).toBe(1);
+  });
+
+  it('counts flag emoji as width 2', () => {
+    // 🇨🇳 = U+1F1E8 + U+1F1F3 — regional indicator pair
+    expect(visibleWidth('🇨🇳')).toBe(2);
+  });
+
+  it('handles mixed content with emoji correctly', () => {
+    // "abc" (3) + "❌" (2) + "💻" (2) + "中" (2) = 9
+    expect(visibleWidth('abc❌💻中')).toBe(9);
+  });
+});
+
+describe('truncateByDisplayWidth', () => {
+  it('returns the original string when it fits the budget', () => {
+    expect(truncateByDisplayWidth('hello', 10)).toBe('hello');
+  });
+
+  it('truncates ASCII strings and appends an ellipsis', () => {
+    expect(truncateByDisplayWidth('abcdefghij', 6)).toBe('abcde…');
+  });
+
+  it('truncates CJK strings by display width, not by code-unit length', () => {
+    // 6 CJK chars = 12 columns; budget 8 leaves room for 3 chars + ellipsis (1).
+    expect(truncateByDisplayWidth('一二三四五六', 8)).toBe('一二三…');
+  });
+
+  it('preserves emoji surrogate pairs intact when truncating', () => {
+    // Classic SMP emoji (U+1F600–U+1F603) each have visibleWidth=2.
+    // Budget: maxWidth=5, ellipsis=1 col → body budget=4 → fits 2 emoji (4 cols).
+    const input = '😀😁😂😃';
+    const out = truncateByDisplayWidth(input, 5);
+    expect(out).toBe('😀😁…');
+  });
+
+  it('returns the input untouched when maxWidth is non-positive', () => {
+    expect(truncateByDisplayWidth('abc', 0)).toBe('abc');
   });
 });
 
