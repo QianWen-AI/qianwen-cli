@@ -3,6 +3,7 @@ import React from 'react';
 import { render } from 'ink-testing-library';
 import stripAnsi from 'strip-ansi';
 import { Table } from '../../src/ui/Table.js';
+import { visibleWidth } from '../../src/ui/textWrap.js';
 
 describe('<Table /> rendering', () => {
   const cols = [
@@ -130,6 +131,34 @@ describe('<Table /> rendering', () => {
     expect(out).toContain('Alice');
     expect(out).toContain('Bob');
     expect(out).toContain('Charlie');
+  });
+
+  it('keeps columns aligned by visible width across CJK + ASCII mixed rows (support list regression)', () => {
+    const c = [
+      { key: 'id', header: 'ID' },
+      { key: 'title', header: 'Title' },
+      { key: 'status', header: 'Status' },
+    ];
+    const { lastFrame } = render(
+      <Table
+        columns={c}
+        data={[
+          { id: 'A1', title: '短', status: 'Closed' },
+          { id: 'A2', title: '测试工单 测试 测试 this is 是 test', status: 'Closed' },
+          { id: 'A3', title: '这是一个测试，能不能用？', status: 'Closed' },
+        ]}
+      />,
+    );
+    const lines = stripAnsi(lastFrame() ?? '').split('\n');
+    // Data rows are lines 2..n (0=header, 1=separator). The 'Closed' status must
+    // begin at the same *visible column* in every row regardless of how much CJK
+    // the title carries — measuring by visibleWidth, not JS string index, since
+    // CJK glyphs occupy 2 columns but 1 code unit.
+    const statusCols = lines
+      .filter((l) => l.includes('Closed'))
+      .map((l) => visibleWidth(l.slice(0, l.indexOf('Closed'))));
+    expect(statusCols.length).toBe(3);
+    expect(new Set(statusCols).size).toBe(1);
   });
 
   it('renders footer with col.color: footer uses bold, NOT the per-column color wrapper', () => {

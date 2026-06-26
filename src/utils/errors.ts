@@ -104,6 +104,14 @@ export function invalidArgError(message: string): CliError {
   });
 }
 
+export function ticketNotFoundError(ticketId: string): CliError {
+  return new CliError({
+    code: 'NOT_FOUND',
+    message: `Ticket not found: ${ticketId}`,
+    exitCode: EXIT_CODES.GENERAL_ERROR,
+  });
+}
+
 export function invalidDateRangeError(from: string, to: string): CliError {
   return new CliError({
     code: 'INVALID_RANGE',

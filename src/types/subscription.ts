@@ -3,7 +3,7 @@
 // failure is recorded in a diagnostics[] entry so the JSON consumer
 // can reason about partial data.
 
-export type SubscriptionPlanKind = 'token' | 'coding';
+export type SubscriptionPlanKind = 'token';
 
 export interface SubscriptionPeriod {
   start: string;

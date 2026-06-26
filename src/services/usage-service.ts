@@ -12,10 +12,13 @@ import type {
 
 import type { ApiClient } from '../api/api-client.js';
 import type { CachedFetcher } from '../types/cache.js';
+import type { GetSeatSubscriptionSummaryResponse } from '../types/api-models.js';
 import type { BillingService } from './billing-service.js';
 import type { FreetierService } from './freetier-service.js';
 import type { TokenplanService } from './tokenplan-service.js';
+import { addDiagnostic } from '../api/debug-buffer.js';
 import { normalizeTimestamp, unixMsToLocalIso } from '../utils/timestamp.js';
+import { site } from '../site.js';
 
 // Re-export the date-range slicer so existing callers/tests can still import it.
 export { splitIntoMonths } from './billing-service.js';
@@ -123,19 +126,86 @@ export class UsageService {
     const fromDate = options?.from ?? firstOfThisMonthUtc();
     const toDate = options?.to ?? todayUtc();
 
-    const [freeTier, tokenPlan, payg] = await Promise.all<
-      [Promise<FreeTierUsage[]>, Promise<TokenPlan>, Promise<PayAsYouGo>]
+    const [freeTier, tokenPlan, seatSummaryRaw, payg] = await Promise.all<
+      [
+        Promise<FreeTierUsage[]>,
+        Promise<TokenPlan>,
+        Promise<GetSeatSubscriptionSummaryResponse | null>,
+        Promise<PayAsYouGo>,
+      ]
     >([
       this.freetierService.fetchFreeTierUsageList(),
       this.tokenplanService.fetchTokenPlan(),
+      this.fetchSeatSubscriptionSummary(),
       this.billingService.getPaygSummary({ from: fromDate, to: toDate }),
     ]);
+
+    const resolvedTokenPlan = this.resolveTokenPlan(seatSummaryRaw, tokenPlan);
 
     return {
       period: { from: fromDate, to: toDate },
       free_tier: freeTier,
-      token_plan: tokenPlan,
+      token_plan: resolvedTokenPlan,
       pay_as_you_go: payg,
+    };
+  }
+
+  /** Fetch GetSeatSubscriptionSummary; failures are silently absorbed. */
+  private async fetchSeatSubscriptionSummary(): Promise<GetSeatSubscriptionSummaryResponse | null> {
+    try {
+      const result = await this.apiClient.callFlatApi<GetSeatSubscriptionSummaryResponse>({
+        product: 'BssOpenAPI-V3',
+        action: 'GetSeatSubscriptionSummary',
+        params: {
+          productCode: site.features.tokenPlanCommodityCodes.teams,
+        },
+      });
+      return result ?? null;
+    } catch (error) {
+      addDiagnostic(
+        'UsageSummary',
+        `GetSeatSubscriptionSummary failed, falling back to TokenplanService: ${error instanceof Error ? error.message : String(error)}`,
+        'warn',
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Resolve token plan data: prefer seat subscription summary when it contains
+   * valid credit data; otherwise fall back to TokenplanService result.
+   */
+  private resolveTokenPlan(
+    seatRaw: GetSeatSubscriptionSummaryResponse | null,
+    tokenPlan: TokenPlan,
+  ): TokenPlan {
+    if (!seatRaw) return tokenPlan;
+
+    const inner = seatRaw.Data ?? seatRaw;
+    const groups = inner?.SubscriptionGroupList;
+    if (!Array.isArray(groups) || groups.length === 0) return tokenPlan;
+
+    let totalCredits = 0;
+    let remainingCredits = 0;
+    for (const group of groups) {
+      if (!group) continue;
+      const equity = group.EquityList?.[0];
+      const total = parseFloat(equity?.TotalValue ?? group.TotalValue ?? '0');
+      const remaining = parseFloat(equity?.SurplusValue ?? group.SurplusValue ?? '0');
+      if (Number.isFinite(total)) totalCredits += total;
+      if (Number.isFinite(remaining)) remainingCredits += remaining;
+    }
+
+    if (totalCredits <= 0) return tokenPlan;
+
+    const usedPct = ((totalCredits - remainingCredits) / totalCredits) * 100;
+
+    return {
+      ...tokenPlan,
+      subscribed: tokenPlan.subscribed,
+      totalCredits,
+      remainingCredits,
+      usedPct,
     };
   }
 

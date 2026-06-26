@@ -11,10 +11,16 @@ export function isHiddenCommand(cmd: Command): boolean {
 
 // getCommandArgs reads commander's public `registeredArguments` (no underscore
 // prefix), so production property mangling cannot break positional-arg lookup.
-export function getCommandArgs(cmd: Command): Array<{ name: () => string; required: boolean }> {
+export function getCommandArgs(
+  cmd: Command,
+): Array<{ name: () => string; required: boolean; description: string; variadic: boolean }> {
   return (
-    ((cmd as AnyCommand).registeredArguments as Array<{ name: () => string; required: boolean }>) ??
-    []
+    ((cmd as AnyCommand).registeredArguments as Array<{
+      name: () => string;
+      required: boolean;
+      description: string;
+      variadic: boolean;
+    }>) ?? []
   );
 }
 

@@ -6,7 +6,7 @@
 
 > Official command-line tool for [QianWen](https://www.qianwenai.com/). Discover models, check usage, manage authentication, and diagnose local setup from a terminal or an AI agent runtime.
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
@@ -147,6 +147,7 @@ Run diagnostics to verify authentication, network access, configuration, and she
 | Workspace | `workspace list`, `workspace limit` | `--format` |
 | Subscription | `subscription status`, `subscription orders`, `subscription tokenplan status`, `subscription tokenplan seats` | `--format` |
 | Docs | `docs search`, `docs view` | `--format` |
+| Support | `support list`, `support view`, `support create`, `support reply`, `support close`, `support rate` | `--format` |
 | Config | `config list`, `config get`, `config set`, `config unset` | `--format` |
 | Diagnostics | `doctor` | `--format` |
 | Shell | `completion install`, `completion generate` | `--shell` |

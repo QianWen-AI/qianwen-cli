@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-26
+
+### Added
+
+- `support list`, `support view`, `support create`, `support reply`, `support close`, `support rate` commands for ticket lifecycle management
+
 ## [1.1.0] - 2026-06-19
 
 ### Added
@@ -43,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `usage breakdown` field renamed `isToday` → `isCurrent`; label `← current`
 - Free-tier placeholder changed to `Enable to unlock free-tier`
 - Windows Bun credential fallback derives AES key from persisted device ID
+- CI injects `__VERSION__`/`__BUILD_TIME__`/`__NODE_ENV__` into release artifacts
 - CHANGELOG, GitHub issue/PR templates, and README version badges switched to English
 
 ### Fixed

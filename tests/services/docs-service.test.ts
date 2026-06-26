@@ -459,18 +459,14 @@ describe('DocsService.buildDocsUrl', () => {
     expect(result).not.toContain('//developer');
   });
 
-  it('passes a fully qualified https:// URL through with .md stripped', () => {
+  it('passes a fully qualified https:// URL through verbatim, preserving .md', () => {
     const direct = 'https://mock-docs.test.qianwenai.com/resources/free-quota.md';
-    expect(service.buildDocsUrl(direct)).toBe(
-      'https://mock-docs.test.qianwenai.com/resources/free-quota',
-    );
+    expect(service.buildDocsUrl(direct)).toBe(direct);
   });
 
-  it('passes a fully qualified http:// URL through with .md stripped', () => {
+  it('passes a fully qualified http:// URL through verbatim, preserving .md', () => {
     const direct = 'http://mock-docs.test.qianwenai.com/resources/free-quota.md';
-    expect(service.buildDocsUrl(direct)).toBe(
-      'http://mock-docs.test.qianwenai.com/resources/free-quota',
-    );
+    expect(service.buildDocsUrl(direct)).toBe(direct);
   });
 
   it('passes a fully qualified URL without .md through verbatim', () => {

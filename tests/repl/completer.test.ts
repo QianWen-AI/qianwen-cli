@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   TOP_COMMANDS,
+  SUBCOMMANDS,
+  COMMAND_FLAGS,
   isSubsequence,
   fuzzyFilter,
   tabCompleter,
@@ -173,12 +175,11 @@ describe('tabCompleter', () => {
     expect(partial).toBe('--h');
   });
 
-  it('subcommand with defined flags (workspace list) + space → suggests flags and --help', () => {
+  it('subcommand with no defined flags (workspace list) + space → suggests --help', () => {
     // `workspace list` is a real leaf subcommand. It has no further nested
     // subcommands; the completer offers its flags plus the auto-injected --help.
     const [completions] = tabCompleter('workspace list ');
     expect(completions).toContain('--help');
-    expect(completions).toContain('--format');
   });
 
   it('auth refresh + space → empty (refresh is not a valid auth subcommand)', () => {

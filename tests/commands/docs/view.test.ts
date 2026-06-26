@@ -98,9 +98,9 @@ describe('docs view command', () => {
     });
 
     it('missing <path> positional argument is rejected', async () => {
-      await expect(runCommand(buildView, ['docs', 'view'])).rejects.toMatchObject({
-        code: 'commander.missingArgument',
-      });
+      const r = await runCommand(buildView, ['docs', 'view']);
+      expect(r.exitCode).toBeGreaterThan(0);
+      expect(r.stderr).toContain('missing required argument');
     });
   });
 
@@ -141,11 +141,10 @@ describe('docs view command', () => {
       expect(requestedUrl.startsWith('http')).toBe(true);
     });
 
-    it('full URL path strips .md suffix for browser-facing URL', async () => {
+    it('full URL path is passed through verbatim, preserving .md', async () => {
       const directUrl = 'https://platform.qianwenai.com/docs/resources/free-quota.md';
-      const expectedUrl = 'https://platform.qianwenai.com/docs/resources/free-quota';
       const fetchSpy = vi.fn(async (url: string) =>
-        makeDocResult({ url, resolvedMarkdownUrl: url + '.md', content: '# Free Quota\n' }),
+        makeDocResult({ url, resolvedMarkdownUrl: url, content: '# Free Quota\n' }),
       );
       holder.services = makeMockServices({
         docsService: { fetchDocContent: fetchSpy, loadDocsIndex: async () => [] },
@@ -154,9 +153,9 @@ describe('docs view command', () => {
       const r = await runCommand(buildView, ['docs', 'view', directUrl, '--format', 'json']);
 
       expect(r.exitCode).toBeUndefined();
-      expect(fetchSpy).toHaveBeenCalledWith(expectedUrl);
+      expect(fetchSpy).toHaveBeenCalledWith(directUrl);
       const payload = JSON.parse(r.stdout);
-      expect(payload.url).toBe(expectedUrl);
+      expect(payload.url).toBe(directUrl);
     });
 
     it('anchor in path is preserved in the JSON anchor field', async () => {

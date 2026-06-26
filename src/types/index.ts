@@ -64,10 +64,6 @@ export type {
   ConsumeBreakdownRow,
   ConsumeBreakdownDto,
   ConsumeBreakdownOptions,
-  CostAnalysis,
-  CostAnalysisItem,
-  CostAnalysisDto,
-  CostAnalysisOptions,
   AnalysisGranularity,
   SettleBillSummary,
   SettleBillSummaryDto,
@@ -128,3 +124,31 @@ export type {
 } from './tokenplan-subscription.js';
 
 export type { Workspace, WorkspaceListResult, WorkspaceLimitResult } from './workspace.js';
+
+export type {
+  RawTicketItem,
+  RawListTicketsResponse,
+  RawTicketStatusObject,
+  RawTicketProcessStage,
+  RawTicketValues,
+  RawGetTicketResponse,
+  RawMessageUserInfo,
+  RawMessageDataInfo,
+  RawMessageItem,
+  RawListEnhancedMessageResponse,
+  SupportTicket,
+  SupportMessage,
+  SupportTicketDetail,
+  SupportTicketListResult,
+  SupportMessagesResult,
+  RawCategoryNode,
+  RawGetCategoryTreeResponse,
+  CategoryNode,
+  RawCategorySuggestion,
+  RawSuggestCategoryResponse,
+  CategorySuggestion,
+  CreateTicketParams,
+  RawCreateTicketResponse,
+  RawIdentifyRiskWordResponse,
+  RiskWordCheckResult,
+} from './support.js';

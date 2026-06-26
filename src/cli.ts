@@ -16,6 +16,7 @@ import { registerDocsCommands } from './commands/docs/index.js';
 import { registerDoctorCommand } from './commands/doctor.js';
 import { registerModelsCommands as registerModelsCommandsImpl } from './commands/models/index.js';
 import { registerSubscriptionCommands } from './commands/subscription/index.js';
+import { registerSupportCommands } from './commands/support/index.js';
 import {
   usageBreakdownAction,
   usageSummaryAction,
@@ -25,6 +26,7 @@ import { collectRepeatable } from './commands/usage/logs.js';
 import { registerUpdateCommand, registerVersionCommand } from './commands/version.js';
 import { registerWorkspaceCommands } from './commands/workspace/index.js';
 import { setCommandHelpMetadata } from './utils/commander-helpers.js';
+import { isHelpRequest } from './utils/cli-help.js';
 
 // ---------------------------------------------------------------------------
 // Custom help formatter to match PRD §7.0 format
@@ -81,21 +83,19 @@ function formatHelp(cmd: Command): string {
   // because the root name is stripped, so use `isRoot` for level detection.
 
   // Determine usage suffix
+  const args = getCommandArgs(cmd);
+  const argToken = (a: { name: () => string; variadic: boolean }): string =>
+    a.variadic ? `${a.name()}...` : a.name();
+  const argParts = args.map((a) => (a.required ? `<${argToken(a)}>` : `[${argToken(a)}]`));
   let usageSuffix: string;
   if (isRoot && hasSubcommands) {
     // L0: <cliName> <command> [flags]
     usageSuffix = '<command> [flags]';
   } else if (hasSubcommands) {
-    usageSuffix = '<subcommand> [flags]';
+    // A command can own positional arguments and subcommands at once; show the
+    // positionals before <subcommand> so the invocation order reads correctly.
+    usageSuffix = [...argParts, '<subcommand> [flags]'].join(' ');
   } else {
-    // Collect arguments
-    const args = getCommandArgs(cmd);
-    const argParts: string[] = [];
-    if (args) {
-      for (const a of args) {
-        argParts.push(a.required ? `<${a.name()}>` : `[${a.name()}]`);
-      }
-    }
     usageSuffix = [...argParts, '[flags]'].join(' ');
   }
 
@@ -107,6 +107,19 @@ function formatHelp(cmd: Command): string {
   const desc = getLongDescription(cmd);
   if (desc) {
     lines.push(`${indent}${desc}`);
+    lines.push('');
+  }
+
+  // --- Arguments ---
+  // Only positional arguments that carry a description are surfaced; commands
+  // whose positionals are purely structural keep their prior help untouched.
+  const describedArgs = args.filter((a) => a.description);
+  if (describedArgs.length > 0) {
+    lines.push(`${indent}${styleSectionTitle('Arguments:')}`);
+    const maxArgLen = Math.max(...describedArgs.map((a) => a.name().length));
+    for (const a of describedArgs) {
+      lines.push(`${indent}  ${padCmd(a.name(), maxArgLen + 4)}${a.description}`);
+    }
     lines.push('');
   }
 
@@ -211,8 +224,17 @@ function isHiddenCommand(cmd: Command): boolean {
   return (cmd as AnyCommand)._hidden === true;
 }
 
-function getCommandArgs(cmd: Command): Array<{ name: () => string; required: boolean }> {
-  return ((cmd as AnyCommand)._args as Array<{ name: () => string; required: boolean }>) ?? [];
+function getCommandArgs(
+  cmd: Command,
+): Array<{ name: () => string; required: boolean; description: string; variadic: boolean }> {
+  return (
+    ((cmd as AnyCommand).registeredArguments as Array<{
+      name: () => string;
+      required: boolean;
+      description: string;
+      variadic: boolean;
+    }>) ?? []
+  );
 }
 
 function getCommandExamples(cmd: Command): string[] {
@@ -287,6 +309,26 @@ function applyExitOverride(cmd: Command): void {
   }
 }
 
+// Commander assigns the token after a value-taking option as that option's
+// value, so `<cmd> --opt --help` swallows the help flag instead of triggering
+// help. Reaching preAction with a -h/--help token still in the raw args means
+// it was swallowed (a standalone help flag fires during parsing and never gets
+// here), so render the action command's help instead. Scanning the raw args
+// rather than parsed options also catches options whose argParser would have
+// turned the swallowed flag into NaN/other values.
+function applyHelpFlagGuard(program: Command): void {
+  program.hook('preAction', (_thisCommand, actionCommand) => {
+    const rawArgs = (program as unknown as { rawArgs?: string[] }).rawArgs ?? [];
+    if (isHelpRequest(...rawArgs)) {
+      actionCommand.outputHelp();
+      throw Object.assign(new Error('(outputHelp)'), {
+        code: 'commander.helpDisplayed',
+        exitCode: 0,
+      });
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Command registration
 // ---------------------------------------------------------------------------
@@ -301,7 +343,7 @@ function registerModelsCommands(program: Command): void {
   const models = program.commands.find((c) => c.name() === 'models')!;
   setLongDescription(
     models,
-    `Browse, search, and inspect available models on ${site.cliDisplayName}.`,
+    'Browse, search, and inspect available models on QianWen.',
   );
 
   const list = models.commands.find((c) => c.name() === 'list')!;
@@ -483,7 +525,8 @@ function applyTopLevelHelpMetadata(program: Command): void {
   setTopLevelHelpMetadata(program, 'completion', 'Operations', 420);
   setTopLevelHelpMetadata(program, 'version', 'Operations', 430);
 
-  setTopLevelHelpMetadata(program, 'update', 'Operations', 440);
+  setTopLevelHelpMetadata(program, 'support', 'Support', 520);
+  setTopLevelHelpMetadata(program, 'update', 'Support', 530);
 }
 
 // ---------------------------------------------------------------------------
@@ -495,9 +538,7 @@ export function createProgram(): Command {
 
   program
     .name(site.cliName)
-    .description(
-      `Manage ${site.cliDisplayName} models, usage, and configuration from your terminal.`,
-    )
+    .description('Manage QianWen models, usage, and configuration from your terminal.')
     .version(VERSION, '-v, --version', 'Show version')
     .option('--format <table|json|text>', 'Output format (default: auto)')
     .option('-q, --quiet', 'Suppress all output; rely on exit code only');
@@ -516,6 +557,7 @@ export function createProgram(): Command {
   registerWorkspaceCommands(program);
 
   // Operations & references
+  registerSupportCommands(program);
   registerDocsCommands(program);
 
   // Local utilities & meta
@@ -536,6 +578,7 @@ export function createProgram(): Command {
   // Apply custom help formatting to all commands
   applyCustomHelp(program);
   applyExitOverride(program);
+  applyHelpFlagGuard(program);
 
   // Override the top-level help
   program.configureHelp({

@@ -138,6 +138,29 @@ describe('classifyHttpError', () => {
     expect(result.message).toBe('An unexpected error occurred.');
   });
 
+  it('surfaces a GatewayEnvelopeError server message instead of the generic fallback', () => {
+    const err = Object.assign(new Error('应用类工单创建失败：缺少应用实例'), {
+      name: 'GatewayEnvelopeError',
+      code: '500',
+    });
+    const result = classifyHttpError(err);
+    expect(result.code).toBe('API_ERROR');
+    expect(result.message).toBe('应用类工单创建失败：缺少应用实例');
+    expect(result.message).not.toBe('An unexpected error occurred.');
+    expect(result.detail).toContain('[500]');
+    expect(result.exitCode).toBe(EXIT_CODES.GENERAL_ERROR);
+  });
+
+  it('surfaces a GatewayBusinessError server message', () => {
+    const err = Object.assign(new Error('not permitted'), {
+      name: 'GatewayBusinessError',
+      code: 'PERMISSION_DENIED',
+    });
+    const result = classifyHttpError(err);
+    expect(result.code).toBe('API_ERROR');
+    expect(result.message).toBe('not permitted');
+  });
+
   it('includes URL in detail when provided', () => {
     const err = new Error('HTTP 500: Internal Server Error');
     const result = classifyHttpError(err, 'https://api.example.com/v2');

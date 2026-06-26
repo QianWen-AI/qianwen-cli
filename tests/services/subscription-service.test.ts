@@ -80,7 +80,7 @@ function routeByAction(
 // getStatus
 
 describe('SubscriptionService.getStatus', () => {
-  it('returns assembled status from six sub-calls (plan=undefined)', async () => {
+  it('returns assembled status from five sub-calls (plan=undefined)', async () => {
     const api = makeMockApiClient({
       flat: routeByAction({
         QuerySubscriptionGray: { IsGray: true },
@@ -93,7 +93,6 @@ describe('SubscriptionService.getStatus', () => {
           Data: [{ InitCapacityBaseValue: '1000', CurrCapacityBaseValue: '750' }],
         },
         CheckTokenPlanAutoRenewal: { AutoRenewal: true },
-        GetSubscriptionDetail: { Data: [] },
         QueryAccountBaseInfoApi: { Data: { NbId: '12345' } },
       }),
     });
@@ -124,7 +123,6 @@ describe('SubscriptionService.getStatus', () => {
         GetSeatSubscriptionSummary: new Error('seat timeout'),
         DescribeFrInstances: null,
         CheckTokenPlanAutoRenewal: null,
-        GetSubscriptionDetail: { Data: [] },
         QueryAccountBaseInfoApi: null,
       }),
     });
@@ -150,7 +148,7 @@ describe('SubscriptionService.getStatus', () => {
     expect(out.diagnostics.length).toBeGreaterThan(0);
   });
 
-  it('plan=token omits GetSubscriptionDetail, includes seat + autoRenew + FrInstances', async () => {
+  it('plan=token includes seat + autoRenew + FrInstances', async () => {
     const api = makeMockApiClient({
       flat: routeByAction({
         QuerySubscriptionGray: { IsGray: false },
@@ -163,9 +161,9 @@ describe('SubscriptionService.getStatus', () => {
     const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), makeMockTokenplanService());
     const out = await svc.getStatus({ plan: 'token' });
     expect(out.data).toBeDefined();
-    // GetSubscriptionDetail should NOT have been called
     const actions = api.callFlatApi.mock.calls.map((c) => (c[0] as CallFlatApiOptions).action);
-    expect(actions).not.toContain('GetSubscriptionDetail');
+    expect(actions).toContain('GetSeatSubscriptionSummary');
+    expect(actions).toContain('CheckTokenPlanAutoRenewal');
   });
 
 
@@ -197,7 +195,6 @@ describe('SubscriptionService.getStatus', () => {
         GetSeatSubscriptionSummary: {},
         DescribeFrInstances: { Data: [] },
         CheckTokenPlanAutoRenewal: null,
-        GetSubscriptionDetail: { Data: [] },
         QueryAccountBaseInfoApi: null,
       }),
     });

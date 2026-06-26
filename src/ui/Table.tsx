@@ -53,7 +53,7 @@ export function Table({
   const wrap = truncate ? 'truncate-end' : undefined;
   // ── 1. Calculate fixed column widths ────────────────────────────────────────
   const colWidths = columns.map((col) => {
-    const headerLen = col.header.length;
+    const headerLen = visibleWidth(col.header);
     const dataMax = data.reduce((max, row) => Math.max(max, visibleWidth(row[col.key] ?? '')), 0);
     const footerLen = footer ? visibleWidth(footer[col.key] ?? '') : 0;
     let w = Math.max(headerLen, dataMax, footerLen);
@@ -81,32 +81,37 @@ export function Table({
   const headerStr = headerContent + ' ';
 
   // ── 4. Render a data / footer row ───────────────────────────────────────────
-  const renderRow = (row: Record<string, string>, isFooter = false, rowIndex = 0) => {
+  //
+  // Each row is composed into a SINGLE pre-padded string (cells joined by the
+  // ` │ ` divider) and rendered in one <Text>, mirroring how the header and
+  // separator are built. Rendering cells as separate <Text> nodes inside a flex
+  // <Box> let Ink/Yoga re-measure each cell with `string-width`, which can
+  // disagree with our `visibleWidth` for CJK + ASCII mixed content and drift
+  // every following column (the `support list` misalignment). A single string
+  // makes the padding we computed authoritative, so the row stays aligned.
+  const renderRowString = (row: Record<string, string>, isFooter = false, rowIndex = 0): string => {
     const rowColorFn = isFooter ? undefined : rowColor?.(row, rowIndex);
 
-    return columns.map((col, i) => {
-      const raw = row[col.key] ?? '';
-      const padded = padCell(raw, colWidths[i], col.align);
-      const div = i < columns.length - 1 ? DIV : '';
+    return columns
+      .map((col, i) => {
+        const raw = row[col.key] ?? '';
+        const padded = padCell(raw, colWidths[i], col.align);
+        const div = i < columns.length - 1 ? DIV : '';
 
-      let cell: string;
-      if (isFooter) {
-        cell = chalk.bold(padded);
-      } else if (rowColorFn) {
-        cell = rowColorFn(padded);
-      } else if (col.color) {
-        cell = col.color(padded);
-      } else {
-        cell = padded;
-      }
+        let cell: string;
+        if (isFooter) {
+          cell = chalk.bold(padded);
+        } else if (rowColorFn) {
+          cell = rowColorFn(padded);
+        } else if (col.color) {
+          cell = col.color(padded);
+        } else {
+          cell = padded;
+        }
 
-      return (
-        <Text key={col.key} wrap={wrap}>
-          {cell}
-          {div}
-        </Text>
-      );
-    });
+        return cell + div;
+      })
+      .join('');
   };
 
   return (
@@ -121,16 +126,18 @@ export function Table({
       {/* ── Separator (─┼─ pattern, brand dark purple) ── */}
       <Text wrap={wrap}>{separator}</Text>
 
-      {/* ── Data rows ── */}
+      {/* ── Data rows (one <Text> each so column padding stays authoritative) ── */}
       {data.map((row, rowIndex) => (
-        <Box key={rowIndex}>{renderRow(row, false, rowIndex)}</Box>
+        <Text key={rowIndex} wrap={wrap}>
+          {renderRowString(row, false, rowIndex)}
+        </Text>
       ))}
 
       {/* ── Footer ── */}
       {footer && (
         <>
           <Text wrap={wrap}>{separator}</Text>
-          <Box>{renderRow(footer, true)}</Box>
+          <Text wrap={wrap}>{renderRowString(footer, true)}</Text>
         </>
       )}
     </Box>

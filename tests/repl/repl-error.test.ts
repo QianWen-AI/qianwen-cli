@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { surfaceCommanderError } from '../../src/repl/repl-error.js';
+import { surfaceCommanderError, shouldSwallowReplError } from '../../src/repl/repl-error.js';
+import { HandledError } from '../../src/utils/errors.js';
 
 describe('surfaceCommanderError', () => {
   describe('commander.* errors → strips "error: " prefix and returns message', () => {
@@ -52,5 +53,20 @@ describe('surfaceCommanderError', () => {
       const result = surfaceCommanderError({ exitCode: 1 });
       expect(result).toBeNull();
     });
+  });
+});
+
+describe('shouldSwallowReplError', () => {
+  it('returns true for HandledError of any exit code (already-printed sentinel)', () => {
+    expect(shouldSwallowReplError(new HandledError(0))).toBe(true);
+    expect(shouldSwallowReplError(new HandledError(1))).toBe(true);
+    expect(shouldSwallowReplError(new HandledError(4))).toBe(true);
+  });
+
+  it('returns false for ordinary errors so they still render', () => {
+    expect(shouldSwallowReplError(new Error('boom'))).toBe(false);
+    expect(shouldSwallowReplError({ code: 'commander.error', message: 'x' })).toBe(false);
+    expect(shouldSwallowReplError({ exitCode: 1 })).toBe(false);
+    expect(shouldSwallowReplError(undefined)).toBe(false);
   });
 });

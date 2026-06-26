@@ -47,7 +47,7 @@ interface LlmsIndexCacheEnvelope {
  */
 export function buildDocsUrl(path: string): string {
   if (/^https?:\/\//i.test(path)) {
-    return path.replace(/\.md(#|$)/, '$1');
+    return path;
   }
   const base = (site.docsBaseUrl ?? '').replace(/\/+$/, '');
   let normalized = path.replace(/^\/+/, '');

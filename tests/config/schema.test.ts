@@ -34,7 +34,7 @@ describe('VALID_KEYS', () => {
   });
 
   it('has correct length', () => {
-    expect(VALID_KEYS).toHaveLength(4);
+    expect(VALID_KEYS).toHaveLength(5);
   });
 });
 

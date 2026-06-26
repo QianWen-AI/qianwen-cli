@@ -1,9 +1,4 @@
-/**
- * SubscriptionService — orchestrates subscription status assembly across
- * up to six concurrent flat-parameter calls and lists subscription orders
- * with optional eager detail expansion. Per-sub-call failures degrade to
- * SubscriptionDiagnostic entries so partial data still renders.
- */
+/** Subscription orchestration service. */
 import type { ApiClient } from '../api/api-client.js';
 import type { CachedFetcher } from '../types/cache.js';
 import type {
@@ -50,10 +45,6 @@ const ORDERS_CACHE_TTL_MS = 5 * 60 * 1000;
 const DETAIL_CONCURRENCY = 5;
 const NBID_CACHE_TTL_MS = 30 * 60 * 1000;
 
-// ────────────────────────────────────────────────────────────────────
-// Adapter contract — Service consumes pure transforms via DI
-// ────────────────────────────────────────────────────────────────────
-
 export interface SubscriptionAdapter {
   transformSubscriptionGray(
     raw: QuerySubscriptionGrayResponse | null | undefined,
@@ -71,10 +62,6 @@ export interface SubscriptionAdapter {
   transformOrderList(raw: QueryOrderListResponse | null | undefined): OrderListDto;
   transformOrderDetail(raw: QueryOrderDetailResponse | null | undefined): OrderDetail;
 }
-
-// ────────────────────────────────────────────────────────────────────
-// Internal helpers
-// ────────────────────────────────────────────────────────────────────
 
 interface SubCallSpec<T> {
   api: string;
@@ -99,11 +86,6 @@ function toDiagnostic(api: string, error: unknown): SubscriptionDiagnostic {
   return { api, errorCode, errorMessage };
 }
 
-/**
- * Run sub-calls concurrently with a global soft timeout. Sub-calls that
- * have not settled by the deadline are reported as Timeout diagnostics
- * without cancelling the in-flight promise.
- */
 async function runWithSoftTimeout(
   calls: Array<SubCallSpec<unknown>>,
   timeoutMs: number,
@@ -173,16 +155,6 @@ function syntheticSeatTierFromTokenPlan(dto: TokenPlan | null | undefined): Subs
   ];
 }
 
-/**
- * Detect inner-error responses for order queries.
- *
- * Missing authentication credentials cause failure — the upstream returns
- * HTTP 200 with a Code/Message error payload instead of the expected Data
- * array. Without this guard, transformOrderList would silently treat the
- * missing Data as an empty list.
- *
- * Returns null on success (Data array present, or no Code field).
- */
 function detectOrderApiUnavailable(
   raw: { Code?: string; Message?: string; Data?: unknown } | null | undefined,
 ): CliError | null {
@@ -196,10 +168,6 @@ function detectOrderApiUnavailable(
     exitCode: EXIT_CODES.GENERAL_ERROR,
   });
 }
-
-// ────────────────────────────────────────────────────────────────────
-// SubscriptionService
-// ────────────────────────────────────────────────────────────────────
 
 export class SubscriptionService {
   private cachedNbId: string | null = null;
@@ -227,9 +195,6 @@ export class SubscriptionService {
     ];
 
     if (wantToken) {
-      // Seat summary supplies tier metadata (specType, seats); quota
-      // figures are sourced from TokenplanService so that single-seat
-      // (IsGray=false) instances do not appear exhausted.
       calls.push({
         api: 'GetSeatSubscriptionSummary',
         invoke: () =>
@@ -288,8 +253,7 @@ export class SubscriptionService {
       return { data: null, diagnostics };
     }
 
-    // Phase 3: Best-effort recent orders. Failures are non-fatal because
-    // recent orders are supplementary context for the dashboard.
+    // Phase 3: best-effort recent orders (non-fatal).
     let recentOrders: SubscriptionRecentOrder[] = [];
     try {
       const tokenPlanCommodityCodes = [
@@ -320,11 +284,6 @@ export class SubscriptionService {
     return { data, diagnostics };
   }
 
-  /**
-   * List orders with optional eager detail expansion. The list call is
-   * cached for 5 minutes; detail calls are batched (concurrency 5) and
-   * any single failure decorates that order with detailError.
-   */
   async listOrders(opts: ListOrdersOptions): Promise<SubscriptionOrdersResult> {
     const cacheKey = `orders:${opts.from ?? ''}:${opts.to ?? ''}:${opts.type ?? ''}:${opts.page}:${opts.pageSize}:${opts.commodityCodeList ?? ''}`;
 
@@ -384,7 +343,7 @@ export class SubscriptionService {
     return result;
   }
 
-  /** Fetch a single order detail (used by interactive TUI Enter handler). */
+  /** Fetch a single order detail. */
   async getOrderDetail(orderId: string): Promise<OrderDetail> {
     const raw = await this.apiClient.callFlatApi<QueryOrderDetailResponse>({
       product: API_PRODUCT_BSS,
@@ -398,7 +357,7 @@ export class SubscriptionService {
     return this.subscriptionAdapter.transformOrderDetail(raw);
   }
 
-  /** Concurrency-bounded eager detail fetch. */
+  /** Concurrency-bounded eager detail expansion. */
   private async expandOrderDetails(items: SubscriptionOrder[]): Promise<SubscriptionOrder[]> {
     const result: SubscriptionOrder[] = items.slice();
     let cursor = 0;
@@ -433,10 +392,6 @@ export class SubscriptionService {
     return result;
   }
 
-  /**
-   * Resolve the NbId required by BSS OpenAPI order queries. The value is
-   * fetched once via AccountCenter and cached for 30 minutes.
-   */
   private async resolveNbId(): Promise<string | null> {
     if (this.cachedNbId && Date.now() - this.nbIdTimestamp < NBID_CACHE_TTL_MS) {
       return this.cachedNbId;
@@ -473,16 +428,22 @@ export class SubscriptionService {
       | GetSeatSubscriptionSummaryResponse
       | undefined;
     const seatDto = this.subscriptionAdapter.transformSeatSubscriptionSummary(seatRaw);
+    const detailDto = this.subscriptionAdapter.transformSubscriptionDetail(
+      lookup.get('GetSubscriptionDetail') as GetSubscriptionDetailResponse | undefined,
+    );
     const autoRenewDto = this.subscriptionAdapter.transformAutoRenewal(
       lookup.get('CheckTokenPlanAutoRenewal') as CheckTokenPlanAutoRenewalResponse | undefined,
     );
-    const renewableDto = this.subscriptionAdapter.transformInstancesRenewable(null);
+    const renewableDto = this.subscriptionAdapter.transformInstancesRenewable(
+      lookup.get('CheckInstancesRenewable') as CheckInstancesRenewableResponse | undefined,
+    );
     const frAddonRaw = lookup.get('DescribeFrInstances-addon') as FrInstanceResponse | undefined;
     const tokenPlanDto = lookup.get('TokenPlan') as TokenPlan | undefined;
     const quota = quotaFromTokenPlan(tokenPlanDto);
 
-    const plan = seatDto.plan ?? tokenPlanDto?.planName ?? null;
-    const period = seatDto.period ?? null;
+    const detailActive = detailDto.activeInstance;
+    const plan = detailActive?.plan ?? seatDto.plan ?? tokenPlanDto?.planName ?? null;
+    const period = detailActive?.period ?? seatDto.period ?? null;
 
     const seatInner = seatRaw?.Data ?? seatRaw;
     const seatTiersRaw = extractSeatTiers(seatInner);
@@ -491,7 +452,6 @@ export class SubscriptionService {
       : syntheticSeatTierFromTokenPlan(tokenPlanDto);
     const remainingDays = extractRemainingDays(seatInner);
     const creditPacks = extractCreditPacks(frAddonRaw);
-
     return {
       isGray: grayDto.isGray,
       plan,
@@ -507,9 +467,7 @@ export class SubscriptionService {
   }
 }
 
-// ────────────────────────────────────────────────────────────────────
-// Raw-response extractors for fields the adapter intentionally drops.
-// ────────────────────────────────────────────────────────────────────
+// Raw-response extractors.
 
 function extractRemainingDays(
   inner: { RemainingDays?: number | string } | null | undefined,

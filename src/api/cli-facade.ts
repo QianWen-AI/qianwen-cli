@@ -34,6 +34,7 @@ import type {
   ApiModelGroup,
   ApiModelItem,
   ConsumeSummaryResponse,
+  DescribeUsageLimitResponse,
   FqInstanceResponse,
   FrInstanceResponse,
 } from '../types/api-models.js';
@@ -247,7 +248,7 @@ export function createCliFacade(opts?: CreateCliFacadeOptions): CliFacade {
     },
 
     async getUsageLimit(): Promise<UsageLimit> {
-      const raw = await apiClient.callFlatApi<unknown>({
+      const raw = await apiClient.callFlatApi<DescribeUsageLimitResponse>({
         product: API_PRODUCT_GATEWAY,
         action: 'DescribeUsageLimit',
         params: {},

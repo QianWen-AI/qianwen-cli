@@ -50,6 +50,7 @@ import { DocsService } from './docs-service.js';
 import { WorkspaceService } from './workspace-service.js';
 import { SubscriptionService, type SubscriptionAdapter } from './subscription-service.js';
 import { SubscriptionTokenPlanService } from './subscription-tokenplan-service.js';
+import { SupportService } from './support-service.js';
 
 import type { CachedFetcher } from '../types/cache.js';
 import type { ApiModelGroup, ApiModelItem, ConsumeSummaryLineItem } from '../types/api-models.js';
@@ -74,6 +75,7 @@ export interface ServiceContainer {
   workspaceService: WorkspaceService;
   subscriptionService: SubscriptionService;
   subscriptionTokenPlanService: SubscriptionTokenPlanService;
+  supportService: SupportService;
 }
 
 export interface CreateServicesOptions {
@@ -172,6 +174,7 @@ export function createServices(options: CreateServicesOptions = {}): ServiceCont
     tokenplanService,
   );
   const subscriptionTokenPlanService = new SubscriptionTokenPlanService(apiClient);
+  const supportService = new SupportService(apiClient);
 
   return {
     apiClient,
@@ -187,5 +190,6 @@ export function createServices(options: CreateServicesOptions = {}): ServiceCont
     workspaceService,
     subscriptionService,
     subscriptionTokenPlanService,
+    supportService,
   };
 }

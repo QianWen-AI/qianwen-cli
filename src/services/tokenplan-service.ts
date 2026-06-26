@@ -33,10 +33,15 @@ export class TokenplanService {
           return statusCode === 'valid';
         }) ?? allPlanInstances[0];
 
-      const addonRemaining = (addonRes?.Data ?? []).reduce(
-        (sum: number, inst: FrInstanceItem) => sum + Number(inst.CurrCapacityBaseValue || 0),
-        0,
-      );
+      const addonRemaining = (addonRes?.Data ?? [])
+        .filter((inst) => {
+          const statusCode = typeof inst.Status === 'object' ? inst.Status?.Code : inst.Status;
+          return statusCode === 'valid';
+        })
+        .reduce(
+          (sum: number, inst: FrInstanceItem) => sum + Number(inst.CurrCapacityBaseValue || 0),
+          0,
+        );
 
       if (!validInstance) {
         if (addonRemaining > 0) return { subscribed: false, addonRemaining };
