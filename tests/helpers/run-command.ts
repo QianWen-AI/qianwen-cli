@@ -90,6 +90,18 @@ export async function runCommand(
       // expected — fallback for code that still calls process.exit()
     } else if ((e as { code?: string }).code === 'commander.helpDisplayed') {
       // expected — `--help` triggered
+    } else if (
+      typeof (e as { code?: unknown }).code === 'string' &&
+      (e as { code: string }).code.startsWith('commander.')
+    ) {
+      // Commander parse error (unknown option, missing argument, etc.). Its
+      // CommanderError carries an exitCode and a "error: ..." message that
+      // configureOutput.writeErr swallowed — re-surface it so tests can assert.
+      const ce = e as { exitCode?: unknown; message?: unknown };
+      exitCode = typeof ce.exitCode === 'number' ? ce.exitCode : 1;
+      if (typeof ce.message === 'string') {
+        stderrLines.push(ce.message);
+      }
     } else {
       throw e;
     }

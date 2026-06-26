@@ -41,3 +41,5 @@ export { BillingBreakdownInk, renderBillingBreakdownInk } from './BillingBreakdo
 export type { BillingBreakdownInkProps } from './BillingBreakdown.js';
 export { BillingSummaryInk, renderBillingSummaryInk } from './BillingSummary.js';
 export type { BillingSummaryInkProps } from './BillingSummary.js';
+export { SupportViewInk, renderSupportViewInk } from './SupportView.js';
+export type { SupportViewInkProps } from './SupportView.js';

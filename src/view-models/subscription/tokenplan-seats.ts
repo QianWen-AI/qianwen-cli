@@ -42,11 +42,8 @@ export function buildTokenPlanSeatsViewModel(
   const warnings =
     diagnostics.length > 0 ? diagnostics.map((d) => `⚠ ${d.api}: ${d.errorMessage}`) : undefined;
 
-  // Filter: only show seats with normal status
-  const normalItems = result.items.filter((it) => it.status.toLowerCase() === 'normal');
-
   const items: TokenPlanSeatItem[] =
-    format === 'json' ? normalItems : normalItems.map((it) => ({ ...it }));
+    format === 'json' ? result.items : result.items.map((it) => ({ ...it }));
 
   let header: TokenPlanSeatsHeader | undefined;
   let rows: TokenPlanSeatsRow[] | undefined;
@@ -55,7 +52,7 @@ export function buildTokenPlanSeatsViewModel(
 
   if (format !== 'json') {
     header = buildHeader(result);
-    rows = buildRows(normalItems);
+    rows = buildRows(result.items);
     footer = buildFooter(result, warnings ?? []);
     if (rows.length === 0) {
       emptyPlaceholder = 'No seats found.';

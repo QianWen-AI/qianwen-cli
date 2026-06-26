@@ -2,6 +2,11 @@ import React, { useState } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import { colors } from './theme.js';
 
+// Visible caret marker that survives stripAnsi (unlike a pure `inverse` style),
+// rendered immediately before the cursor column so the insertion point is
+// always discernible — including on an empty buffer.
+const CURSOR_GLYPH = '▌';
+
 export interface TextAreaProps {
   title?: string;
   placeholder?: string;
@@ -159,7 +164,14 @@ export function TextArea({ title, placeholder, onSubmit, onCancel }: TextAreaPro
       ) : null}
       <Box flexDirection="column" borderStyle="single" borderColor={colors.border} paddingX={1}>
         {isEmpty && placeholder ? (
-          <Text color={colors.muted}>{placeholder}</Text>
+          focus === 'editor' ? (
+            <Text>
+              <Text color={colors.brand}>{CURSOR_GLYPH}</Text>
+              <Text color={colors.muted}>{placeholder}</Text>
+            </Text>
+          ) : (
+            <Text color={colors.muted}>{placeholder}</Text>
+          )
         ) : (
           lines.map((line, rowIdx) => (
             <Box key={rowIdx}>
@@ -185,14 +197,19 @@ export function TextArea({ title, placeholder, onSubmit, onCancel }: TextAreaPro
   );
 }
 
+/**
+ * Render a single line with a visible caret glyph inserted before the cursor
+ * column. The caret sits between characters (standard editor behaviour), so the
+ * character under the cursor shifts one column to the right. At the end of a
+ * line (or on an empty line) only the caret is shown.
+ */
 function renderLineWithCursor(line: string, cursorCol: number): React.ReactElement {
   const before = line.slice(0, cursorCol);
-  const at = line[cursorCol] ?? ' ';
-  const after = line.slice(cursorCol + 1);
+  const after = line.slice(cursorCol);
   return (
     <Text>
       {before}
-      <Text inverse>{at}</Text>
+      <Text color={colors.brand}>{CURSOR_GLYPH}</Text>
       {after}
     </Text>
   );

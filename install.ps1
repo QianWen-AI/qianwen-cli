@@ -4,7 +4,7 @@
 #   .\install.ps1 -Version v1.2.0
 #
 # Parameters:
-#   -Version           - version to install (e.g. v1.1.0, default: v1.1.0)
+#   -Version           - version to install (e.g. v1.2.0, default: v1.2.0)
 #
 # Behavior:
 #   - If a previous installation exists in the install directory, the existing
@@ -30,7 +30,7 @@ $script:IsCLM = ($ExecutionContext.SessionState.LanguageMode -eq 'ConstrainedLan
 
 # ─── Default Version ────────────────────────────────────────────────────────
 # Update this value when releasing a new version.
-$DefaultVersion = "v1.1.0"
+$DefaultVersion = "v1.2.0"
 
 # ─── Brand Colors ────────────────────────────────────────────────────────────
 # #3047F5 via ANSI 24-bit true color escape sequences (matching install.sh)

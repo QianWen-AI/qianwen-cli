@@ -16,6 +16,7 @@ export const CONFIG_DEFAULTS: ConfigSchema = {
   'api.endpoint': site.apiEndpoint,
   'auth.endpoint': site.authEndpoint,
   'cache.ttl': String(DEFAULT_CACHE_TTL_MS),
+  'support.categorySource': '',
 };
 
 /**
@@ -45,7 +46,6 @@ export function isPublicKey(key: string): key is ConfigKey {
 /**
  * Validation rules per key.
  */
-
 function isValidUrl(value: string): boolean {
   try {
     new URL(value);
@@ -61,6 +61,13 @@ const VALIDATORS: Record<ConfigKey, (value: string) => boolean> = {
   'auth.endpoint': isValidUrl,
   // Non-negative integer milliseconds. '0' disables the file cache.
   'cache.ttl': (v) => /^\d+$/.test(v),
+  // Allowed: empty string (use embedded local data), 'cli-api' (legacy gateway),
+  // or an http(s):// URL pointing at a CDN-hosted JSON document.
+  'support.categorySource': (v) => {
+    if (!v) return true;
+    if (v === 'cli-api') return true;
+    return /^https?:\/\//.test(v);
+  },
 };
 
 /**
@@ -81,6 +88,8 @@ export function validateConfigValue(key: ConfigKey, value: string): string | nul
         return `Invalid value for auth.endpoint. Must be a valid URL`;
       case 'cache.ttl':
         return `Invalid value for cache.ttl. Must be a non-negative integer (milliseconds); '0' disables the file cache`;
+      case 'support.categorySource':
+        return `Invalid value for support.categorySource. Allowed: empty string, 'cli-api', or an http(s):// URL`;
       default:
         return `Invalid value for ${key}`;
     }

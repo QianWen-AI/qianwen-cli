@@ -26,6 +26,22 @@ export function classifyHttpError(error: unknown, url?: string): CliError {
     const name = error.name;
     const msg = error.message;
 
+    // Gateway business / envelope errors carry a server-provided message that
+    // explains *why* the request was rejected (e.g. a ticket-creation policy
+    // failure on an app-scoped category). Surface that message directly instead
+    // of masking it behind a generic "unexpected error" — it is the real,
+    // user-actionable reason and the primary signal for diagnosing API failures.
+    if (name === 'GatewayBusinessError' || name === 'GatewayEnvelopeError') {
+      const rawCode = (error as { code?: unknown }).code;
+      const codeStr = typeof rawCode === 'string' && rawCode.length > 0 ? rawCode : undefined;
+      return new CliError({
+        code: 'API_ERROR',
+        message: msg || 'API request failed.',
+        exitCode: EXIT_CODES.GENERAL_ERROR,
+        detail: buildDetail(codeStr ? `[${codeStr}] ${msg}` : msg, url, error),
+      });
+    }
+
     // Timeout (AbortError from our 30s controller)
     if (name === 'AbortError') {
       return new CliError({

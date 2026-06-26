@@ -14,7 +14,6 @@ import {
   transformFrInstances,
   transformUsageLimit,
   transformConsumeBreakdown,
-  transformCostAnalysis,
   transformSettleBillSummary,
 } from '../../../src/api/adapters/billing-adapter.js';
 import type {
@@ -478,86 +477,6 @@ describe('transformConsumeBreakdown', () => {
 
   it('handles a non-array GroupByTotal field gracefully', () => {
     expect(transformConsumeBreakdown({ GroupByTotal: 'not-an-array' })).toEqual({ rows: [] });
-  });
-});
-
-// ────────────────────────────────────────────────────────────────────
-// transformCostAnalysis
-// ────────────────────────────────────────────────────────────────────
-
-describe('transformCostAnalysis', () => {
-  it('prefers ResultByTime over Items when both are present', () => {
-    expect(
-      transformCostAnalysis({
-        ResultByTime: [
-          { Period: '2026-05-29', Total: { Amount: '1.50', Currency: 'USD' } },
-          { Period: '2026-05-30', Total: { Amount: 2.75 } },
-        ],
-        Items: [{ Period: '2026-04-01', Amount: '999' }],
-        Granularity: 'day',
-        CostTotals: { Currency: 'USD' },
-      }),
-    ).toEqual({
-      items: [
-        { period: '2026-05-29', amount: '1.50' },
-        { period: '2026-05-30', amount: '2.75' },
-      ],
-      granularity: 'day',
-      currency: 'USD',
-    });
-  });
-
-  it('falls back to Items when ResultByTime is missing or empty', () => {
-    const out = transformCostAnalysis({
-      Items: [{ Period: '2026-05', Amount: '100' }],
-      Granularity: 'month',
-      Currency: 'EUR',
-    });
-    expect(out.items).toEqual([{ period: '2026-05', amount: '100' }]);
-    expect(out.granularity).toBe('month');
-    expect(out.currency).toBe('EUR');
-  });
-
-  it('returns empty items and "day" granularity when both sources are absent', () => {
-    expect(transformCostAnalysis({})).toEqual({ items: [], granularity: 'day', currency: 'CNY' });
-  });
-
-  it('handles missing Total.Amount inside a ResultByTime entry', () => {
-    const out = transformCostAnalysis({
-      ResultByTime: [{ Period: '2026-05-30', Total: {} }],
-    });
-    expect(out.items).toEqual([{ period: '2026-05-30', amount: '0' }]);
-  });
-
-  it('expands PeriodDetails into per-group items when grouped', () => {
-    const out = transformCostAnalysis({
-      ResultByTime: [
-        {
-          Period: '2026-06-01',
-          Total: { Amount: '3.00' },
-          PeriodDetails: [
-            { Key: 'ws-1', Name: 'Workspace A', Amount: '2.00' },
-            { Key: 'ws-2', Name: 'Workspace B', Amount: '1.00' },
-          ],
-        },
-      ],
-      Granularity: 'day',
-    });
-    expect(out.items).toEqual([
-      { period: '2026-06-01', amount: '2.00', groupKey: 'ws-1', groupLabel: 'Workspace A' },
-      { period: '2026-06-01', amount: '1.00', groupKey: 'ws-2', groupLabel: 'Workspace B' },
-    ]);
-  });
-
-  it('falls back groupLabel to groupKey when Name is missing in PeriodDetails', () => {
-    const out = transformCostAnalysis({
-      ResultByTime: [
-        { Period: '2026-06-01', PeriodDetails: [{ Key: 'ws-9999', Amount: '1.00' }] },
-      ],
-    });
-    expect(out.items).toEqual([
-      { period: '2026-06-01', amount: '1.00', groupKey: 'ws-9999', groupLabel: 'ws-9999' },
-    ]);
   });
 });
 

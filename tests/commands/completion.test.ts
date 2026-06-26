@@ -37,6 +37,17 @@ function setupCompletion(program: import('commander').Command) {
   registerCompletionCommand(program);
 }
 
+async function generateScript(shell: string): Promise<string> {
+  const stdoutWriteSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+  try {
+    const r = await runCommand(setupCompletion, ['completion', 'generate', '--shell', shell]);
+    expect(r.exitCode).toBeUndefined();
+    return stdoutWriteSpy.mock.calls.map((c) => String(c[0])).join('');
+  } finally {
+    stdoutWriteSpy.mockRestore();
+  }
+}
+
 let originalShell: string | undefined;
 
 beforeEach(() => {
@@ -83,3 +94,4 @@ describe('completion install — fish rc filesystem safety', () => {
     expect(r.stderr).not.toMatch(/\n\s+at\s/);
   });
 });
+

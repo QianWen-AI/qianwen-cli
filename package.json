@@ -1,31 +1,16 @@
 {
   "name": "@qianwenai/qianwen-cli",
-  "version": "1.1.0",
-  "publishConfig": {
-    "access": "public"
-  },
+  "version": "1.2.0",
   "description": "QianWen CLI - Manage QianWen models, usage, and configuration from your terminal",
   "type": "module",
   "bin": {
     "qianwen": "dist/bin/qianwen.js"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist/bin/qianwen.js"
-  ],
-  "license": "Apache-2.0",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/QianWen-AI/qianwen-cli.git"
-  },
-  "homepage": "https://github.com/QianWen-AI/qianwen-cli",
-  "bugs": {
-    "url": "https://github.com/QianWen-AI/qianwen-cli/issues"
-  },
-  "author": "QianWen",
-  "keywords": [
-    "cli",
-    "qianwen",
-    "agent"
   ],
   "scripts": {
     "build": "tsx scripts/build.ts --mode prod",
@@ -61,8 +46,8 @@
     "eslint-plugin-react-hooks": "^5.0.0",
     "ink-testing-library": "^3.0.0",
     "prettier": "^3.3.3",
-    "strip-ansi": "^7.2.0",
     "react-devtools-core": "^7.0.1",
+    "strip-ansi": "^7.2.0",
     "terser": "^5.46.1",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",

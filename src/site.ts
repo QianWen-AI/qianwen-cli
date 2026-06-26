@@ -59,6 +59,10 @@ export const site = {
       addon: 'sfm_tokenplanteamsaddon_dp_cn',
     },
     currency: 'CNY',
+    workorder: {
+      siteTag: 'qianwenai',
+      productCodes: ['bailian'],
+    },
   },
   defaults: {
     language: 'zh-CN',

@@ -116,7 +116,7 @@ export function TagSelector({
                   backgroundColor={isFocused ? colors.headerBg : undefined}
                   bold={isFocused}
                 >
-                  {tag}
+                  {String(tag)}
                 </Text>
               </Box>
             );

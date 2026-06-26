@@ -72,44 +72,10 @@ export interface ConsumeBreakdownByPeriods {
 }
 
 // ────────────────────────────────────────────────────────────────────
-// MaasDescribeCostAnalysis
+// MaasDescribeCostAnalysis — granularity shared with breakdown
 // ────────────────────────────────────────────────────────────────────
 
 export type AnalysisGranularity = 'day' | 'month';
-
-export interface CostAnalysisItem {
-  period: string;
-  amount: string;
-  /** Present when the analysis is grouped (--group-by): the dimension value. */
-  groupKey?: string;
-  groupLabel?: string;
-}
-
-export interface CostAnalysisDto {
-  items: CostAnalysisItem[];
-  granularity: AnalysisGranularity | string;
-  currency: string;
-}
-
-export interface CostAnalysis {
-  granularity: AnalysisGranularity | string;
-  period: { from: string; to: string };
-  groupBy?: BreakdownGroupBy;
-  chargeTypes?: string[];
-  totalAmount: string;
-  currency: string;
-  items: CostAnalysisItem[];
-}
-
-export interface CostAnalysisOptions {
-  granularity: AnalysisGranularity;
-  from: string;
-  to: string;
-  groupBy?: BreakdownGroupBy;
-  chargeTypes?: string[];
-  chargeType?: string[];
-  top: number;
-}
 
 // ────────────────────────────────────────────────────────────────────
 // ListSettleBillTotalSummary

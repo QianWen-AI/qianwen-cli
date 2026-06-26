@@ -26,7 +26,6 @@ const makeVm = (
   notice: null,
   tokenPlanSection: null,
   creditPackSection: null,
-  codingPlanSection: null,
   recentOrdersSection: null,
   ...overrides,
 });

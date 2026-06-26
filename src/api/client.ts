@@ -11,6 +11,8 @@ import type { AuthModeContext, LoginInitResult } from '../services/auth-service.
 import { getEffectiveConfig } from '../config/manager.js';
 import { createServices, type ServiceContainer } from '../services/index.js';
 
+export type ClientFactory = () => Promise<ApiClient>;
+
 export interface ListModelsOptions {
   input?: string;
   output?: string;

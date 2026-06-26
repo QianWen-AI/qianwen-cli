@@ -3,6 +3,8 @@ import React, { useEffect } from 'react';
 import { render, useApp } from 'ink';
 import { isReplMode } from '../utils/runtime-mode.js';
 import { isConHost } from './terminalCompat.js';
+import { CliError } from '../utils/errors.js';
+import { EXIT_CODES } from '../utils/exit-codes.js';
 
 // Alternative screen buffer ANSI sequences. Entering switches the terminal to a
 // blank, scrollback-isolated canvas (vim/less behaviour); exiting restores the
@@ -44,6 +46,52 @@ function AutoExitWrapper({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+interface InkErrorBoundaryProps {
+  readonly onError: (error: unknown) => void;
+  readonly children: React.ReactNode;
+}
+
+/**
+ * Catches render-time exceptions thrown by any descendant so the host
+ * {@link renderInteractive} / {@link renderWithInk} call can surface them as a
+ * normal rejected promise. Without it, Ink's built-in `InternalApp` boundary
+ * swallows the error, prints a raw React component stack to the terminal, and
+ * leaves `waitUntilExit()` pending — which is exactly how the support `rate`
+ * picker and `reply` ticket view crashed with an unreadable dump instead of a
+ * graceful CLI error.
+ */
+export class InkErrorBoundary extends React.Component<
+  InkErrorBoundaryProps,
+  { failed: boolean }
+> {
+  constructor(props: InkErrorBoundaryProps) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  override componentDidCatch(error: unknown): void {
+    this.props.onError(error);
+  }
+
+  override render(): React.ReactNode {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+/** Wrap a captured Ink render error as a graceful, formattable CliError. */
+function toInkRenderError(error: unknown): CliError {
+  const message = error instanceof Error ? error.message : String(error);
+  return new CliError({
+    code: 'RENDER_ERROR',
+    message: `Failed to render interactive view: ${message}`,
+    exitCode: EXIT_CODES.GENERAL_ERROR,
+  });
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -71,15 +119,35 @@ export async function renderWithInk(element: React.ReactElement): Promise<void> 
   // real process.stdin, which would interfere with the REPL's readline state.
   const dummyStdin = new PassThrough();
 
-  const { waitUntilExit } = render(<AutoExitWrapper>{element}</AutoExitWrapper>, {
-    stdout: process.stdout,
-    stdin: dummyStdin as any,
-    exitOnCtrlC: false,
-    patchConsole: false,
-  });
+  let capturedError: unknown = null;
+  // Holder lets the boundary callback (created in the render() call below) reach
+  // the instance's unmount, which only exists once render() returns.
+  const ctl: { unmount?: () => void } = {};
+  const instance = render(
+    <InkErrorBoundary
+      onError={(e) => {
+        capturedError = e;
+        ctl.unmount?.();
+      }}
+    >
+      <AutoExitWrapper>{element}</AutoExitWrapper>
+    </InkErrorBoundary>,
+    {
+      stdout: process.stdout,
+      stdin: dummyStdin as any,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+  ctl.unmount = instance.unmount;
 
-  // Resolves only after AutoExitWrapper calls app.exit().
-  await waitUntilExit();
+  // Resolves only after AutoExitWrapper calls app.exit() (or the boundary
+  // catches a render error and unmounts).
+  await instance.waitUntilExit();
+
+  // Surface any render-time crash as a graceful CLI error instead of letting
+  // Ink's boundary dump a raw component stack to the terminal.
+  if (capturedError) throw toInkRenderError(capturedError);
 
   // Write a trailing newline so the shell prompt appears on its own line.
   process.stdout.write('\n');
@@ -149,9 +217,18 @@ export async function renderInteractive(
     process.stdout.write(ENTER_ALT_SCREEN);
   }
 
+  let capturedError: unknown = null;
   try {
-    const { waitUntilExit } = render(
-      <AltScreenContext.Provider value={useAltScreen}>{element}</AltScreenContext.Provider>,
+    const ctl: { unmount?: () => void } = {};
+    const instance = render(
+      <InkErrorBoundary
+        onError={(e) => {
+          capturedError = e;
+          ctl.unmount?.();
+        }}
+      >
+        <AltScreenContext.Provider value={useAltScreen}>{element}</AltScreenContext.Provider>
+      </InkErrorBoundary>,
       {
         stdout: process.stdout,
         stdin: process.stdin,
@@ -159,8 +236,9 @@ export async function renderInteractive(
         patchConsole: false,
       },
     );
+    ctl.unmount = instance.unmount;
 
-    await waitUntilExit();
+    await instance.waitUntilExit();
 
     // Drain any residual bytes from stdin buffer
     await drainStdin();
@@ -219,6 +297,11 @@ export async function renderInteractive(
       process.stdin.unref();
     }
   }
+
+  // Re-throw any captured render error AFTER stdin/terminal state is restored,
+  // so the caller's try/catch (and the unified error handler) sees a graceful
+  // CliError rather than Ink's raw component-stack dump.
+  if (capturedError) throw toInkRenderError(capturedError);
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────

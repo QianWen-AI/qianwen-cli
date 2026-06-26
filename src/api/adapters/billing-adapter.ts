@@ -10,8 +10,6 @@ import type {
   UsageLimit,
   ConsumeBreakdownDto,
   ConsumeBreakdownRow,
-  CostAnalysisDto,
-  CostAnalysisItem,
   SettleBillSummaryDto,
   SettleBillCycle,
 } from '../../types/billing-extra.js';
@@ -288,48 +286,6 @@ export function transformConsumeBreakdown(raw: unknown): ConsumeBreakdownDto {
     };
   });
   return { rows };
-}
-
-export function transformCostAnalysis(raw: unknown): CostAnalysisDto {
-  const safe: RawCostAnalysis = (raw ?? {}) as RawCostAnalysis;
-
-  let items: CostAnalysisItem[];
-  if (Array.isArray(safe.ResultByTime) && safe.ResultByTime.length > 0) {
-    items = [];
-    for (const entry of safe.ResultByTime) {
-      const period = entry.Period ?? '';
-      if (Array.isArray(entry.PeriodDetails) && entry.PeriodDetails.length > 0) {
-        for (const detail of entry.PeriodDetails) {
-          items.push({
-            period,
-            amount: toAmountString(detail.Amount, '0'),
-            groupKey: detail.Key ?? '',
-            groupLabel: detail.Name ?? detail.Key ?? '',
-          });
-        }
-      } else {
-        items.push({
-          period,
-          amount: toAmountString(entry.Total?.Amount ?? '0', '0'),
-        });
-      }
-    }
-  } else if (Array.isArray(safe.Items) && safe.Items.length > 0) {
-    items = safe.Items.map((p) => ({
-      period: p.Period ?? '',
-      amount: toAmountString(p.Amount, '0'),
-    }));
-  } else {
-    items = [];
-  }
-
-  const currency = resolveCurrency(safe.CostTotals?.Currency ?? safe.Currency);
-
-  return {
-    items,
-    granularity: safe.Granularity ?? 'day',
-    currency,
-  };
 }
 
 interface RawSettleBillCycle {

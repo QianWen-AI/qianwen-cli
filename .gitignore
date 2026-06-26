@@ -8,7 +8,6 @@ release/
 .env.*
 coverage/
 .idea/
-.npmrc
 
 .agents/
 .qoder/
@@ -16,4 +15,4 @@ coverage/
 .playwright-mcp/
 ref/
 *copilot*
-.e2e-output
+.e2e-output/
