@@ -27,10 +27,15 @@ import type {
   SettleBillSummaryOptions,
   SettleBillTotals,
 } from '../types/billing-extra.js';
+import type {
+  GetFundAccountAvailableAmountResponse,
+  BalanceSummaryDto,
+} from '../types/balance.js';
 import {
   transformUsageLimit,
   transformConsumeBreakdown,
   transformSettleBillSummary,
+  transformBalanceSummary,
 } from '../api/adapters/billing-adapter.js';
 import {
   aggregatePaygByModel,
@@ -288,6 +293,15 @@ export class BillingService {
       action: 'DescribeUsageLimit',
     });
     return transformUsageLimit(raw);
+  }
+
+  async getAvailableBalance(): Promise<BalanceSummaryDto> {
+    const raw = await this.apiClient.callFlatApi<GetFundAccountAvailableAmountResponse>({
+      product: API_PRODUCT_BSS,
+      action: 'GetFundAccountAvailableAmount',
+      params: {},
+    });
+    return transformBalanceSummary(raw);
   }
 
   /** Break down PAYG spend along a user-selected dimension.

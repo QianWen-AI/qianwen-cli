@@ -19,3 +19,6 @@ export type {
 
 export { defaultViewContext, formatMoney, formatDate, formatCount } from './shared.js';
 export type { ViewContext } from './shared.js';
+
+export { buildBalanceSummaryViewModel } from './balance.js';
+export type { BalanceSummaryViewModel } from './balance.js';
