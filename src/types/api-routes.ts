@@ -20,5 +20,7 @@ export const API_ACTION_GATEWAY = 'BroadScopeAspnGateway';
 export const API_ACTION_CONSUME_SUMMARY = 'MaasListConsumeSummary';
 export const API_ACTION_SEARCH_ALL = 'SearchAll';
 
+export const API_ACTION_GET_FUND_ACCOUNT_BALANCE = 'GetFundAccountAvailableAmount';
+
 // Products with optional authentication (public search API, etc.)
 export const AUTH_OPTIONAL_PRODUCTS: ReadonlySet<string> = new Set([API_PRODUCT_SEARCH]);

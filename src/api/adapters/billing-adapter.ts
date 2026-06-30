@@ -13,6 +13,7 @@ import type {
   SettleBillSummaryDto,
   SettleBillCycle,
 } from '../../types/billing-extra.js';
+import type { GetFundAccountAvailableAmountResponse, BalanceSummaryDto } from '../../types/balance.js';
 import { site } from '../../site.js';
 
 export interface ConsumeLineItemDTO {
@@ -320,5 +321,19 @@ export function transformSettleBillSummary(raw: unknown): SettleBillSummaryDto {
   return {
     cycles,
     currency: resolveCurrency(safe.Currency ?? firstItemCurrency),
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Balance
+// ────────────────────────────────────────────────────────────────────
+
+export function transformBalanceSummary(
+  raw: GetFundAccountAvailableAmountResponse | null | undefined,
+): BalanceSummaryDto {
+  const safe = raw ?? ({} as Partial<GetFundAccountAvailableAmountResponse>);
+  return {
+    availableAmount: safe.AvailableAmount ?? '0',
+    currency: safe.Currency ?? 'CNY',
   };
 }

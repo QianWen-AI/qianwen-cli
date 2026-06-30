@@ -2,6 +2,7 @@ import type {
   BillingLimitViewModel,
   BillingBreakdownViewModel,
   BillingSummaryViewModel,
+  BalanceSummaryViewModel,
 } from '../../view-models/billing/index.js';
 import type { ViewContext } from '../../view-models/billing/shared.js';
 import type { ConsumeBreakdownByPeriods } from '../../types/billing-extra.js';
@@ -60,4 +61,8 @@ export function renderTextBillingSummary(vm: BillingSummaryViewModel): void {
   for (const f of vm.fields) {
     console.log(`  ${f.label.padEnd(18)}${f.value}`);
   }
+}
+
+export function renderTextBalanceSummary(vm: BalanceSummaryViewModel): void {
+  console.log(`  ${'AVAILABLE AMOUNT'.padEnd(20)}${vm.availableAmount} ${vm.currency}`);
 }

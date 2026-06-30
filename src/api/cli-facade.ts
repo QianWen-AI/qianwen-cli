@@ -24,10 +24,12 @@ import { getEffectiveConfig } from '../config/manager.js';
 
 import {
   API_PRODUCT_GATEWAY,
+  API_PRODUCT_BSS,
   API_ACTION_LIST_MODELS,
   API_ACTION_DESCRIBE_FQ,
   API_ACTION_DESCRIBE_FR,
   API_ACTION_CONSUME_SUMMARY,
+  API_ACTION_GET_FUND_ACCOUNT_BALANCE,
 } from '../types/api-routes.js';
 
 import type {
@@ -38,6 +40,7 @@ import type {
   FqInstanceResponse,
   FrInstanceResponse,
 } from '../types/api-models.js';
+import type { GetFundAccountAvailableAmountResponse, BalanceSummaryDto } from '../types/balance.js';
 
 import { transformModelDetail, transformModelList } from './adapters/model-adapter.js';
 import {
@@ -45,6 +48,7 @@ import {
   transformFqInstances,
   transformFrInstances,
   transformUsageLimit,
+  transformBalanceSummary,
   type ConsumeLineItemDTO,
   type FreeTierQuotaDTO,
   type TokenPlanDTO,
@@ -103,6 +107,7 @@ export interface CliFacade {
   describeFqInstance(opts?: DescribeFqOptions): Promise<FreeTierQuotaDTO[]>;
   describeFrInstances(opts?: DescribeFrOptions): Promise<TokenPlanDTO>;
   getUsageLimit(): Promise<UsageLimit>;
+  getAvailableBalance(): Promise<BalanceSummaryDto>;
 
   // Health
   ping(): Promise<{ latency: number; reachable: boolean; hostname: string }>;
@@ -254,6 +259,15 @@ export function createCliFacade(opts?: CreateCliFacadeOptions): CliFacade {
         params: {},
       });
       return transformUsageLimit(raw);
+    },
+
+    async getAvailableBalance(): Promise<BalanceSummaryDto> {
+      const raw = await apiClient.callFlatApi<GetFundAccountAvailableAmountResponse>({
+        product: API_PRODUCT_BSS,
+        action: API_ACTION_GET_FUND_ACCOUNT_BALANCE,
+        params: {},
+      });
+      return transformBalanceSummary(raw);
     },
 
     ping: () => pingEndpoint(),

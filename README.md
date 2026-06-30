@@ -6,7 +6,7 @@
 
 > 千问云官方命令行工具。在终端或 AI Agent 运行时中，发现模型、查看用量、管理认证与诊断本地环境。
 
-![Version](https://img.shields.io/badge/version-1.2.0-blue)
+![Version](https://img.shields.io/badge/version-1.3.0-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
@@ -141,7 +141,7 @@ qianwen auth login --complete --format json
 | 认证 | `auth login`, `auth logout`, `auth status` | `--init-only`, `--complete`, `--timeout`, `--format` |
 | 模型 | `models list`, `models info`, `models search` | `--input`, `--output`, `--all`, `--verbose`, `--page`, `--per-page`, `--format` |
 | 用量 | `usage summary`, `usage breakdown`, `usage free-tier`, `usage payg`, `usage logs` | `--period`, `--from`, `--to`, `--days`, `--model`, `--granularity`, `--format` |
-| 账单 | `billing summary`, `billing breakdown`, `billing limit` | `--from`, `--to`, `--period`, `--group-by`, `--granularity`, `--format` |
+| 账单 | `billing summary`, `billing breakdown`, `billing limit`, `billing balance summary`, `billing balance recharge` | `--from`, `--to`, `--period`, `--group-by`, `--granularity`, `--format` |
 | 业务空间 | `workspace list`, `workspace limit` | `--format` |
 | 订阅 | `subscription status`, `subscription orders`, `subscription tokenplan status`, `subscription tokenplan seats` | `--format` |
 | 文档 | `docs search`, `docs view` | `--format` |

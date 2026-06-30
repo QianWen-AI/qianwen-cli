@@ -2,6 +2,7 @@ import type { Command } from 'commander';
 import { registerBillingLimitCommand } from './limit.js';
 import { registerBillingBreakdownCommand } from './breakdown.js';
 import { registerBillingSummaryCommand } from './summary.js';
+import { registerBillingBalanceCommands } from './balance/index.js';
 import { addExamples } from '../../utils/commander-helpers.js';
 import { formatCmd } from '../../utils/runtime-mode.js';
 
@@ -13,6 +14,7 @@ export function registerBillingCommands(program: Command): void {
   registerBillingLimitCommand(billing);
   registerBillingBreakdownCommand(billing);
   registerBillingSummaryCommand(billing);
+  registerBillingBalanceCommands(billing);
 
   const summary = billing.commands.find((c) => c.name() === 'summary');
   if (summary) {
