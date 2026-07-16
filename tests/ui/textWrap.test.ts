@@ -184,7 +184,7 @@ describe('wrapText', () => {
   });
 
   it('wraps long Chinese text that exceeds line width', () => {
-    const text = 'qianwen-cjk-test 是千问云测试用例数据，仅供验证 CJK 排版，无实际业务含义';
+    const text = 'qianwen-cjk-test 是千问AI平台测试用例数据，仅供验证 CJK 排版，无实际业务含义';
     const result = wrapText(text, 20);
     // Every line must fit within 20 display columns
     for (const line of result) {

@@ -339,7 +339,7 @@ describe('ModelInfoInk', () => {
   it('renders CJK description without border misalignment', () => {
     const vm: ModelDetailViewModel = {
       id: 'qianwen-cjk-test',
-      description: 'qianwen-cjk-test 是千问云测试用例数据，仅供验证 CJK 排版，无实际业务含义',
+      description: 'qianwen-cjk-test 是千问AI平台测试用例数据，仅供验证 CJK 排版，无实际业务含义',
       tags: '推理 · 视觉理解',
       modalityInput: 'Text · Img',
       modalityOutput: 'Text',
