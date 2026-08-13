@@ -1,7 +1,9 @@
 /** Pure aggregators for pay-as-you-go billing items. */
 
 import type { PayAsYouGoModel } from '../types/usage.js';
+import type { ConsumeBreakdownRow } from '../types/billing-extra.js';
 import { site } from '../site.js';
+import { sumCostsExact } from './amount.js';
 
 /** A normalized billing item — what the aggregators actually need. */
 export interface PaygItem {
@@ -12,8 +14,6 @@ export interface PaygItem {
   cost: number;
   billingUnit: string; // 'tokens' | 'images' | 'seconds' | 'characters' | ...
 }
-
-const round4 = (n: number) => Math.round(n * 10000) / 10000;
 
 // ── Summary view: one row per model ──────────────────────────────────
 
@@ -27,38 +27,93 @@ export function aggregatePaygByModel(items: PaygItem[]): PaygSummaryAggregate {
     string,
     {
       usage: Record<string, number>;
-      cost: number;
+      costs: number[];
     }
   > = {};
-  let totalCost = 0;
+  const totalCosts: number[] = [];
 
   for (const it of items) {
     if (!it.modelId) continue; // defensive: upstream guarantees non-empty
-    const entry = (dict[it.modelId] ??= { usage: {}, cost: 0 });
+    const entry = (dict[it.modelId] ??= { usage: {}, costs: [] });
 
     // Tokens aggregate under the neutral 'tokens' key — the upstream API returns
     // a single undifferentiated quantity with no input/output split.
     // Other units key by their unit name.
     const key = it.billingUnit === 'tokens' ? 'tokens' : it.billingUnit;
     entry.usage[key] = (entry.usage[key] ?? 0) + it.usageValue;
-    entry.cost += it.cost;
-    totalCost += it.cost;
+    entry.costs.push(it.cost);
+    totalCosts.push(it.cost);
   }
 
   const models: PayAsYouGoModel[] = Object.entries(dict).map(([modelId, e]) => ({
     model_id: modelId,
     usage: roundUsageCounts(e.usage),
-    cost: round4(e.cost),
+    cost: sumCostsExact(e.costs),
     currency: site.features.currency,
   }));
 
   return {
     models,
     total: {
-      cost: round4(totalCost),
+      cost: sumCostsExact(totalCosts),
       currency: site.features.currency,
     },
   };
+}
+
+/**
+ * Merge per-model costs from MaasDescribeCostAnalysis with per-model usage
+ * from MaasListConsumeSummary items. Cost is authoritative from the cost
+ * analysis (server-side aggregation, no pagination issue); usage is
+ * best-effort from the line items (may be incomplete due to pagination).
+ */
+export function mergePaygModelData(
+  costRows: ConsumeBreakdownRow[],
+  items: PaygItem[],
+): PayAsYouGoModel[] {
+  // Build usage map from line items (best-effort)
+  const usageMap: Record<string, Record<string, number>> = {};
+  for (const it of items) {
+    if (!it.modelId) continue;
+    const entry = (usageMap[it.modelId] ??= {});
+    const key = it.billingUnit === 'tokens' ? 'tokens' : it.billingUnit;
+    entry[key] = (entry[key] ?? 0) + it.usageValue;
+  }
+
+  // Build models from cost analysis rows, supplementing with usage
+  const models: PayAsYouGoModel[] = costRows.map((row) => {
+    const modelId = row.groupKey;
+    const cost = parseFloat(row.amount) || 0;
+    const rawUsage = usageMap[modelId] ?? {};
+    const usage = roundUsageCounts(rawUsage);
+    // Remove the model from usageMap so we can detect items-only models
+    delete usageMap[modelId];
+    return {
+      model_id: modelId,
+      usage,
+      cost,
+      currency: site.features.currency,
+    };
+  });
+
+  // Models that appear in items but NOT in cost analysis (edge case:
+  // cost analysis might exclude zero-cost entries). Include them with
+  // cost=0 so usage data is not lost.
+  for (const [modelId, rawUsage] of Object.entries(usageMap)) {
+    const usage = roundUsageCounts(rawUsage);
+    if (Object.values(usage).some((v) => v > 0)) {
+      models.push({
+        model_id: modelId,
+        usage,
+        cost: 0,
+        currency: site.features.currency,
+      });
+    }
+  }
+
+  // Sort by cost descending (consistent with web)
+  models.sort((a, b) => b.cost - a.cost);
+  return models;
 }
 
 // ── Breakdown view: one row per billing date ─────────────────────────
@@ -94,7 +149,7 @@ export function aggregatePaygByDate(items: PaygItem[]): PaygDailyRow[] {
     string,
     {
       byUnit: Record<string, number>;
-      cost: number;
+      costs: number[];
     }
   > = {};
 
@@ -103,10 +158,10 @@ export function aggregatePaygByDate(items: PaygItem[]): PaygDailyRow[] {
     if (!key) continue;
     const bucket = (byKey[key] ??= {
       byUnit: {},
-      cost: 0,
+      costs: [],
     });
     bucket.byUnit[it.billingUnit] = (bucket.byUnit[it.billingUnit] ?? 0) + it.usageValue;
-    bucket.cost += it.cost;
+    bucket.costs.push(it.cost);
   }
 
   const rows: PaygDailyRow[] = [];
@@ -120,7 +175,7 @@ export function aggregatePaygByDate(items: PaygItem[]): PaygDailyRow[] {
 
     const row: PaygDailyRow = {
       period: key,
-      cost: round4(d.cost),
+      cost: sumCostsExact(d.costs),
       currency: site.features.currency,
       billingUnit,
     };
@@ -204,7 +259,7 @@ interface AccumulatorBucket {
   characters: number;
   voices: number;
   other: Record<string, number>;
-  cost: number;
+  costs: number[];
   units: Set<string>;
 }
 
@@ -217,13 +272,13 @@ function newBucket(): AccumulatorBucket {
     characters: 0,
     voices: 0,
     other: {},
-    cost: 0,
+    costs: [],
     units: new Set(),
   };
 }
 
 function accumulateRow(bucket: AccumulatorBucket, row: AggregatedRow): void {
-  bucket.cost += row.cost;
+  bucket.costs.push(row.cost);
   if (row.tokens_in) {
     bucket.tokens_in += row.tokens_in;
     bucket.units.add('tokens');
@@ -284,7 +339,7 @@ function bucketToRow(key: string, bucket: AccumulatorBucket): AggregatedRow {
   return {
     period: key,
     ...usage,
-    cost: round4(bucket.cost),
+    cost: sumCostsExact(bucket.costs),
     currency: site.features.currency,
     billingUnit,
   };

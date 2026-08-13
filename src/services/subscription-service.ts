@@ -446,7 +446,11 @@ export class SubscriptionService {
     const period = detailActive?.period ?? seatDto.period ?? null;
 
     const seatInner = seatRaw?.Data ?? seatRaw;
-    const seatTiersRaw = extractSeatTiers(seatInner);
+    // When auto-renewal is explicitly OFF there is no next cycle, so seat-tier
+    // nextCycleFlushTime (which the server still returns, equal to expiry) is
+    // nulled to prevent it being read as a quota-reset date. null autoRenew is
+    // "unknown" and must not trigger clearing.
+    const seatTiersRaw = extractSeatTiers(seatInner, autoRenewDto.autoRenew);
     const seatTiers = seatTiersRaw.some((tier) => tier.totalCredits > 0)
       ? seatTiersRaw
       : syntheticSeatTierFromTokenPlan(tokenPlanDto);
@@ -485,6 +489,7 @@ function extractSeatTiers(
     | { SubscriptionGroupList?: GetSeatSubscriptionSummaryResponse['SubscriptionGroupList'] }
     | null
     | undefined,
+  autoRenewEnabled: boolean | null,
 ): SubscriptionSeatTier[] {
   const groups = inner?.SubscriptionGroupList;
   if (!Array.isArray(groups) || groups.length === 0) return [];
@@ -500,11 +505,14 @@ function extractSeatTiers(
     const usedPct =
       safeTotal > 0 ? Math.min(100, Math.max(0, Math.round((used / safeTotal) * 100))) : 0;
     let flush: string | null = null;
-    const rawFlush = group.NextCycleFlushTime;
-    if (typeof rawFlush === 'number' && Number.isFinite(rawFlush)) {
-      flush = new Date(rawFlush).toISOString();
-    } else if (typeof rawFlush === 'string' && rawFlush.length > 0) {
-      flush = rawFlush;
+    // Only resolve a flush time when auto-renewal is not explicitly disabled.
+    if (autoRenewEnabled !== false) {
+      const rawFlush = group.NextCycleFlushTime;
+      if (typeof rawFlush === 'number' && Number.isFinite(rawFlush)) {
+        flush = new Date(rawFlush).toISOString();
+      } else if (typeof rawFlush === 'string' && rawFlush.length > 0) {
+        flush = rawFlush;
+      }
     }
     tiers.push({
       specType: group.SpecType ?? '',

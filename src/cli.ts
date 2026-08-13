@@ -15,6 +15,7 @@ import { registerConfigCommands } from './commands/config/index.js';
 import { registerDocsCommands } from './commands/docs/index.js';
 import { registerDoctorCommand } from './commands/doctor.js';
 import { registerModelsCommands as registerModelsCommandsImpl } from './commands/models/index.js';
+import { registerSkillsCommands } from './commands/skills/index.js';
 import { registerSubscriptionCommands } from './commands/subscription/index.js';
 import { registerSupportCommands } from './commands/support/index.js';
 import {
@@ -29,7 +30,7 @@ import { setCommandHelpMetadata } from './utils/commander-helpers.js';
 import { isHelpRequest } from './utils/cli-help.js';
 
 // ---------------------------------------------------------------------------
-// Custom help formatter to match PRD §7.0 format
+// Custom help formatter for the layered help layout
 // ---------------------------------------------------------------------------
 
 function padCmd(name: string, width: number): string {
@@ -53,7 +54,7 @@ function styleCommandName(text: string): string {
 
 /**
  * Build a fully custom help string for a Command.
- * Returns the PRD-style help text (L0 / L1 / L2).
+ * Returns the layered help text (L0 / L1 / L2).
  */
 function formatHelp(cmd: Command): string {
   const lines: string[] = [];
@@ -168,7 +169,7 @@ function formatHelp(cmd: Command): string {
   lines.push(`${indent}${styleSectionTitle('Flags:')}`);
   // Collect visible options + always include -h, --help
   const opts = cmd.options.filter((o) => !o.hidden);
-  // Build flag entries in PRD order: regular opts, -h/--help, then -v/--version at end
+  // Build flag entries in display order: regular opts, -h/--help, then -v/--version at end
   type FlagEntry = { flags: string; desc: string };
   const flagEntries: FlagEntry[] = [];
   // Regular options (non-version, non-help)
@@ -341,10 +342,7 @@ function registerModelsCommands(program: Command): void {
 
   // Apply descriptions and examples to the registered commands
   const models = program.commands.find((c) => c.name() === 'models')!;
-  setLongDescription(
-    models,
-    'Browse, search, and inspect available models on QianWen.',
-  );
+  setLongDescription(models, 'Browse, search, and inspect available models on QianWen.');
 
   const list = models.commands.find((c) => c.name() === 'list')!;
   setLongDescription(list, 'List available models with pricing, modality, and free tier info.');
@@ -512,6 +510,7 @@ function setTopLevelHelpMetadata(
 function applyTopLevelHelpMetadata(program: Command): void {
   setTopLevelHelpMetadata(program, 'models', 'Core', 110);
   setTopLevelHelpMetadata(program, 'docs', 'Core', 120);
+  setTopLevelHelpMetadata(program, 'skills', 'Core', 130);
 
   setTopLevelHelpMetadata(program, 'auth', 'Account & access', 200);
   setTopLevelHelpMetadata(program, 'workspace', 'Account & access', 220);
@@ -559,6 +558,7 @@ export function createProgram(): Command {
   // Operations & references
   registerSupportCommands(program);
   registerDocsCommands(program);
+  registerSkillsCommands(program);
 
   // Local utilities & meta
   registerConfigCommands(program);

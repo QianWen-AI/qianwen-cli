@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from 'ink-testing-library';
 import stripAnsi from 'strip-ansi';
 import { InteractiveDocsSearch } from '../../src/ui/InteractiveDocsSearch.js';
+import { visibleWidth } from '../../src/ui/textWrap.js';
 import type {
   DocsSearchViewModel,
   DocsSearchItemViewModel,
@@ -46,9 +47,13 @@ function makeVm(overrides: Partial<DocsSearchViewModel> = {}): DocsSearchViewMod
 const ORIGINAL_COLUMNS = process.stdout.columns;
 const ORIGINAL_ROWS = process.stdout.rows;
 
+function setTermSize(columns: number, rows: number): void {
+  Object.defineProperty(process.stdout, 'columns', { value: columns, configurable: true });
+  Object.defineProperty(process.stdout, 'rows', { value: rows, configurable: true });
+}
+
 beforeEach(() => {
-  Object.defineProperty(process.stdout, 'columns', { value: 120, configurable: true });
-  Object.defineProperty(process.stdout, 'rows', { value: 40, configurable: true });
+  setTermSize(120, 40);
 });
 
 afterEach(() => {
@@ -277,5 +282,128 @@ describe('InteractiveDocsSearch — TUI display specification', () => {
 
       inst.unmount();
     });
+  });
+});
+
+describe('InteractiveDocsSearch — narrow terminal width guard', () => {
+  const LONG_URL =
+    'https://mock-docs.test.qianwen.com/developer-guides/some/very/deeply/nested/path/that-never-ends/getting-started-with-extremely-long-slugs';
+  const LONG_TITLE =
+    'An Extremely Long Documentation Title That Would Definitely Overflow A Narrow Terminal Window';
+  const LONG_SUMMARY =
+    'A very long summary that keeps going on and on well past the terminal width so it must be truncated to keep frame line accounting stable.';
+
+  function makeWideVm(): DocsSearchViewModel {
+    return makeVm({
+      items: [
+        makeItem({
+          title: LONG_TITLE,
+          highlightedTitle: `An Extremely Long Documentation <em>Title</em> That Would Definitely Overflow A Narrow Terminal Window`,
+          url: LONG_URL,
+          summary: LONG_SUMMARY,
+          highlightedSummary: `A very long <em>summary that keeps going on and on well past the terminal width</em> so it must be truncated to keep frame line accounting stable.`,
+          subBizType: 'Developer Guide',
+        }),
+      ],
+      totalCount: 1,
+    });
+  }
+
+  function wideFrame(): string {
+    const loadPage = vi.fn<(page: number) => Promise<DocsSearchViewModel>>();
+    const fetchContent = vi.fn<(url: string) => Promise<DocContentViewModel>>();
+    return frame(
+      <InteractiveDocsSearch
+        initialVm={makeWideVm()}
+        loadPage={loadPage}
+        fetchContent={fetchContent}
+      />,
+    );
+  }
+
+  it('caps every rendered line at 40 columns for long title/url/summary', () => {
+    setTermSize(40, 20);
+    const out = wideFrame();
+    for (const line of out.split('\n')) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(40);
+    }
+    // Over-wide lines are truncated with an ellipsis instead of wrapping.
+    expect(out).toContain('\u2026');
+  });
+
+  it('truncates the long URL with an ellipsis at narrow width', () => {
+    setTermSize(40, 20);
+    const out = wideFrame();
+    expect(out).not.toContain(LONG_URL);
+    expect(out).toContain('https://mock-docs.test');
+  });
+
+  it('never leaks <em> markup even when the highlight crosses the truncation point', () => {
+    setTermSize(40, 20);
+    const out = wideFrame();
+    expect(out).not.toContain('<em>');
+    expect(out).not.toContain('</em>');
+  });
+
+  it('renders full content unchanged on a wide terminal (backward compatibility)', () => {
+    setTermSize(200, 50);
+    const out = wideFrame();
+    expect(out).toContain(LONG_URL);
+    expect(out).toContain(LONG_TITLE);
+    expect(out).toContain(LONG_SUMMARY);
+  });
+
+  it('caps the degraded placeholder row at narrow width', () => {
+    setTermSize(30, 20);
+    const loadPage = vi.fn<(page: number) => Promise<DocsSearchViewModel>>();
+    const fetchContent = vi.fn<(url: string) => Promise<DocContentViewModel>>();
+    const out = frame(
+      <InteractiveDocsSearch
+        initialVm={makeVm({
+          items: [makeItem({ isDegraded: true })],
+          totalCount: 1,
+          degradedPlaceholder:
+            'Search results schema is being aligned - a rather verbose placeholder message',
+        })}
+        loadPage={loadPage}
+        fetchContent={fetchContent}
+      />,
+    );
+    for (const line of out.split('\n')) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(30);
+    }
+  });
+
+  it('keeps every line within a 10-column terminal when the tag consumes the whole first-line budget', () => {
+    // termCols=10 -> contentWidth=6, prefix width 2 -> lineBudget=4. A long
+    // subBizType truncates to fill all 4 columns, so the title budget must
+    // collapse to 0 (title hidden) instead of overflowing the line by 1.
+    setTermSize(10, 20);
+    const loadPage = vi.fn<(page: number) => Promise<DocsSearchViewModel>>();
+    const fetchContent = vi.fn<(url: string) => Promise<DocContentViewModel>>();
+    const out = frame(
+      <InteractiveDocsSearch
+        initialVm={makeVm({
+          items: [
+            makeItem({
+              subBizType: 'Developer Guide Extended Edition',
+              title: LONG_TITLE,
+              highlightedTitle: `An Extremely Long Documentation <em>Title</em> That Would Definitely Overflow`,
+              url: LONG_URL,
+              summary: LONG_SUMMARY,
+              highlightedSummary: `A very long <em>summary</em> that keeps going`,
+            }),
+          ],
+          totalCount: 1,
+        })}
+        loadPage={loadPage}
+        fetchContent={fetchContent}
+      />,
+    );
+    for (const line of out.split('\n')) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(10);
+    }
+    expect(out).not.toContain('<em>');
+    expect(out).not.toContain('</em>');
   });
 });

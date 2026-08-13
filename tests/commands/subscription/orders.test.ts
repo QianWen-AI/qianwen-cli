@@ -4,6 +4,7 @@ import { makeMockServices } from '../../helpers/service-container-mock.js';
 import type { ServiceContainer } from '../../../src/services/index.js';
 import type { SubscriptionOrders } from '../../../src/types/subscription.js';
 import { renderInkForTest, clearRenderedFrames } from '../../helpers/ink-render-mock.js';
+import { EXIT_CODES } from '../../../src/utils/exit-codes.js';
 
 const holder: { services: ServiceContainer } = { services: makeMockServices() };
 
@@ -98,7 +99,7 @@ describe('subscription orders command', () => {
       '--format',
       'json',
     ]);
-    expect(r.exitCode).toBeGreaterThan(0);
+    expect(r.exitCode).toBe(EXIT_CODES.INVALID_ARGUMENT);
     expect(r.stderr).toContain('page-size');
   });
 

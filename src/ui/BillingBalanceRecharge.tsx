@@ -17,7 +17,7 @@ function BalanceRechargePanel({ opened, url }: BalanceRechargeProps) {
         ) : (
           <Text color="yellow">{'\u26A0'} Could not open browser automatically</Text>
         )}
-        <Text>{' '}</Text>
+        <Text> </Text>
         <Text>
           {opened
             ? 'If the browser did not open, copy the link below:'

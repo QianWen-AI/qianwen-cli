@@ -15,7 +15,10 @@ vi.mock('../../../src/services/index.js', () => ({
   createServices: () => holder.services,
 }));
 vi.mock('../../../src/auth/credentials.js', () => ({
-  ensureAuthenticated: vi.fn(() => ({})),
+  ensureAuthenticated: vi.fn(() => {
+    throw new Error('Not authenticated. Please run `qianwen auth login` first.');
+  }),
+  getCredentials: vi.fn(() => null),
 }));
 vi.mock('../../../src/ui/spinner.js', () => ({
   withSpinner: async (_label: string, fn: () => Promise<unknown>) => fn(),
@@ -74,6 +77,17 @@ const sampleContent: DocContentResult = {
 };
 
 describe('docs search command', () => {
+  it('未登录状态可成功搜索（不再强制认证）', async () => {
+    holder.services = makeMockServices({
+      docsService: { searchDocs: async () => sample },
+    });
+    const r = await runCommand(build, ['docs', 'search', 'qwen', '--format', 'json']);
+    expect(r.exitCode).toBeUndefined();
+    expect(r.stderr).not.toContain('Not authenticated');
+    const payload = JSON.parse(r.stdout);
+    expect(payload.totalCount).toBe(1);
+  });
+
   it('JSON returns query/items/totalCount', async () => {
     holder.services = makeMockServices({
       docsService: { searchDocs: async () => sample },

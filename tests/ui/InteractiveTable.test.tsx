@@ -18,6 +18,8 @@ vi.mock('ink', async () => {
 });
 
 import { InteractiveTable } from '../../src/ui/InteractiveTable.js';
+import { AltScreenContext } from '../../src/ui/render.js';
+import { visibleWidth } from '../../src/ui/textWrap.js';
 
 function frame(el: React.ReactElement): string {
   const inst = render(el);
@@ -61,6 +63,10 @@ function trailingBlankLineCount(frameStr: string): number {
   return count;
 }
 
+function setTermCols(cols: number): void {
+  Object.defineProperty(process.stdout, 'columns', { value: cols, configurable: true });
+}
+
 beforeEach(() => {
   capturedInputHandler = null;
   exitMock.mockReset();
@@ -78,11 +84,15 @@ afterEach(() => {
 
 describe('<InteractiveTable /> rendering branches', () => {
   it('shows loading state when no initialRows', () => {
-    const loadPage = vi.fn().mockReturnValue(new Promise(() => {})); // never resolves
-    const { lastFrame } = render(
+    // vi.fn(impl)（而非 mockReturnValue）+ 显式 unmount：restoreMocks 会在用例间
+    // 剥离 mockReturnValue，未卸载树的 passive effect 若延迟到下个用例才 flush，
+    // loadPage() 会返回 undefined 并抛出 undefined.then。
+    const loadPage = vi.fn(() => new Promise<Record<string, string>[]>(() => {})); // never resolves
+    const { lastFrame, unmount } = render(
       <InteractiveTable columns={cols} totalItems={10} perPage={5} loadPage={loadPage} />,
     );
     expect(lastFrame()).toContain('Loading');
+    unmount();
   });
 
   it('uses initialRows immediately without loading state', () => {
@@ -607,16 +617,15 @@ describe('<InteractiveTable /> viewport windowing (row-level scroll)', () => {
   });
 });
 
-describe('<InteractiveTable /> natural height (no padding inflation)', () => {
-  // ── No padding (二.1 core) ────────────────────────────────────
-  // termRows large (40), content tiny (3 rows). The pre-fix component pads the
-  // output with ~ (termRows - contentLines) trailing blank lines to force Ink's
-  // clearTerminal full-screen path — which causes the exit blank-screen defect.
-  // After removing padLines the frame must render at natural height: the number
-  // of trailing blank lines must be far smaller than termRows, and the total
-  // frame line count must be close to the content height, not inflated to ~40.
-  it('does not pad the frame with trailing blank lines up to terminal height', () => {
-    setTermRows(40);
+describe('<InteractiveTable /> 帧高策略（主屏垫高 vs alt-screen 预留 1 行）', () => {
+  // 主屏（无 AltScreenContext，即 false，ConHost 场景）：minHeight = termRows 让
+  // 输出高度 ≥ 终端行数，Ink 每帧走 clearTerminal 全重绘，避免差分擦除在
+  // resize/换行失配时留下旧帧残留。
+  // alt-screen 下则相反：clearTerminal 发出的 \x1b[3J 会在 Terminal.app/iTerm2
+  // 上穿透 alt-screen 清掉主屏 scrollback，因此必须预留 1 行（termRows - 1）
+  // 让 Ink 保持差分重绘路径（与 DocsViewer 同一防护）。
+  it('默认（非 alt-screen）内容不足一屏时帧被垫高到终端行数', () => {
+    setTermRows(30);
     const out = frame(
       <InteractiveTable
         columns={cols}
@@ -627,17 +636,146 @@ describe('<InteractiveTable /> natural height (no padding inflation)', () => {
       />,
     );
     const totalLines = out.split('\n').length;
-    const trailingBlanks = trailingBlankLineCount(out);
 
     // Sanity: content is actually rendered.
     expect(out).toContain('row-01');
     expect(out).toContain('row-03');
 
-    // No bulk trailing blank-line inflation toward termRows (40).
-    // Pre-fix padding produces ~30+ trailing blank lines → RED here.
-    expect(trailingBlanks).toBeLessThan(8);
-    // Natural total height stays well below the terminal height.
-    // Pre-fix the frame is inflated to ≈ termRows (40) → RED here.
-    expect(totalLines).toBeLessThan(20);
+    // Frame is padded up to the terminal height so Ink always full-repaints.
+    expect(totalLines).toBeGreaterThanOrEqual(30);
+    // The padding is trailing blank lines below the short content.
+    expect(trailingBlankLineCount(out)).toBeGreaterThan(10);
+  });
+
+  it('alt-screen 下帧高严格低于终端行数（termRows - 1，避开 3J 清屏路径）', () => {
+    setTermRows(30);
+    const out = frame(
+      <AltScreenContext.Provider value={true}>
+        <InteractiveTable
+          columns={cols}
+          totalItems={3}
+          perPage={5}
+          loadPage={vi.fn()}
+          initialRows={makeRows(3)}
+        />
+      </AltScreenContext.Provider>,
+    );
+    const totalLines = out.split('\n').length;
+
+    // Sanity: content is actually rendered.
+    expect(out).toContain('row-01');
+    expect(out).toContain('row-03');
+
+    // Padded up to termRows - 1 but never reaching termRows, so Ink stays on
+    // differential redraws (outputHeight < stdout.rows) and never emits \x1b[3J.
+    expect(totalLines).toBeLessThanOrEqual(29);
+    expect(totalLines).toBeGreaterThanOrEqual(10);
+    expect(trailingBlankLineCount(out)).toBeGreaterThan(10);
+  });
+
+  it('极小终端（rows=5）alt-screen 下帧总行数 ≤ termRows - 1', () => {
+    // 旧逻辑 Math.max(5, termRows - 1) 在 termRows ≤ 5 时反而 ≥ termRows，
+    // 每帧都命中 clearTerminal(\x1b[3J)。修复后下限压缩到 1。
+    setTermRows(5);
+    const out = frame(
+      <AltScreenContext.Provider value={true}>
+        <InteractiveTable
+          columns={cols}
+          totalItems={40}
+          perPage={40}
+          loadPage={vi.fn()}
+          initialRows={makeRows(40)}
+        />
+      </AltScreenContext.Provider>,
+    );
+    expect(out).toContain('row-01');
+    expect(out.split('\n').length).toBeLessThanOrEqual(4);
+  });
+
+  it('极小终端（rows=8）alt-screen 下帧总行数 ≤ termRows - 1', () => {
+    setTermRows(8);
+    const out = frame(
+      <AltScreenContext.Provider value={true}>
+        <InteractiveTable
+          columns={cols}
+          totalItems={40}
+          perPage={40}
+          loadPage={vi.fn()}
+          initialRows={makeRows(40)}
+        />
+      </AltScreenContext.Provider>,
+    );
+    expect(out).toContain('row-01');
+    expect(out.split('\n').length).toBeLessThanOrEqual(7);
+  });
+});
+
+describe('<InteractiveTable /> 窄终端宽度自适应（任何行不超过终端宽度）', () => {
+  // 行显示宽度超过终端宽度会发生物理 wrap，物理行数 > 逻辑行数导致 Ink
+  // 擦除错位、旧帧残留。列宽收缩 + 标题/状态栏截断必须保证每行 ≤ termCols。
+  const wideRows = [
+    {
+      id: 'row-with-an-extremely-long-identifier-that-never-fits',
+      val: '中文内容也很长很长很长很长很长很长很长',
+    },
+    { id: 'short', val: 'ok' },
+  ];
+
+  it('40 列窄终端下每行显示宽度均 ≤ 40（含标题/表头/数据行/状态栏）', () => {
+    setTermRows(20);
+    setTermCols(40);
+    const out = frame(
+      <InteractiveTable
+        columns={cols}
+        totalItems={2}
+        perPage={5}
+        loadPage={vi.fn()}
+        initialRows={wideRows}
+        title="A very long interactive table title that would certainly wrap"
+        subtitle="an equally long subtitle to overflow"
+        footer={{ id: 'TOTAL-WITH-A-VERY-LONG-LABEL', val: '999999999' }}
+      />,
+    );
+    for (const line of out.split('\n')) {
+      // visibleWidth strips ANSI and counts CJK as 2 columns.
+      expect(visibleWidth(line)).toBeLessThanOrEqual(40);
+    }
+    // Overwide cells are truncated with an ellipsis, not wrapped.
+    expect(out).toContain('…');
+  });
+
+  it('窄终端下窄列内容保持完整（只收缩超宽列）', () => {
+    setTermRows(20);
+    setTermCols(40);
+    const out = frame(
+      <InteractiveTable
+        columns={cols}
+        totalItems={2}
+        perPage={5}
+        loadPage={vi.fn()}
+        initialRows={wideRows}
+      />,
+    );
+    // The short row survives untouched while the wide column absorbs shrinking.
+    expect(out).toContain('short');
+    expect(out).toContain('ok');
+  });
+
+  it('状态栏超长时被截断而非换行', () => {
+    setTermRows(20);
+    setTermCols(30);
+    const out = frame(
+      <InteractiveTable
+        columns={cols}
+        totalItems={200}
+        perPage={5}
+        loadPage={vi.fn()}
+        initialRows={makeRows(5)}
+        pageLabels={['a-very-long-page-label-for-period-2025-07']}
+      />,
+    );
+    for (const line of out.split('\n')) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(30);
+    }
   });
 });

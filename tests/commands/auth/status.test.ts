@@ -22,7 +22,7 @@ beforeEach(() => {
 });
 
 describe('auth status command', () => {
-  it('not authenticated (JSON) → authenticated=false, non-zero exit', async () => {
+  it('not authenticated (JSON) → authenticated=false, exit 0', async () => {
     credResolveStub.mockReturnValue(null);
     const r = await runCommand(
       (program) => {
@@ -31,17 +31,14 @@ describe('auth status command', () => {
       },
       ['auth', 'status', '--format', 'json'],
     );
-    // The action layer wraps runStatus in try/catch. When runStatus calls
-    // process.exit(AUTH_FAILURE=2), our test harness throws a sentinel which
-    // is caught by handleError → exits with GENERAL_ERROR(1). What matters
-    // for the user is that the JSON payload reports authenticated:false and
-    // the process exits with a non-zero code.
-    expect(r.exitCode).toBeGreaterThanOrEqual(1);
+    // Status is a query: an unauthenticated result is still a successful
+    // lookup — the state is reported in the payload and the process exits 0.
+    expect(r.exitCode).toBeUndefined();
     const payload = JSON.parse(r.stdout);
     expect(payload.authenticated).toBe(false);
   });
 
-  it('not authenticated (text) → "Not authenticated" message, non-zero exit', async () => {
+  it('not authenticated (text) → "Not authenticated" message, exit 0', async () => {
     credResolveStub.mockReturnValue(null);
     const r = await runCommand(
       (program) => {
@@ -50,7 +47,7 @@ describe('auth status command', () => {
       },
       ['auth', 'status', '--format', 'text'],
     );
-    expect(r.exitCode).toBeGreaterThanOrEqual(1);
+    expect(r.exitCode).toBeUndefined();
     expect(r.stdout).toContain('Not authenticated');
   });
 
@@ -88,7 +85,7 @@ describe('auth status command', () => {
     expect(payload.user.aliyunId).toBe('12345');
   });
 
-  it('token expired (JSON) → authenticated=false, reason=token_expired, non-zero exit', async () => {
+  it('token expired (JSON) → authenticated=false, reason=token_expired, exit 0', async () => {
     credResolveStub.mockReturnValue({
       access_token: 'token',
       auth_mode: 'oauth',
@@ -108,7 +105,7 @@ describe('auth status command', () => {
       },
       ['auth', 'status', '--format', 'json'],
     );
-    expect(r.exitCode).toBeGreaterThanOrEqual(1);
+    expect(r.exitCode).toBeUndefined();
     const payload = JSON.parse(r.stdout);
     expect(payload.authenticated).toBe(false);
     expect(payload.reason).toBe('token_expired');

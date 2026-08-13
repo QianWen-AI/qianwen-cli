@@ -93,6 +93,26 @@ describe('buildUsageSummaryViewModel', () => {
     expect(vm.payAsYouGo!.total.cost).toBe(`${s.currencySymbol}1.73`);
   });
 
+  it('renders pay-as-you-go costs with every meaningful digit', () => {
+    const response = {
+      ...mockResponse,
+      pay_as_you_go: {
+        models: [
+          {
+            model_id: 'qwen3.6-plus',
+            usage: { tokens: 1200 },
+            cost: 0.123456789012,
+            currency: 'CNY',
+          },
+        ],
+        total: { cost: 0.123456789012, currency: 'CNY' },
+      },
+    };
+    const vm = buildUsageSummaryViewModel(response);
+    expect(vm.payAsYouGo!.rows[0].cost).toBe(`${s.currencySymbol}0.123456789012`);
+    expect(vm.payAsYouGo!.total.cost).toBe(`${s.currencySymbol}0.123456789012`);
+  });
+
   it('builds Token Plan section when subscribed', () => {
     const response = {
       ...mockResponse,
@@ -205,6 +225,25 @@ describe('buildUsageBreakdownViewModel', () => {
     expect(vm.rows[0].cells.cost).toBe(`${s.currencySymbol}0.19`);
 
     expect(vm.total.cells.cost).toBe(`${s.currencySymbol}0.35`);
+  });
+
+  it('renders breakdown costs with every meaningful digit', () => {
+    const response: UsageBreakdownResponse = {
+      ...mockResponse,
+      rows: [
+        {
+          period: '2026-04-01',
+          tokens_in: 100,
+          tokens_out: 50,
+          cost: 0.000123456789,
+          currency: 'CNY',
+        },
+      ],
+      total: { tokens_in: 100, tokens_out: 50, cost: 0.000123456789, currency: 'CNY' },
+    };
+    const vm = buildUsageBreakdownViewModel(response);
+    expect(vm.rows[0].cells.cost).toBe(`${s.currencySymbol}0.000123456789`);
+    expect(vm.total.cells.cost).toBe(`${s.currencySymbol}0.000123456789`);
   });
 
   it('marks current row correctly', () => {

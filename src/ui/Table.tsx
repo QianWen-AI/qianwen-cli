@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import chalk from 'chalk';
 import { theme } from './theme.js';
-import { visibleWidth } from './textWrap.js';
+import { visibleWidth, truncateByDisplayWidth } from './textWrap.js';
 
 export interface Column {
   key: string;
@@ -26,6 +26,14 @@ export interface TableProps {
    * required for correct frame erasure during interactive (redrawn) rendering.
    */
   truncate?: boolean;
+  /**
+   * Cap the table's total display width (paddingLeft + cells + dividers +
+   * the header's trailing space). Overwide columns are shrunk widest-first
+   * and their cells truncated, so no physical line can wrap in the terminal —
+   * wrapped lines break Ink's logical-line-count frame erasure. Omitted →
+   * natural content-driven widths (one-shot static rendering unchanged).
+   */
+  maxTotalWidth?: number;
 }
 
 /** Pad a pre-colored string to a fixed visual width. */
@@ -42,6 +50,10 @@ function padCell(value: string, width: number, align: 'left' | 'right' = 'left')
 const DIV = theme.border(' │ '); // data rows
 const DIV_SEP = '─┼─'; // separator row (drawn in border color)
 
+// Floor for width-constrained shrinking: keeps a truncated cell readable
+// (a few chars + ellipsis) and naturally exempts narrow columns (#, flags).
+const MIN_SHRINK_WIDTH = 5;
+
 export function Table({
   columns,
   data,
@@ -49,6 +61,7 @@ export function Table({
   rowColor,
   paddingLeft = 2,
   truncate = false,
+  maxTotalWidth,
 }: TableProps) {
   const wrap = truncate ? 'truncate-end' : undefined;
   // ── 1. Calculate fixed column widths ────────────────────────────────────────
@@ -63,6 +76,28 @@ export function Table({
     return w;
   });
 
+  // ── 1b. Fit total width under maxTotalWidth (interactive rendering) ────────────
+  // Shrink the widest column one column at a time: long text columns absorb
+  // the truncation while already-narrow columns keep their full content.
+  if (maxTotalWidth != null) {
+    const overhead = paddingLeft + (columns.length - 1) * 3 + 1; // dividers + header trailing space
+    let excess = colWidths.reduce((sum, w) => sum + w, 0) + overhead - maxTotalWidth;
+    while (excess > 0) {
+      let widest = -1;
+      for (let i = 0; i < colWidths.length; i++) {
+        if (
+          colWidths[i] > MIN_SHRINK_WIDTH &&
+          (widest === -1 || colWidths[i] > colWidths[widest])
+        ) {
+          widest = i;
+        }
+      }
+      if (widest === -1) break; // all columns at floor — the truncate wrap is the backstop
+      colWidths[widest] -= 1;
+      excess -= 1;
+    }
+  }
+
   // ── 2. Build reusable separator string ──────────────────────────────────────
   // Format: ─────────┼─────── (aligns with cell content + ` │ ` dividers)
   const separatorRaw = colWidths
@@ -73,7 +108,7 @@ export function Table({
   // ── 3. Build header string (single string so bg color is continuous) ────────
   const headerContent = colWidths
     .map((w, i) => {
-      const padded = padCell(columns[i].header, w, columns[i].align);
+      const padded = padCell(truncateByDisplayWidth(columns[i].header, w), w, columns[i].align);
       return i < colWidths.length - 1 ? padded + ' │ ' : padded;
     })
     .join('');
@@ -94,7 +129,7 @@ export function Table({
 
     return columns
       .map((col, i) => {
-        const raw = row[col.key] ?? '';
+        const raw = truncateByDisplayWidth(row[col.key] ?? '', colWidths[i]);
         const padded = padCell(raw, colWidths[i], col.align);
         const div = i < columns.length - 1 ? DIV : '';
 

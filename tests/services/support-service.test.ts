@@ -550,6 +550,7 @@ describe('SupportService write operations', () => {
           CategoryId: 'c-1',
           Severity: '1',
           Description: 'desc',
+          AcceptLanguage: 'zh_CN',
           ServiceLinkVersion: 'V2',
           DirectLabor: 'true',
           IfServiceQuota: 'true',
@@ -563,6 +564,25 @@ describe('SupportService write operations', () => {
       description: 'desc',
     });
     expect(out).toEqual({ vid: 'tk-new' });
+  });
+
+  it('createTicket forwards explicit acceptLanguage as AcceptLanguage', async () => {
+    const api = makeMockApiClient({
+      flat: async (opts) => {
+        expect(opts.params).toMatchObject({
+          CategoryId: 'c-1',
+          Description: 'desc',
+          AcceptLanguage: 'en_US',
+        });
+        return { Data: { vid: 'tk-en' } };
+      },
+    });
+    const out = await new SupportService(api).createTicket({
+      categoryId: 'c-1',
+      description: 'desc',
+      acceptLanguage: 'en_US',
+    });
+    expect(out).toEqual({ vid: 'tk-en' });
   });
 
   it('createTicket reads string Data as vid', async () => {

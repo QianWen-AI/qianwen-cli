@@ -58,6 +58,12 @@ export function renderTextBillingSummary(vm: BillingSummaryViewModel): void {
   }
   console.log(`  Currency       ${vm.currency}`);
   console.log('');
+  if (vm.cycles.length > 0) {
+    for (const c of vm.cycles) {
+      console.log(`  ${c.billingCycle.padEnd(18)}${c.display[0]?.value ?? ''}`);
+    }
+    console.log('');
+  }
   for (const f of vm.fields) {
     console.log(`  ${f.label.padEnd(18)}${f.value}`);
   }

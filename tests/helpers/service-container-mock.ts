@@ -50,13 +50,13 @@ export function makeMockServices(overrides: PartialServiceContainer = {}): Servi
     'modelsService',
     'usageService',
     'authService',
-    'accountService',
-    'apikeyService',
     'docsService',
     'workspaceService',
-    'alertService',
     'subscriptionService',
+    'subscriptionTokenPlanService',
     'supportService',
+    'skillsHubService',
+    'skillsInstallService',
   ];
 
   const container: Record<string, unknown> = {};
@@ -64,5 +64,5 @@ export function makeMockServices(overrides: PartialServiceContainer = {}): Servi
     const override = overrides[slot] as LooseService | undefined;
     container[slot] = override ?? trap(slot);
   }
-  return container as ServiceContainer;
+  return container as unknown as ServiceContainer;
 }

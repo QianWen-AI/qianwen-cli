@@ -27,18 +27,14 @@ export async function supportReplyAction(
       throw new CliError({
         code: 'INVALID_ARGUMENT',
         message: 'Support reply requires interactive terminal',
-        exitCode: EXIT_CODES.GENERAL_ERROR,
+        exitCode: EXIT_CODES.INVALID_ARGUMENT,
       });
     }
 
     ensureAuthenticated();
     const { supportService } = createServices();
 
-    await withSpinner(
-      'Loading ticket',
-      () => supportService.getTicket(ticketId),
-      format,
-    );
+    await withSpinner('Loading ticket', () => supportService.getTicket(ticketId), format);
 
     let message: string;
 

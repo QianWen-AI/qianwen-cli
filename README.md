@@ -6,7 +6,7 @@
 
 > 千问AI平台官方命令行工具。在终端或 AI Agent 运行时中，发现模型、查看用量、管理认证与诊断本地环境。
 
-![Version](https://img.shields.io/badge/version-1.3.0-blue)
+![Version](https://img.shields.io/badge/version-1.4.0-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
@@ -21,6 +21,7 @@
 - **交互模式与一次性命令**：不带参数运行 `qianwen` 进入 REPL，传递命令则适用于脚本、CI 和 Agent 工具。
 - **Agent 友好协议**：命令支持 `--format json`、标准化退出码、可解析的 JSON 错误信息，以及 `--quiet` 仅返回退出码。
 - **模型与用量工作流**：浏览模型、查看模型详情、按关键词搜索，以及查看免费额度、Token Plan 和按量计费用量。
+- **技能发现与安装**：通过 `skills search` 搜索 SkillHub 技能，通过 `skills install` 安装到本地目录，无需登录即可使用。
 - **原生凭证存储**：凭证存储在操作系统钥匙串中（可用时），并支持加密文件回退。无需 `keytar` 或原生 Node 绑定。
 - **自文档化命令树**：每个命令均支持 `--help`，生成的帮助信息即为权威语法参考。
 
@@ -82,7 +83,11 @@ qianwen models info qwen3-coder-plus
 # 4. 查看当前用量
 qianwen usage summary
 
-# 5. 诊断认证、网络、配置和本地环境
+# 5. 搜索并安装技能
+qianwen skills search 部署
+qianwen skills install qianwenai-deploy
+
+# 6. 诊断认证、网络、配置和本地环境
 qianwen doctor
 ```
 
@@ -96,6 +101,7 @@ qianwen doctor
 qianwen auth status --format json
 qianwen models list --all --format json
 qianwen usage summary --period month --format json
+qianwen skills search deploy --limit 5 --format json
 qianwen doctor --format json
 ```
 
@@ -145,6 +151,7 @@ qianwen auth login --complete --format json
 | 业务空间 | `workspace list`, `workspace limit` | `--format` |
 | 订阅 | `subscription status`, `subscription orders`, `subscription tokenplan status`, `subscription tokenplan seats` | `--format` |
 | 文档 | `docs search`, `docs view` | `--format` |
+| 技能 | `skills search`, `skills install` | `--limit`, `--dir`, `--format` |
 | 工单 | `support list`, `support view`, `support create`, `support reply`, `support close`, `support rate` | `--format` |
 | 配置 | `config list`, `config get`, `config set`, `config unset` | `--format` |
 | 诊断 | `doctor` | `--format` |
@@ -239,6 +246,26 @@ qianwen auth login --complete --format json
 ```
 
 凭证存储在操作系统钥匙串中（可用时）。如果钥匙串不可用，CLI 会回退到加密的本地凭证文件。设置 `QIANWEN_KEYRING=plaintext` 强制使用明文文件存储（调试用）；`no`、`0`、`false` 和 `off` 也会跳过钥匙串。
+
+---
+
+## 技能
+
+`skills` 命令用于从 SkillHub 发现并安装技能，无需登录。
+
+```bash
+# 按关键词搜索技能（精确匹配的 slug 排在最前）
+qianwen skills search 部署
+qianwen skills search deploy --limit 5
+
+# 按 slug 安装技能，默认安装到当前目录下的 <slug>/
+qianwen skills install qianwenai-deploy
+
+# 安装到指定目录（目录须已存在且可写）
+qianwen skills install qianwenai-deploy --dir ~/.codex/skills
+```
+
+安装会自动识别全新安装、升级和已是最新三种情况，并在安装前展示平台安全检测状态。非 CLI 管理的同名目录不会被覆盖。
 
 ---
 

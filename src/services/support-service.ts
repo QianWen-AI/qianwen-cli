@@ -347,6 +347,7 @@ export class SupportService {
         CategoryId: params.categoryId,
         Severity: '1',
         Description: params.description,
+        AcceptLanguage: params.acceptLanguage ?? 'zh_CN',
         ServiceLinkVersion: 'V2',
         DirectLabor: 'true',
         IfServiceQuota: 'true',
@@ -409,7 +410,6 @@ export class SupportService {
       params: { TicketId: ticketId },
     });
   }
-
 
   async getAssessmentCard(ticketId: string): Promise<AssessmentCardData> {
     const raw = await this.apiClient.callFlatApi<{
@@ -496,7 +496,7 @@ export class SupportService {
       badTags = DEFAULT_BAD_TAGS;
     }
 
-    // iter-75 three-state: distinguish no-card / editable / already-rated.
+    // Rating card three-state: distinguish no-card / editable / already-rated.
     const hasCard = dataInfo != null;
     const editable = dataInfo?.Editable === 1;
     const satisfaction = typeof values?.satisfaction === 'number' ? values.satisfaction : undefined;

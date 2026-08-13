@@ -58,12 +58,14 @@ describe('buildBillingSummaryViewModel', () => {
           pretaxAmount: '0.1',
           tax: '0.005',
           aftertaxAmount: '0.105',
+          settled: true,
         },
         {
           billingCycle: '2026-03',
           pretaxAmount: '0.2',
           tax: '0.01',
           aftertaxAmount: '0.21',
+          settled: true,
         },
       ],
     } as SettleBillSummary;
@@ -99,6 +101,7 @@ describe('buildBillingSummaryViewModel', () => {
             pretaxAmount: '5',
             tax: '0.25',
             aftertaxAmount: '5.25',
+            settled: true,
           },
         ],
       }),
@@ -108,6 +111,36 @@ describe('buildBillingSummaryViewModel', () => {
     expect(vm.cycles[0].billingCycle).toBe('2026-04');
     expect(vm.cycles[0].display).toHaveLength(1);
     expect(vm.cycles[0].display[0]).toEqual({ label: 'Total', value: '¥5.25', raw: '5.25' });
+  });
+
+  it('shows "No bill" for unsettled months and keeps a real zero as ¥0', () => {
+    const vm = buildBillingSummaryViewModel(
+      makeSummary({
+        cycles: [
+          {
+            billingCycle: '202601',
+            pretaxAmount: '0',
+            tax: '0',
+            aftertaxAmount: '0',
+            settled: false,
+          },
+          {
+            billingCycle: '202602',
+            pretaxAmount: '0',
+            tax: '0',
+            aftertaxAmount: '0',
+            settled: true,
+          },
+        ],
+      }),
+      ctx,
+    );
+    // billingCycle is passed through unchanged (canonical compact YYYYMM).
+    expect(vm.cycles[0].billingCycle).toBe('202601');
+    expect(vm.cycles[0].display[0].value).toBe('No bill');
+    expect(vm.cycles[0].display[0].raw).toBe('');
+    // A returned zero-amount month is a genuine ¥0, not "No bill".
+    expect(vm.cycles[1].display[0].value).toBe('¥0');
   });
 
   it('renders em-dash for non-finite raw values', () => {

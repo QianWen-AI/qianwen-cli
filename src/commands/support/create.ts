@@ -18,12 +18,15 @@ import { Table, type Column } from '../../ui/Table.js';
 import type { CategoryNode } from '../../types/support.js';
 
 const DESCRIPTION_MAX_LENGTH = 2000;
+const ACCEPT_LANGUAGES = ['zh_CN', 'en_US'];
+const DEFAULT_ACCEPT_LANGUAGE = 'zh_CN';
 
 export interface SupportCreateOptions {
   format?: string;
   listCategories?: boolean;
   categoryId?: string;
   description?: string;
+  acceptLanguage?: string;
 }
 
 export async function supportCreateAction(options: SupportCreateOptions): Promise<void> {
@@ -40,12 +43,27 @@ export async function supportCreateAction(options: SupportCreateOptions): Promis
     descriptionFlag !== '';
 
   try {
+    const acceptLanguage = options.acceptLanguage ?? DEFAULT_ACCEPT_LANGUAGE;
+    if (!ACCEPT_LANGUAGES.includes(acceptLanguage)) {
+      throw invalidArgError(
+        `Invalid --accept-language: ${acceptLanguage}. Allowed values: ${ACCEPT_LANGUAGES.join(', ')}.`,
+      );
+    }
+
     // Parameter co-dependency validation (non-list, non-interactive)
     if (!isListMode && !isNonInteractive) {
-      if (categoryId !== undefined && categoryId !== '' && (descriptionFlag === undefined || descriptionFlag === '')) {
+      if (
+        categoryId !== undefined &&
+        categoryId !== '' &&
+        (descriptionFlag === undefined || descriptionFlag === '')
+      ) {
         throw invalidArgError('--description is required when --category-id is provided.');
       }
-      if (descriptionFlag !== undefined && descriptionFlag !== '' && (categoryId === undefined || categoryId === '')) {
+      if (
+        descriptionFlag !== undefined &&
+        descriptionFlag !== '' &&
+        (categoryId === undefined || categoryId === '')
+      ) {
         throw invalidArgError('--category-id is required when --description is provided.');
       }
     }
@@ -55,7 +73,7 @@ export async function supportCreateAction(options: SupportCreateOptions): Promis
       throw new CliError({
         code: 'INVALID_ARGUMENT',
         message: 'Support create requires interactive terminal',
-        exitCode: EXIT_CODES.GENERAL_ERROR,
+        exitCode: EXIT_CODES.INVALID_ARGUMENT,
       });
     }
 
@@ -110,7 +128,7 @@ export async function supportCreateAction(options: SupportCreateOptions): Promis
 
       const result = await withSpinner(
         'Creating ticket',
-        () => supportService.createTicket({ categoryId, description }),
+        () => supportService.createTicket({ categoryId, description, acceptLanguage }),
         format,
       );
       if (format === 'json') {
@@ -150,7 +168,9 @@ export async function supportCreateAction(options: SupportCreateOptions): Promis
       if (format === 'json') {
         printJSON({ redirect: true, name: categorySelection.name, url: categorySelection.helpUrl });
       } else {
-        console.log(`如需服务支持，请前往 ${categorySelection.name} 官网获取帮助 ${categorySelection.helpUrl}`);
+        console.log(
+          `如需服务支持，请前往 ${categorySelection.name} 官网获取帮助 ${categorySelection.helpUrl}`,
+        );
       }
       return;
     }
@@ -239,7 +259,8 @@ export async function supportCreateAction(options: SupportCreateOptions): Promis
     // Submit
     const result = await withSpinner(
       'Creating ticket',
-      () => supportService.createTicket({ categoryId: finalCategoryId, description }),
+      () =>
+        supportService.createTicket({ categoryId: finalCategoryId, description, acceptLanguage }),
       format,
     );
 
@@ -317,9 +338,7 @@ async function outputCategoryTree(tree: CategoryNode[], format: string): Promise
   }
 
   // table (Ink)
-  await renderWithInk(
-    React.createElement(Table, { columns: CATEGORY_COLUMNS, data: items }),
-  );
+  await renderWithInk(React.createElement(Table, { columns: CATEGORY_COLUMNS, data: items }));
 }
 
 // ─── Interactive helpers ─────────────────────────────────────────────────────

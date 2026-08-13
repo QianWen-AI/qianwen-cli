@@ -21,6 +21,9 @@ const defines: Record<string, string> = {
   __BUILD_TIME__: JSON.stringify(buildTime),
   __NODE_ENV__: JSON.stringify(isProd ? 'production' : 'development'),
   __ERROR_VERBOSITY__: JSON.stringify(process.env.BUILD_ERROR_VERBOSITY ?? 'graceful'),
+  // Proxy build variant gate (scripts/build.ts --allow-proxy). Default false:
+  // the undici branch in base-client.ts is constant-folded and treeshaken away.
+  __ALLOW_PROXY__: JSON.stringify(process.env.BUILD_ALLOW_PROXY === '1'),
 };
 
 // ── Shared base options ───────────────────────────────────────────────────────
@@ -29,6 +32,17 @@ const base = {
   target: 'node18' as const,
   shims: true,
   external: ['react', 'ink', 'chalk', 'commander'],
+  // Proxy variant only: undici is inlined as CJS and calls require() on node
+  // builtins at module evaluation; esbuild's ESM require shim rejects that
+  // ("Dynamic require of 'assert' is not supported"), so provide a real
+  // createRequire. Kept out of default builds to preserve the default bundle baseline.
+  ...(process.env.BUILD_ALLOW_PROXY === '1'
+    ? {
+        banner: {
+          js: "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",
+        },
+      }
+    : {}),
   // Production: compress identifiers + whitespace + syntax
   // Development: no minify, inline sourcemap for debuggability
   minify: isProd,

@@ -11,6 +11,8 @@ export const API_PRODUCT_GATEWAY = 'sfm_bailian';
 export const API_PRODUCT_SEARCH = 'aliyun-search-maas';
 /** Product identifier for support ticket service. */
 export const API_PRODUCT_WORKORDER = 'Workorder';
+/** Product identifier for the website portal (SkillHub search/install). */
+export const API_PRODUCT_WEBSITE_PORTAL = 'WebsitePortal';
 
 // Action constants
 export const API_ACTION_LIST_MODELS = 'ListModelSeries';
@@ -21,6 +23,11 @@ export const API_ACTION_CONSUME_SUMMARY = 'MaasListConsumeSummary';
 export const API_ACTION_SEARCH_ALL = 'SearchAll';
 
 export const API_ACTION_GET_FUND_ACCOUNT_BALANCE = 'GetFundAccountAvailableAmount';
+
+// SkillHub actions (WebsitePortal) — search plus the two install-side actions.
+export const API_ACTION_SEARCH_HUB = 'SearchHub';
+export const API_ACTION_GET_HUB_SKILL = 'GetHubSkill';
+export const API_ACTION_GET_HUB_SKILL_DOWNLOAD = 'GetHubSkillDownload';
 
 // Products with optional authentication (public search API, etc.)
 export const AUTH_OPTIONAL_PRODUCTS: ReadonlySet<string> = new Set([API_PRODUCT_SEARCH]);

@@ -137,7 +137,7 @@ async function probeLatestVersion(): Promise<{
   return { current, latest, update_available: compareVersions(current, latest) < 0 };
 }
 
-/** Build a CliFacade by composing the Service layer through `createServices`. */
+/** Build an ApiClient by composing the Service layer through `createServices`. */
 export async function createClient(_options?: { endpoint?: string }): Promise<ApiClient> {
   const services: ServiceContainer = createServices();
   const { modelsService, usageService, authService } = services;

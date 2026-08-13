@@ -4,10 +4,29 @@
  */
 
 declare const __VERSION__: string;
+// Build-time define (tsup.config.ts, env BUILD_ALLOW_PROXY): gates the proxy
+// build variant. False in default builds so the undici branch below is
+// constant-folded away and undici never enters the bundle.
+declare const __ALLOW_PROXY__: boolean;
 
 import { resolveCredentials } from '../auth/credentials.js';
 import { site } from '../site.js';
 import { startRequest, endRequest, isEnabled } from './debug-buffer.js';
+
+// Proxy variant: undici's global dispatcher symbol is honored by Node's
+// built-in fetch (Node 18-22), so a one-time setGlobalDispatcher routes all
+// fetch traffic through HTTP(S)_PROXY / NO_PROXY without per-request wiring.
+// The dynamic import stays inside this constant-folded branch so default
+// builds eliminate it as dead code. No top-level await: esbuild wraps module
+// code in a non-async lazy factory, which would break the Rollup treeshake
+// pass — requests await this promise instead so the first one never bypasses
+// the proxy.
+let proxyInit: Promise<void> | undefined;
+if (typeof __ALLOW_PROXY__ !== 'undefined' && __ALLOW_PROXY__) {
+  proxyInit = import('undici').then(({ setGlobalDispatcher, EnvHttpProxyAgent }) => {
+    setGlobalDispatcher(new EnvHttpProxyAgent());
+  });
+}
 
 // ────────────────────────────────────────────────────────────────────
 // Public types
@@ -96,13 +115,16 @@ export function createBaseClient(opts?: BaseClientOptions): BaseClient {
       }, timeout);
 
       try {
-        const response = await fetch(options.url, {
+        const requestInit = {
           method,
           headers,
           body: options.body,
           signal: controller.signal,
           redirect: 'error',
-        });
+        } as const;
+
+        if (proxyInit) await proxyInit;
+        const response = await fetch(options.url, requestInit);
 
         clearTimeout(timer);
 

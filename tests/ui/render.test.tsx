@@ -130,4 +130,90 @@ describe('renderInteractive', () => {
     expect(enterCount).toBe(1);
     expect(exitCount).toBe(1);
   });
+
+  it('alt-screen 退出序列后立即补换行，使提示符落在新行', async () => {
+    await renderInteractive(<AutoExitElement />);
+
+    // EXIT_ALT_SCREEN must be immediately followed by '\n' so the shell prompt
+    // does not land on the same line as the original command.
+    const joined = writeSpy.mock.calls.map((c) => String(c[0])).join('');
+    expect(joined).toContain('\x1b[?1049l\n');
+  });
+
+  // Element that writes a given chunk through process.stdout.write DURING the
+  // alt-screen session, mimicking Ink's resize-race clearTerminal frame. The
+  // optional sink captures write()'s return value and whether the callback
+  // ran, so frame suppression can be asserted to honour the write() contract.
+  function WriteProbeElement({
+    payload,
+    sink,
+  }: {
+    payload: string;
+    sink?: { returned: boolean | null; cbCalled: boolean };
+  }) {
+    const app = useApp();
+    React.useEffect(() => {
+      const returned = process.stdout.write(payload, () => {
+        if (sink) sink.cbCalled = true;
+      });
+      if (sink) sink.returned = returned;
+      const h = setImmediate(() => app.exit());
+      return () => clearImmediate(h);
+    }, [app, payload, sink]);
+    return <Text>write-probe</Text>;
+  }
+
+  it('alt-screen 会话期间含 \\x1b[2J 的 clearTerminal 帧被整帧抑制，回调仍被调用', async () => {
+    const sink = { returned: null as boolean | null, cbCalled: false };
+    await renderInteractive(
+      <WriteProbeElement payload={'STALE:\x1b[2J\x1b[3J\x1b[H:FRAME'} sink={sink} />,
+    );
+
+    const joined = writeSpy.mock.calls.map((c) => String(c[0])).join('');
+    // Not a single byte of the stale frame reaches stdout — writing it would
+    // bypass log-update's accounting and cause the fast-drag artifacts.
+    expect(joined).not.toContain('STALE:');
+    expect(joined).not.toContain(':FRAME');
+    expect(joined).not.toContain('\x1b[2J');
+    expect(joined).not.toContain('\x1b[3J');
+    // ...while the write() contract is honoured for the suppressed caller.
+    expect(sink.returned).toBe(true);
+    expect(sink.cbCalled).toBe(true);
+  });
+
+  it('alt-screen 会话期间仅含 \\x1b[3J（无 2J）的 chunk 剥离 3J 后照常写出', async () => {
+    await renderInteractive(<WriteProbeElement payload={'RACE:\x1b[3J\x1b[H:END'} />);
+
+    const joined = writeSpy.mock.calls.map((c) => String(c[0])).join('');
+    // The scrollback-erase sequence never reaches the terminal...
+    expect(joined).not.toContain('\x1b[3J');
+    // ...while the rest of the chunk passes through intact (no suppression).
+    expect(joined).toContain('RACE:\x1b[H:END');
+  });
+
+  it('会话结束后 write 恢复原样，2J/3J 均原样通过', async () => {
+    const beforeWrite = process.stdout.write;
+    await renderInteractive(<AutoExitElement />);
+
+    // Identity restored: the session filter did not leak a wrapper.
+    expect(process.stdout.write).toBe(beforeWrite);
+
+    // Behaviour restored: a clearTerminal frame written after the session
+    // reaches stdout verbatim — neither stripped nor suppressed.
+    writeSpy.mockClear();
+    process.stdout.write('AFTER:\x1b[2J\x1b[3J\x1b[H:END');
+    const joined = writeSpy.mock.calls.map((c) => String(c[0])).join('');
+    expect(joined).toContain('AFTER:\x1b[2J\x1b[3J\x1b[H:END');
+  });
+
+  it('非 alt-screen 会话（altScreen: false）不安装过滤器，2J/3J 原样写出', async () => {
+    await renderInteractive(<WriteProbeElement payload={'RACE:\x1b[2J\x1b[3J\x1b[H:END'} />, {
+      altScreen: false,
+    });
+
+    // Main-screen sessions (inline editors / ConHost fallback) must keep the
+    // stdout stream untouched — clearTerminal repaints are desired there.
+    const joined = writeSpy.mock.calls.map((c) => String(c[0])).join('');
+    expect(joined).toContain('RACE:\x1b[2J\x1b[3J\x1b[H:END');
+  });
 });

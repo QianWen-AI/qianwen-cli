@@ -6,7 +6,7 @@
 
 > Official command-line tool for [QianWen](https://www.qianwenai.com/). Discover models, check usage, manage authentication, and diagnose local setup from a terminal or an AI agent runtime.
 
-![Version](https://img.shields.io/badge/version-1.3.0-blue)
+![Version](https://img.shields.io/badge/version-1.4.0-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
@@ -21,6 +21,7 @@
 - **Interactive and one-shot modes**: run `qianwen` with no arguments for a REPL, or pass a command for scripts, CI, and agent tools.
 - **Agent-ready contract**: commands support `--format json`, standardized exit codes, parseable JSON errors, and `--quiet` for exit-code-only checks.
 - **Model and usage workflows**: browse models, inspect model metadata, search by keyword, and review Free Tier, Token Plan, and PAYG usage.
+- **Skill discovery and install**: search SkillHub with `skills search` and install into a local directory with `skills install`; no login required.
 - **Native credential storage**: credentials are stored in the OS keychain when available, with an encrypted file fallback. No `keytar` or native Node binding is required.
 - **Self-documenting command tree**: every command supports `--help`; generated help is the canonical syntax reference.
 
@@ -84,7 +85,11 @@ qianwen models info qwen3-coder-plus
 # 4. Review current usage
 qianwen usage summary
 
-# 5. Check auth, network, config, and local environment
+# 5. Search and install a skill
+qianwen skills search deploy
+qianwen skills install qianwenai-deploy
+
+# 6. Check auth, network, config, and local environment
 qianwen doctor
 ```
 
@@ -98,6 +103,7 @@ Use one-shot commands and request JSON explicitly:
 qianwen auth status --format json
 qianwen models list --all --format json
 qianwen usage summary --period month --format json
+qianwen skills search deploy --limit 5 --format json
 qianwen doctor --format json
 ```
 
@@ -147,6 +153,7 @@ Run diagnostics to verify authentication, network access, configuration, and she
 | Workspace | `workspace list`, `workspace limit` | `--format` |
 | Subscription | `subscription status`, `subscription orders`, `subscription tokenplan status`, `subscription tokenplan seats` | `--format` |
 | Docs | `docs search`, `docs view` | `--format` |
+| Skills | `skills search`, `skills install` | `--limit`, `--dir`, `--format` |
 | Support | `support list`, `support view`, `support create`, `support reply`, `support close`, `support rate` | `--format` |
 | Config | `config list`, `config get`, `config set`, `config unset` | `--format` |
 | Diagnostics | `doctor` | `--format` |
@@ -241,6 +248,26 @@ qianwen auth login --complete --format json
 ```
 
 Credentials are stored in the OS keychain when available. If keychain access is unavailable, the CLI falls back to an encrypted local credential file. Set `QIANWEN_KEYRING=plaintext` to force plaintext file storage for debugging; `no`, `0`, `false`, and `off` also skip keychain access.
+
+---
+
+## Skills
+
+The `skills` commands discover and install skills from SkillHub. Login is not required.
+
+```bash
+# Search skills by keyword (an exact slug match is ranked first)
+qianwen skills search deploy
+qianwen skills search deploy --limit 5
+
+# Install a skill by slug into `<slug>/` under the current directory
+qianwen skills install qianwenai-deploy
+
+# Install into an explicit directory (it must already exist and be writable)
+qianwen skills install qianwenai-deploy --dir ~/.codex/skills
+```
+
+Install detects fresh install, update, and already-up-to-date states automatically, and shows the platform security status before installing. A same-named directory that is not managed by the CLI is never overwritten.
 
 ---
 

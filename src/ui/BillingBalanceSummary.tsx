@@ -16,8 +16,7 @@ export function BillingBalanceSummaryInk({ vm }: BillingBalanceSummaryProps) {
           {'Available Amount'.padEnd(18)}
           <Text color="green" bold>
             {vm.displayAmount}
-          </Text>
-          {' '}
+          </Text>{' '}
           {vm.currency}
         </Text>
       </Box>

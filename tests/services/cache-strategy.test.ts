@@ -2,35 +2,22 @@
  * Tests for createCachedFetcher — the L1 (memory) + L2 (file) cache strategy.
  *
  * Strategy:
- *   - Build minimal in-memory stubs for MemoryCache + FileCache that record
- *     every interaction via vi.fn().
+ *   - Use a real MemoryCache instance with vi.spyOn (its private store makes
+ *     structural stubs unassignable) and a minimal FileCache stub via vi.fn().
  *   - Walk through the documented L1 hit / L2 hit / full miss paths plus the
  *     skipFileCache branch and invalidate flow.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { createCachedFetcher } from '../../src/services/cache-strategy.js';
-import type { MemoryCache } from '../../src/utils/cache.js';
+import { MemoryCache } from '../../src/utils/cache.js';
 import type { FileCache } from '../../src/types/cache.js';
 
-interface MemStub extends MemoryCache {
-  store: Map<string, unknown>;
-}
-
-function makeMemoryCache(): MemStub {
-  const store = new Map<string, unknown>();
-  // Only the three methods the strategy uses; cast through unknown is fine
-  // because we never expose this stub outside the test boundary.
-  const stub = {
-    store,
-    get: vi.fn(<T>(k: string): T | null => (store.has(k) ? (store.get(k) as T) : null)),
-    set: vi.fn(<T>(k: string, v: T): void => {
-      store.set(k, v);
-    }),
-    delete: vi.fn((k: string): void => {
-      store.delete(k);
-    }),
-  };
-  return stub as unknown as MemStub;
+function makeMemoryCache(): MemoryCache {
+  const mem = new MemoryCache();
+  vi.spyOn(mem, 'get');
+  vi.spyOn(mem, 'set');
+  vi.spyOn(mem, 'delete');
+  return mem;
 }
 
 interface FileStub extends FileCache {
@@ -56,7 +43,7 @@ describe('createCachedFetcher.getOrFetch', () => {
   it('returns the L1 value without invoking L2 or upstream on hit', async () => {
     const mem = makeMemoryCache();
     const file = makeFileCache();
-    mem.store.set('k', 'l1-value');
+    mem.set('k', 'l1-value');
     const fetcher = createCachedFetcher(mem, file);
 
     const upstream = vi.fn().mockResolvedValue('upstream-value');
@@ -129,7 +116,7 @@ describe('createCachedFetcher.invalidate', () => {
   it('deletes from both tiers', () => {
     const mem = makeMemoryCache();
     const file = makeFileCache();
-    mem.store.set('k', 'm');
+    mem.set('k', 'm');
     file.store.set('k', 'f');
     const fetcher = createCachedFetcher(mem, file);
 
@@ -137,7 +124,7 @@ describe('createCachedFetcher.invalidate', () => {
 
     expect(mem.delete).toHaveBeenCalledWith('k');
     expect(file.delete).toHaveBeenCalledWith('k');
-    expect(mem.store.has('k')).toBe(false);
+    expect(mem.has('k')).toBe(false);
     expect(file.store.has('k')).toBe(false);
   });
 });

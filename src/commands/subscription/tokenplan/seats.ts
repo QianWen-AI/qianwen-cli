@@ -92,7 +92,7 @@ export function subscriptionTokenPlanSeatsAction(cmd: Command) {
           new CliError({
             code: 'INVALID_ARGUMENT',
             message: `--spec-type must be one of: ${VALID_SPEC_TYPES.join(', ')}`,
-            exitCode: EXIT_CODES.GENERAL_ERROR,
+            exitCode: EXIT_CODES.INVALID_ARGUMENT,
           }),
           format,
         );

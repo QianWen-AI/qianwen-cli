@@ -33,6 +33,13 @@ export const theme = {
   // Semantic colors
   success: chalk.hex(t.success),
   error: chalk.hex(t.error),
+  // Forced-color error for stderr writes outside Ink in table mode (e.g.,
+  // preflight failures): table output is explicitly TUI-styled, so ANSI must
+  // survive even when stderr TTY detection fails (piped / test capture).
+  // Basic 16-color red on purpose: terminals without truecolor support (e.g.
+  // macOS Terminal.app) misparse the 38;2;r;g;b sequence — the standalone `2`
+  // is applied as SGR dim, leaving all subsequent stderr text grayed out.
+  errorForced: forcedChalk.red,
   warning: chalk.hex(t.warning),
   info: chalk.hex(t.info),
   data: chalk.hex(t.data),

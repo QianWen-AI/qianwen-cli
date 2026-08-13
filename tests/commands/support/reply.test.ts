@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runCommand } from '../../helpers/run-command.js';
 import { makeMockServices } from '../../helpers/service-container-mock.js';
 import type { ServiceContainer } from '../../../src/services/index.js';
+import { EXIT_CODES } from '../../../src/utils/exit-codes.js';
 
 const holder: { services: ServiceContainer } = { services: makeMockServices() };
 
@@ -214,7 +215,7 @@ describe('support reply — interactive input', () => {
 
     const r = await runCommand(build, ['support', 'reply', 'TICKET-130000001', '--format', 'json']);
 
-    expect(r.exitCode).toBe(1);
+    expect(r.exitCode).toBe(EXIT_CODES.INVALID_ARGUMENT);
     expect(createMessageSpy).not.toHaveBeenCalled();
     const payload = JSON.parse(r.stderr) as { error: { code?: string } };
     expect(payload.error.code).toBe('INVALID_ARGUMENT');

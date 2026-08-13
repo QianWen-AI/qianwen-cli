@@ -4,6 +4,7 @@ import { makeMockServices } from '../../helpers/service-container-mock.js';
 import type { ServiceContainer } from '../../../src/services/index.js';
 import { renderInkForTest, clearRenderedFrames } from '../../helpers/ink-render-mock.js';
 import type { CategorySelection } from '../../../src/ui/CategorySelector.js';
+import { EXIT_CODES } from '../../../src/utils/exit-codes.js';
 
 const holder: { services: ServiceContainer } = { services: makeMockServices() };
 
@@ -37,6 +38,7 @@ function build(program: import('commander').Command) {
     .option('--list-categories')
     .option('--category-id <id>')
     .option('--description <text>')
+    .option('--accept-language <lang>')
     .action(async function (this: import('commander').Command, opts: Record<string, unknown>) {
       const merged: Record<string, unknown> = { ...opts };
       let cmd: import('commander').Command | null = this;
@@ -85,14 +87,14 @@ describe('support create command', () => {
       },
     });
     const r = await runCommand(build, ['support', 'create', '--format', 'json']);
-    expect(r.exitCode).toBe(1);
+    expect(r.exitCode).toBe(EXIT_CODES.INVALID_ARGUMENT);
     // handleError writes structured JSON to stderr (not stdout) in JSON mode.
     const payload = JSON.parse(r.stderr);
     expect(payload.error.code).toBe('INVALID_ARGUMENT');
     expect(payload.error.message).toContain('interactive terminal');
   });
 
-  it('rejects non-TTY stdin in text mode (writes to stderr + exitCode 1)', async () => {
+  it('rejects non-TTY stdin in text mode (writes to stderr + exitCode)', async () => {
     setStdinTTY(false);
     holder.services = makeMockServices({
       supportService: {
@@ -100,7 +102,7 @@ describe('support create command', () => {
       },
     });
     const r = await runCommand(build, ['support', 'create', '--format', 'text']);
-    expect(r.exitCode).toBe(1);
+    expect(r.exitCode).toBe(EXIT_CODES.INVALID_ARGUMENT);
     expect(r.stderr).toContain('interactive terminal');
   });
 
@@ -428,5 +430,79 @@ describe('\u975E\u4EA4\u4E92\u521B\u5EFA (--category-id + --description)', () =>
     const payload = JSON.parse(r.stdout);
     expect(payload.id).toBe('TICKET-50001');
     expect(payload.status).toBe('created');
+  });
+});
+
+// ─── --accept-language ────────────────────────────────────────────────────────
+
+describe('--accept-language', () => {
+  it('\u672A\u63D0\u4F9B\u65F6\u9ED8\u8BA4\u900F\u4F20 zh_CN', async () => {
+    let captured: { categoryId: string; description: string; acceptLanguage?: string } | undefined;
+    holder.services = makeMockServices({
+      supportService: {
+        getCategoryTree: async () => SAMPLE_TREE,
+        createTicket: async (params: { categoryId: string; description: string; acceptLanguage?: string }) => {
+          captured = params;
+          return { vid: 'TICKET-60001' };
+        },
+      },
+    });
+    const r = await runCommand(build, [
+      'support', 'create',
+      '--category-id', '582262',
+      '--description', '\u6A21\u578B\u8C03\u7528\u8D85\u65F6',
+      '--format', 'json',
+    ]);
+    expect(r.exitCode).toBeUndefined();
+    expect(captured!.acceptLanguage).toBe('zh_CN');
+  });
+
+  it('\u663E\u5F0F\u6307\u5B9A en_US \u65F6\u539F\u6837\u900F\u4F20', async () => {
+    let captured: { categoryId: string; description: string; acceptLanguage?: string } | undefined;
+    holder.services = makeMockServices({
+      supportService: {
+        getCategoryTree: async () => SAMPLE_TREE,
+        createTicket: async (params: { categoryId: string; description: string; acceptLanguage?: string }) => {
+          captured = params;
+          return { vid: 'TICKET-60002' };
+        },
+      },
+    });
+    const r = await runCommand(build, [
+      'support', 'create',
+      '--category-id', '582262',
+      '--description', 'Model call timeout',
+      '--accept-language', 'en_US',
+      '--format', 'json',
+    ]);
+    expect(r.exitCode).toBeUndefined();
+    expect(captured!.acceptLanguage).toBe('en_US');
+  });
+
+  it('\u975E\u6CD5\u503C\uFF08fr_FR\uFF09\u2192 \u62A5\u53C2\u6570\u9519\u8BEF\u5E76\u5217\u51FA\u5408\u6CD5\u53D6\u503C', async () => {
+    let ticketCreated = false;
+    holder.services = makeMockServices({
+      supportService: {
+        getCategoryTree: async () => SAMPLE_TREE,
+        createTicket: async () => {
+          ticketCreated = true;
+          return { vid: 'SHOULD-NOT-APPEAR' };
+        },
+      },
+    });
+    const r = await runCommand(build, [
+      'support', 'create',
+      '--category-id', '582262',
+      '--description', '\u67D0\u4E2A\u95EE\u9898',
+      '--accept-language', 'fr_FR',
+      '--format', 'json',
+    ]);
+    expect(r.exitCode).toBe(1);
+    const payload = JSON.parse(r.stderr);
+    expect(payload.error.code).toBe('INVALID_ARGUMENT');
+    expect(payload.error.message).toContain('fr_FR');
+    expect(payload.error.message).toContain('zh_CN');
+    expect(payload.error.message).toContain('en_US');
+    expect(ticketCreated).toBe(false);
   });
 });
