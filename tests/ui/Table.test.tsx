@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { render } from 'ink-testing-library';
 import stripAnsi from 'strip-ansi';
 import { Table } from '../../src/ui/Table.js';
+import { visibleWidth } from '../../src/ui/textWrap.js';
 
 // ── Black-box tests for column-width logic ──────────────────────────
 //
@@ -121,5 +122,90 @@ describe('Table column width logic (verified via real render)', () => {
       data: [{ x: 'much-longer-data' }],
     });
     expect(row).toContain('much-longer-data');
+  });
+});
+
+describe('Table maxTotalWidth 宽度收缩（交互渲染防物理换行）', () => {
+  function renderFrame(props: React.ComponentProps<typeof Table>): string {
+    return stripAnsi(render(<Table {...props} />).lastFrame() ?? '');
+  }
+
+  it('收缩超宽列使每行显示宽度 ≤ maxTotalWidth', () => {
+    const out = renderFrame({
+      columns: [
+        { key: 'name', header: 'Name' },
+        { key: 'desc', header: 'Desc' },
+      ],
+      data: [{ name: 'n1', desc: 'x'.repeat(80) }],
+      maxTotalWidth: 40,
+    });
+    for (const line of out.split('\n')) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(40);
+    }
+    // Overwide cell is truncated with an ellipsis rather than wrapped.
+    expect(out).toContain('…');
+  });
+
+  it('CJK 内容按显示宽度（2 列）截断，不超出约束', () => {
+    const out = renderFrame({
+      columns: [
+        { key: 'a', header: 'A' },
+        { key: 'b', header: 'B' },
+      ],
+      data: [{ a: '通义千问模型名称非常非常非常长', b: '中文描述也很长很长很长很长' }],
+      maxTotalWidth: 30,
+    });
+    for (const line of out.split('\n')) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(30);
+    }
+    expect(out).toContain('…');
+  });
+
+  it('窄列保持不收缩：只有最宽列被截断', () => {
+    const out = renderFrame({
+      columns: [
+        { key: 'idx', header: '#' },
+        { key: 'flag', header: 'OK' },
+        { key: 'text', header: 'Text' },
+      ],
+      data: [{ idx: '1', flag: 'yes', text: 'a-very-long-text-value-that-overflows' }],
+      maxTotalWidth: 30,
+    });
+    // Narrow columns keep their full content; the wide column absorbs shrinking.
+    expect(out).toContain('1');
+    expect(out).toContain('yes');
+    expect(out).toContain('…');
+    for (const line of out.split('\n')) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(30);
+    }
+  });
+
+  it('收缩不低于最小列宽：约束过小时列宽触底而非归零', () => {
+    const out = renderFrame({
+      columns: [
+        { key: 'a', header: 'AAAA' },
+        { key: 'b', header: 'BBBB' },
+      ],
+      data: [{ a: 'x'.repeat(30), b: 'y'.repeat(30) }],
+      maxTotalWidth: 8, // impossible — both columns floor at the minimum width
+    });
+    // Every cell keeps a readable stub (≥ a few chars + ellipsis) — nothing collapses to 0.
+    const dataRow = out.split('\n')[2] ?? '';
+    expect(dataRow).toContain('x');
+    expect(dataRow).toContain('y');
+  });
+
+  it('不传 maxTotalWidth 时行为与现状完全一致（零回归）', () => {
+    const props = {
+      columns: [
+        { key: 'name', header: 'Name' },
+        { key: 'desc', header: 'Desc' },
+      ],
+      data: [{ name: 'n1', desc: 'z'.repeat(60) }],
+    };
+    const unconstrained = renderFrame(props);
+    // Long value is fully present, no ellipsis introduced.
+    expect(unconstrained).toContain('z'.repeat(60));
+    expect(unconstrained).not.toContain('…');
   });
 });

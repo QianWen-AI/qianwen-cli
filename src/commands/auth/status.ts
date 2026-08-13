@@ -8,7 +8,6 @@ import { getEffectiveConfig } from '../../config/manager.js';
 import { handleError } from '../../utils/errors.js';
 import { loginCommand } from '../../utils/runtime-mode.js';
 import { theme } from '../../ui/theme.js';
-import { EXIT_CODES } from '../../utils/exit-codes.js';
 import { resetGlobalCache } from '../../utils/cache.js';
 import type { ResolvedFormat } from '../../types/config.js';
 
@@ -33,13 +32,15 @@ export function registerStatusCommand(parent: Command): void {
 async function runStatus(format: ResolvedFormat): Promise<void> {
   const resolved = resolveCredentials();
 
+  // Status is a query: reporting an unauthenticated state is still a
+  // successful lookup, so both logged-out branches below exit 0.
   if (!resolved) {
     if (format === 'json') {
       printJSON({ authenticated: false, server_verified: false });
     } else {
       console.log(`  ${theme.error(theme.symbols.fail)} Not authenticated. Run: ${loginCommand()}`);
     }
-    process.exit(EXIT_CODES.AUTH_FAILURE);
+    return;
   }
 
   const client = await createClient();
@@ -54,7 +55,7 @@ async function runStatus(format: ResolvedFormat): Promise<void> {
       console.log(`  Run: ${loginCommand()}`);
     }
     resetGlobalCache();
-    process.exit(EXIT_CODES.AUTH_FAILURE);
+    return;
   }
 
   const credentials = resolved.credentials;

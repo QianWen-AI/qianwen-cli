@@ -247,6 +247,55 @@ describe('tabCompleter', () => {
     expect(completions).toEqual(['--check']);
     expect(partial).toBe('--ch');
   });
+
+  // ── skills command coverage ──────────────────────────────────
+
+  it('top-level command list includes skills', () => {
+    expect(TOP_COMMANDS).toContain('skills');
+    const [completions, partial] = tabCompleter('skil');
+    expect(completions).toEqual(['skills']);
+    expect(partial).toBe('skil');
+  });
+
+  it('skills + space → suggests search/install subcommands plus --help', () => {
+    expect(SUBCOMMANDS.skills).toEqual(['search', 'install']);
+    const [completions] = tabCompleter('skills ');
+    expect(completions).toEqual(['search', 'install', '--help']);
+  });
+
+  it('partial skills subcommand → filtered candidates', () => {
+    const [completions, partial] = tabCompleter('skills in');
+    expect(completions).toEqual(['install']);
+    expect(partial).toBe('in');
+  });
+
+  it('skills search + space → suggests --limit, --format and --help', () => {
+    expect(COMMAND_FLAGS['skills search']).toEqual(['--limit', '--format']);
+    const [completions] = tabCompleter('skills search term ');
+    expect(completions).toContain('--limit');
+    expect(completions).toContain('--format');
+    expect(completions).toContain('--help');
+  });
+
+  it('skills install + space → suggests --dir, --format and --help but not --limit', () => {
+    expect(COMMAND_FLAGS['skills install']).toEqual(['--dir', '--format']);
+    const [completions] = tabCompleter('skills install my-skill ');
+    expect(completions).toContain('--dir');
+    expect(completions).toContain('--format');
+    expect(completions).toContain('--help');
+    expect(completions).not.toContain('--limit');
+  });
+
+  it('skills install partial --d → completes to --dir', () => {
+    const [completions, partial] = tabCompleter('skills install my-skill --d');
+    expect(completions).toEqual(['--dir']);
+    expect(partial).toBe('--d');
+  });
+
+  it('skills search --format + space → suggests format values', () => {
+    const [completions] = tabCompleter('skills search term --format ');
+    expect(completions).toEqual(['table', 'json', 'text']);
+  });
 });
 
 // ── Ghost text ───────────────────────────────────────────────────────

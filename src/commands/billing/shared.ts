@@ -69,7 +69,7 @@ export function defaultCurrentMonthCycle(): { from: string; to: string } {
 export function clampTop(raw: unknown, fallback = 10): number {
   const n = typeof raw === 'number' ? raw : Number(raw);
   if (!Number.isFinite(n) || n <= 0) return fallback;
-  return Math.min(100, Math.trunc(n));
+  return Math.min(20, Math.trunc(n));
 }
 
 export function asStringArray(raw: unknown): string[] {

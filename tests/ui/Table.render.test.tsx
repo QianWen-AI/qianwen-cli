@@ -194,3 +194,75 @@ describe('<Table /> rendering', () => {
     expect(colColorSpy).not.toHaveBeenCalled();
   });
 });
+
+describe('<Table /> cell truncation with maxWidth', () => {
+  it('truncates over-wide ASCII content to maxWidth with an ellipsis', () => {
+    const c = [
+      { key: 'slug', header: 'Slug', maxWidth: 10 },
+      { key: 'ver', header: 'Ver' },
+    ];
+    const { lastFrame } = render(
+      <Table columns={c} data={[{ slug: 'a-very-long-slug-value', ver: '1.0' }]} paddingLeft={0} />,
+    );
+    const lines = stripAnsi(lastFrame() ?? '').split('\n');
+    const dataRow = lines[2] ?? '';
+    // Cell is truncated: ellipsis present, raw value gone
+    expect(dataRow).toContain('\u2026');
+    expect(dataRow).not.toContain('a-very-long-slug-value');
+    // Following column stays in place: total row width bounded by
+    // maxWidth(10) + sep(3) + ver(3) = 16
+    expect(visibleWidth(dataRow.trimEnd())).toBeLessThanOrEqual(16);
+    expect(dataRow).toContain('1.0');
+  });
+
+  it('truncates CJK fullwidth content by display width without splitting a glyph', () => {
+    const cjk = '这是一个很长的中文技能名称';
+    const c = [
+      { key: 'name', header: 'Name', maxWidth: 9 },
+      { key: 'ver', header: 'Ver' },
+    ];
+    const { lastFrame } = render(
+      <Table columns={c} data={[{ name: cjk, ver: '1.0' }]} paddingLeft={0} />,
+    );
+    const lines = stripAnsi(lastFrame() ?? '').split('\n');
+    const dataRow = lines[2] ?? '';
+    const cell = dataRow.slice(0, dataRow.indexOf(' │ '));
+    // Truncated cell fits the 9-column cap by DISPLAY width (CJK = 2 cols)
+    expect(visibleWidth(cell.trimEnd())).toBeLessThanOrEqual(9);
+    expect(cell).toContain('\u2026');
+    // No half-glyph: everything before the ellipsis is a prefix of the original
+    const kept = cell.trimEnd().replace(/\u2026$/, '');
+    expect(cjk.startsWith(kept)).toBe(true);
+    // Next column is not pushed out of alignment
+    expect(dataRow).toContain('1.0');
+  });
+
+  it('truncates the header too when maxWidth is smaller than the header text', () => {
+    const c = [
+      { key: 'a', header: 'VeryLongHeader', maxWidth: 6 },
+      { key: 'b', header: 'B' },
+    ];
+    const { lastFrame } = render(
+      <Table columns={c} data={[{ a: 'x', b: 'y' }]} paddingLeft={0} />,
+    );
+    const header = stripAnsi(lastFrame() ?? '').split('\n')[0] ?? '';
+    expect(header).toContain('\u2026');
+    expect(header).not.toContain('VeryLongHeader');
+    // Second header still present after the divider — no column drift
+    expect(header).toContain('B');
+  });
+
+  it('leaves content untouched when no maxWidth is set (truncation no-op)', () => {
+    const longVal = 'unbounded-column-content-stays-intact';
+    const c = [
+      { key: 'k', header: 'K' },
+      { key: 'v', header: 'V' },
+    ];
+    const { lastFrame } = render(
+      <Table columns={c} data={[{ k: longVal, v: 'ok' }]} paddingLeft={0} />,
+    );
+    const out = stripAnsi(lastFrame() ?? '');
+    expect(out).toContain(longVal);
+    expect(out).not.toContain('\u2026');
+  });
+});

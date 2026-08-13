@@ -13,6 +13,13 @@ export function BillingSummaryInk({ vm }: BillingSummaryInkProps) {
   return (
     <Section title="Bill Summary" subtitle={subtitle}>
       <Box flexDirection="column" paddingLeft={2}>
+        {vm.cycles.map((c) => (
+          <Text key={c.billingCycle}>
+            {c.billingCycle.padEnd(18)}
+            {c.display[0]?.value ?? ''}
+          </Text>
+        ))}
+        {vm.cycles.length > 0 ? <Text> </Text> : null}
         {vm.fields.map((f) => (
           <Text key={f.label}>
             {f.label.padEnd(18)}

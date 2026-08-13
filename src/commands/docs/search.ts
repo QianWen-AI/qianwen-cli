@@ -10,7 +10,6 @@ import React from 'react';
 import type { Command } from 'commander';
 import { resolveFormatFromCommand, outputJSON } from '../../output/format.js';
 import { getEffectiveConfig } from '../../config/manager.js';
-import { ensureAuthenticated } from '../../auth/credentials.js';
 import { withSpinner } from '../../ui/spinner.js';
 import { renderInteractive } from '../../ui/render.js';
 import { createServices } from '../../services/index.js';
@@ -49,8 +48,6 @@ export function docsSearchAction(cmd: Command): (...args: any[]) => void | Promi
         process.exitCode = 2;
         return;
       }
-
-      ensureAuthenticated();
 
       const rawLimit = clampLimit(options.limit);
       const effectiveLimit = format === 'table' ? Math.min(rawLimit, TUI_PAGE_SIZE) : rawLimit;

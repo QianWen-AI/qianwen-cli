@@ -66,7 +66,7 @@ export async function renderBillingBreakdownByPeriodsInk(
     const slice = slices[page - 1];
     if (!slice) return [];
     const rows = slice.rows.map((r) => ({
-      label: r.groupLabel,
+      label: r.groupLabel || r.groupKey || '',
       amount: formatMoney(r.amount, ctx),
     }));
     rows.push({ label: 'TOTAL', amount: formatMoney(slice.totalAmount, ctx) });

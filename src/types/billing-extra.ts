@@ -31,6 +31,7 @@ export interface ConsumeBreakdownRow {
 
 export interface ConsumeBreakdownDto {
   rows: ConsumeBreakdownRow[];
+  totalAmount?: string;
 }
 
 export interface ConsumeBreakdown {
@@ -86,6 +87,12 @@ export interface SettleBillCycle {
   pretaxAmount: string;
   tax: string;
   aftertaxAmount: string;
+  /**
+   * Whether the server returned a settled bill record for this cycle.
+   * `true`  → a real record exists (amount may legitimately be 0).
+   * `false` → no record was returned for this cycle (rendered as "No bill").
+   */
+  settled: boolean;
 }
 
 export interface SettleBillTotals {

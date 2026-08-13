@@ -4,6 +4,10 @@ import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 import prettier from 'eslint-config-prettier';
 
+// eslint-config-prettier ships no type declarations, so its rule values are
+// inferred as plain strings; narrow them to ESLint's RuleEntry shape.
+const prettierConfig = /** @type {{ rules: import('eslint').Linter.RulesRecord }} */ (prettier);
+
 export default tseslint.config(
   {
     ignores: [
@@ -63,6 +67,22 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'off',
     },
   },
+  // Skills engine: direct fs.rmSync is forbidden — every deletion must go
+  // through the guarded safeRemove() (skills-removal.ts is the sole executor).
+  {
+    files: ['src/services/skills-*.ts'],
+    ignores: ['src/services/skills-removal.ts'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'fs',
+          property: 'rmSync',
+          message: 'Use safeRemove() from skills-removal.ts for guarded deletion.',
+        },
+      ],
+    },
+  },
   // Disable format rules that conflict with Prettier; must be placed last
-  prettier,
+  prettierConfig,
 );

@@ -9,9 +9,7 @@ import type { CallFlatApiOptions } from '../../src/api/api-client.js';
 
 // Mock TokenplanService factory
 
-function makeMockTokenplanService(
-  result: TokenPlan = { subscribed: false },
-): TokenplanService {
+function makeMockTokenplanService(result: TokenPlan = { subscribed: false }): TokenplanService {
   return {
     fetchTokenPlan: vi.fn(async () => result),
   } as unknown as TokenplanService;
@@ -26,18 +24,25 @@ function makeStubAdapter(): SubscriptionAdapter {
     }),
     transformSeatSubscriptionSummary: (raw) => ({
       plan: raw?.PlanName ?? null,
+      planCode: raw?.PlanCode ?? null,
       period: raw?.PeriodStart ? { start: raw.PeriodStart, end: raw.PeriodEnd ?? '' } : null,
+      seats: raw?.Seats ?? null,
     }),
-    transformSubscriptionDetail: (raw) => ({
-      activeInstance: raw?.Data?.[0]
+    transformSubscriptionDetail: (raw) => {
+      const data = raw?.Data;
+      const first = (Array.isArray(data) ? data : (data?.SubscriptionList ?? []))[0];
+      const activeInstance = first
         ? {
-            plan: raw.Data[0].PlanName ?? null,
-            period: raw.Data[0].StartTime
-              ? { start: String(raw.Data[0].StartTime), end: String(raw.Data[0].EndTime ?? '') }
+            instanceId: first.InstanceId ?? '',
+            status: first.Status ?? '',
+            plan: first.PlanName ?? null,
+            period: first.StartTime
+              ? { start: String(first.StartTime), end: String(first.EndTime ?? '') }
               : null,
           }
-        : null,
-    }),
+        : null;
+      return { instances: activeInstance ? [activeInstance] : [], activeInstance };
+    },
     transformAutoRenewal: (raw) => ({
       autoRenew: raw?.AutoRenewal ?? raw?.EnableRenew ?? false,
     }),
@@ -48,6 +53,7 @@ function makeStubAdapter(): SubscriptionAdapter {
       orders: (raw?.Data ?? []).map((o) => ({
         orderId: o.OrderId ?? '',
         orderType: o.OrderType ?? '',
+        orderTime: o.OrderTime ?? o.GmtCreate ?? '',
         amount: String(o.Amount ?? '0'),
         status: o.Status ?? '',
       })),
@@ -60,7 +66,11 @@ function makeStubAdapter(): SubscriptionAdapter {
     transformOrderDetail: (raw) => ({
       orderId: raw?.OrderId ?? '',
       orderType: raw?.OrderType ?? '',
+      orderTime: raw?.OrderTime ?? '',
       amount: String(raw?.Amount ?? '0'),
+      status: raw?.Status ?? '',
+      items: [],
+      invoiceUrl: raw?.InvoiceUrl ?? null,
     }),
   };
 }
@@ -116,6 +126,79 @@ describe('SubscriptionService.getStatus', () => {
     expect(out.diagnostics).toHaveLength(0);
   });
 
+  it('nulls seat-tier nextCycleFlushTime when auto-renewal is OFF', async () => {
+    const api = makeMockApiClient({
+      flat: routeByAction({
+        QuerySubscriptionGray: { IsGray: false },
+        GetSeatSubscriptionSummary: {
+          PlanName: 'Token Plan Team',
+          PeriodStart: '2026-07-27T11:00:00.000Z',
+          PeriodEnd: '2026-08-27T11:00:00.000Z',
+          SubscriptionGroupList: [
+            {
+              SpecType: 'standard',
+              SubscriptionTotalNumber: 2,
+              TotalValue: '50000',
+              SurplusValue: '49997',
+              NextCycleFlushTime: '2026-08-27T11:00:00.000Z',
+            },
+          ],
+        },
+        CheckTokenPlanAutoRenewal: { AutoRenewal: false },
+        QueryAccountBaseInfoApi: { Data: { NbId: '12345' } },
+      }),
+    });
+    const svc = new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService(),
+    );
+
+    const out = await svc.getStatus();
+    expect(out.data?.autoRenew).toBe(false);
+    expect(out.data?.seatTiers.length).toBeGreaterThan(0);
+    // Auto-renewal is off → there is no next cycle → flush time must be null,
+    // never the expiry date the server echoes back.
+    for (const tier of out.data?.seatTiers ?? []) {
+      expect(tier.nextCycleFlushTime).toBeNull();
+    }
+  });
+
+  it('keeps seat-tier nextCycleFlushTime when auto-renewal is ON', async () => {
+    const api = makeMockApiClient({
+      flat: routeByAction({
+        QuerySubscriptionGray: { IsGray: false },
+        GetSeatSubscriptionSummary: {
+          PlanName: 'Token Plan Team',
+          PeriodStart: '2026-07-27T11:00:00.000Z',
+          PeriodEnd: '2026-08-27T11:00:00.000Z',
+          SubscriptionGroupList: [
+            {
+              SpecType: 'standard',
+              SubscriptionTotalNumber: 2,
+              TotalValue: '50000',
+              SurplusValue: '49997',
+              NextCycleFlushTime: '2026-08-27T11:00:00.000Z',
+            },
+          ],
+        },
+        CheckTokenPlanAutoRenewal: { AutoRenewal: true },
+        QueryAccountBaseInfoApi: { Data: { NbId: '12345' } },
+      }),
+    });
+    const svc = new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService(),
+    );
+
+    const out = await svc.getStatus();
+    expect(out.data?.autoRenew).toBe(true);
+    expect(out.data?.seatTiers[0]?.nextCycleFlushTime).toBe('2026-08-27T11:00:00.000Z');
+  });
+
   it('returns diagnostics when a sub-call fails (no full abort)', async () => {
     const api = makeMockApiClient({
       flat: routeByAction({
@@ -126,7 +209,12 @@ describe('SubscriptionService.getStatus', () => {
         QueryAccountBaseInfoApi: null,
       }),
     });
-    const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), makeMockTokenplanService());
+    const svc = new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService(),
+    );
     const out = await svc.getStatus();
 
     expect(out.data?.isGray).toBe(false);
@@ -141,7 +229,9 @@ describe('SubscriptionService.getStatus', () => {
       },
     });
     const tokenplan = makeMockTokenplanService();
-    (tokenplan.fetchTokenPlan as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('global down'));
+    (tokenplan.fetchTokenPlan as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('global down'),
+    );
     const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), tokenplan);
     const out = await svc.getStatus();
     expect(out.data).toBeNull();
@@ -158,14 +248,18 @@ describe('SubscriptionService.getStatus', () => {
         QueryAccountBaseInfoApi: null,
       }),
     });
-    const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), makeMockTokenplanService());
+    const svc = new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService(),
+    );
     const out = await svc.getStatus({ plan: 'token' });
     expect(out.data).toBeDefined();
     const actions = api.callFlatApi.mock.calls.map((c) => (c[0] as CallFlatApiOptions).action);
     expect(actions).toContain('GetSeatSubscriptionSummary');
     expect(actions).toContain('CheckTokenPlanAutoRenewal');
   });
-
 
   it('scopes recent orders to the token-plan commodity codes', async () => {
     let orderListParams: Record<string, unknown> | undefined;
@@ -181,7 +275,12 @@ describe('SubscriptionService.getStatus', () => {
         return null;
       },
     });
-    const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), makeMockTokenplanService());
+    const svc = new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService(),
+    );
     await svc.getStatus();
     expect(orderListParams?.CommodityCodeList).toBe(
       'sfm_tokenplanteams_dp_cn,sfm_tokenplanteamsaddon_dp_cn',
@@ -198,7 +297,12 @@ describe('SubscriptionService.getStatus', () => {
         QueryAccountBaseInfoApi: null,
       }),
     });
-    const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), makeMockTokenplanService());
+    const svc = new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService(),
+    );
     const out = await svc.getStatus();
     expect(out.data?.quota).toBeNull();
   });
@@ -227,7 +331,12 @@ describe('SubscriptionService.listOrders', () => {
         return null;
       },
     });
-    const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), makeMockTokenplanService());
+    const svc = new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService(),
+    );
     const out = await svc.listOrders({ page: 1, pageSize: 10 });
     expect(actions).toContain('QueryAccountBaseInfoApi');
     expect(out.orders).toHaveLength(1);
@@ -247,7 +356,12 @@ describe('SubscriptionService.listOrders', () => {
         return null;
       },
     });
-    const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), makeMockTokenplanService());
+    const svc = new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService(),
+    );
     const out = await svc.listOrders({ page: 1, pageSize: 10 });
     expect(out.orders).toEqual([]);
   });
@@ -262,7 +376,12 @@ describe('SubscriptionService.listOrders', () => {
         return null;
       },
     });
-    const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), makeMockTokenplanService());
+    const svc = new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService(),
+    );
     await expect(svc.listOrders({ page: 1, pageSize: 10 })).rejects.toThrow(/not available/);
   });
 
@@ -275,7 +394,12 @@ describe('SubscriptionService.listOrders', () => {
         return { Data: [], TotalCount: 0, PageSize: 20, CurrentPage: 1 };
       },
     });
-    const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), makeMockTokenplanService());
+    const svc = new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService(),
+    );
     await svc.listOrders({
       page: 1,
       pageSize: 20,
@@ -300,7 +424,12 @@ describe('SubscriptionService.listOrders', () => {
         return { Data: [], TotalCount: 0, PageSize: 20, CurrentPage: 1 };
       },
     });
-    const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), makeMockTokenplanService());
+    const svc = new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService(),
+    );
     await svc.listOrders({ page: 1, pageSize: 20 });
     const listCall = api.callFlatApi.mock.calls.find(
       (call) => (call[0] as CallFlatApiOptions).action === 'QueryOrderList',
@@ -320,7 +449,12 @@ describe('SubscriptionService.listOrders', () => {
         return { Data: [], TotalCount: 0, PageSize: 10, CurrentPage: 1 };
       },
     });
-    const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), makeMockTokenplanService());
+    const svc = new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService(),
+    );
     await svc.listOrders({ page: 1, pageSize: 10 });
     await svc.listOrders({ page: 2, pageSize: 10 });
     expect(accountCalls).toBe(1);
@@ -335,7 +469,12 @@ describe('SubscriptionService.listOrders', () => {
         return { Data: [], TotalCount: 0, PageSize: 20, CurrentPage: 1 };
       },
     });
-    const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), makeMockTokenplanService());
+    const svc = new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService(),
+    );
     await svc.listOrders({ page: 1, pageSize: 20, from: '2026-04-01', to: '2026-04-30' });
 
     // Verify startDate/endDate are epoch milliseconds (local timezone)
@@ -363,7 +502,12 @@ describe('SubscriptionService.getOrderDetail', () => {
         };
       },
     });
-    const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), makeMockTokenplanService());
+    const svc = new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService(),
+    );
     const out = await svc.getOrderDetail('O-5');
     expect(out.orderId).toBe('O-5');
     expect(out.orderType).toBe('RENEW');
@@ -373,7 +517,12 @@ describe('SubscriptionService.getOrderDetail', () => {
     const api = makeMockApiClient({
       flat: async () => ({ Code: 'PERM_DENIED', Message: 'forbidden' }),
     });
-    const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), makeMockTokenplanService());
+    const svc = new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService(),
+    );
     await expect(svc.getOrderDetail('O-99')).rejects.toThrow(/not available/);
   });
 });
@@ -388,7 +537,12 @@ describe('SubscriptionService error propagation', () => {
         throw new Error('network');
       },
     });
-    const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), makeMockTokenplanService());
+    const svc = new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService(),
+    );
     await expect(svc.listOrders({ page: 1, pageSize: 10 })).rejects.toThrow('network');
   });
 });

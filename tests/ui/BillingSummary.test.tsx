@@ -55,4 +55,29 @@ describe('BillingSummaryInk', () => {
     );
     expect(out).toContain('—');
   });
+
+  it('lists each month, showing "No bill" for unsettled and ¥ amount for settled', () => {
+    const out = frame(
+      makeVm({
+        cycles: [
+          {
+            billingCycle: '202601',
+            aftertaxAmount: '',
+            settled: false,
+            display: [baseField('Total', 'No bill')],
+          },
+          {
+            billingCycle: '202602',
+            aftertaxAmount: '0',
+            settled: true,
+            display: [baseField('Total', '¥0')],
+          },
+        ],
+      }),
+    );
+    expect(out).toContain('202601');
+    expect(out).toContain('No bill');
+    expect(out).toContain('202602');
+    expect(out).toContain('¥0');
+  });
 });

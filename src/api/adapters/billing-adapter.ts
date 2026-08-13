@@ -13,7 +13,10 @@ import type {
   SettleBillSummaryDto,
   SettleBillCycle,
 } from '../../types/billing-extra.js';
-import type { GetFundAccountAvailableAmountResponse, BalanceSummaryDto } from '../../types/balance.js';
+import type {
+  GetFundAccountAvailableAmountResponse,
+  BalanceSummaryDto,
+} from '../../types/balance.js';
 import { site } from '../../site.js';
 
 export interface ConsumeLineItemDTO {
@@ -269,7 +272,7 @@ interface RawCostAnalysis {
   GroupByTotal?: RawCostAnalysisGroupItem[];
   ResultByTime?: RawCostAnalysisResultByTime[];
   Items?: Array<{ Period?: string; Amount?: unknown }>;
-  CostTotals?: { Currency?: unknown };
+  CostTotals?: { Amount?: unknown; Currency?: unknown };
   Currency?: unknown;
   Granularity?: string;
 }
@@ -286,7 +289,11 @@ export function transformConsumeBreakdown(raw: unknown): ConsumeBreakdownDto {
       amount: toAmountString(item.Amount, '0'),
     };
   });
-  return { rows };
+  const costTotalsAmount =
+    safe.CostTotals?.Amount != null ? toAmountString(safe.CostTotals.Amount, '') : '';
+  const dto: ConsumeBreakdownDto = { rows };
+  if (costTotalsAmount) dto.totalAmount = costTotalsAmount;
+  return dto;
 }
 
 interface RawSettleBillCycle {
@@ -316,6 +323,7 @@ export function transformSettleBillSummary(raw: unknown): SettleBillSummaryDto {
     pretaxAmount: toAmountString(c.TotalPriceSettleFee ?? c.PretaxAmount, '0'),
     tax: toAmountString(c.TotalPriceTaxFee ?? c.Tax, '0'),
     aftertaxAmount: toAmountString(c.TotalPricePostTaxFee ?? c.AftertaxAmount, '0'),
+    settled: true,
   }));
   const firstItemCurrency = data.length > 0 ? data[0]?.Currency : undefined;
   return {

@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import { Section } from './Section.js';
+import { AltScreenContext } from './render.js';
+import { useTerminalSize } from './useTerminalSize.js';
+import { truncateByDisplayWidth, visibleWidth } from './textWrap.js';
 import { colors } from './theme.js';
 import { DocsViewer } from './DocsViewer.js';
 import { openBrowser } from '../utils/open-browser.js';
@@ -18,13 +21,47 @@ export interface InteractiveDocsSearchProps {
 
 type Mode = 'list' | 'viewer';
 
-function HighlightedText({ value }: { value: string }) {
+const EM_TOKEN_RE = /(<em>[\s\S]*?<\/em>)/gi;
+const EM_MATCH_RE = /^<em>([\s\S]*?)<\/em>$/i;
+
+// Cap a highlighted value to `maxWidth` display columns. The <em> tags are
+// invisible at render time, so truncating the raw string would spend budget
+// on tag characters and over-truncate; walk the same token stream
+// HighlightedText consumes, measure inner text only and re-close the tag
+// when the cut lands inside a highlight. Isomorphic to DocsViewer's
+// truncateMarkedLine (which is bound to its [BOLD]/[ITALIC] markup).
+function truncateHighlighted(value: string, maxWidth: number): string {
+  if (!value || maxWidth <= 0) return '';
+  let out = '';
+  let remaining = maxWidth;
+  for (const token of value.split(EM_TOKEN_RE)) {
+    if (!token || remaining <= 0) continue;
+    const m = token.match(EM_MATCH_RE);
+    const inner = m ? (m[1] ?? '') : token;
+    const w = visibleWidth(inner);
+    if (w <= remaining) {
+      out += token;
+      remaining -= w;
+      continue;
+    }
+    const cut = truncateByDisplayWidth(inner, remaining);
+    out += m ? `<em>${cut}</em>` : cut;
+    break;
+  }
+  return out;
+}
+
+function HighlightedText({ value, maxWidth }: { value: string; maxWidth?: number }) {
   if (!value) return null;
-  const parts = value.split(/(<em>[\s\S]*?<\/em>)/gi);
+  // A zero (or negative) budget means the tag already consumed the whole
+  // line: render nothing so the first line never exceeds its budget.
+  if (maxWidth != null && maxWidth <= 0) return null;
+  const capped = maxWidth != null ? truncateHighlighted(value, maxWidth) : value;
+  const parts = capped.split(EM_TOKEN_RE);
   return (
-    <Text>
+    <Text wrap="truncate-end">
       {parts.map((part, idx) => {
-        const m = part.match(/^<em>([\s\S]*?)<\/em>$/i);
+        const m = part.match(EM_MATCH_RE);
         if (m) {
           return (
             <Text key={idx} color={colors.accent} bold>
@@ -42,53 +79,79 @@ function ResultRow({
   item,
   selected,
   placeholder,
+  maxWidth,
 }: {
   item: DocsSearchItemViewModel;
   selected: boolean;
   placeholder: string;
+  maxWidth?: number;
 }) {
   const prefix = selected ? '\u25B6 ' : '  ';
   const prefixColor = selected ? colors.brand : colors.muted;
+  // First-line budget after the selection prefix; sub-lines (url/summary)
+  // additionally lose their own paddingLeft={2}.
+  const lineBudget = maxWidth != null ? Math.max(1, maxWidth - visibleWidth(prefix)) : undefined;
+  const subBudget = maxWidth != null ? Math.max(1, maxWidth - 2) : undefined;
 
   if (item.isDegraded) {
     return (
       <Box>
-        <Text color={prefixColor}>{prefix}</Text>
-        <Text color={colors.muted}>{placeholder}</Text>
+        <Text color={prefixColor} wrap="truncate-end">
+          {prefix}
+        </Text>
+        <Text color={colors.muted} wrap="truncate-end">
+          {lineBudget != null ? truncateByDisplayWidth(placeholder, lineBudget) : placeholder}
+        </Text>
       </Box>
     );
+  }
+
+  const rawTag = item.subBizType ? `${item.subBizType} ` : '';
+  const tag = lineBudget != null && rawTag ? truncateByDisplayWidth(rawTag, lineBudget) : rawTag;
+  // Tag wins the budget contest: when it fills the whole line the title
+  // budget drops to 0 (title hidden) instead of being floored to 1, which
+  // would push the first line one column past contentWidth and physically
+  // wrap on very narrow terminals.
+  let titleBudget: number | undefined;
+  if (lineBudget != null) {
+    const remaining = lineBudget - visibleWidth(tag);
+    titleBudget = remaining > 0 ? remaining : 0;
   }
 
   return (
     <Box flexDirection="column">
       <Box>
-        <Text color={selected ? colors.brand : prefixColor} bold={selected}>
+        <Text color={selected ? colors.brand : prefixColor} bold={selected} wrap="truncate-end">
           {prefix}
         </Text>
-        {item.subBizType ? (
+        {tag ? (
           <Text
             color={selected ? colors.headerFg : colors.muted}
             backgroundColor={selected ? colors.headerBg : undefined}
+            wrap="truncate-end"
           >
-            {item.subBizType}{' '}
+            {tag}
           </Text>
         ) : null}
         <Text
           color={selected ? colors.headerFg : undefined}
           bold={selected}
           backgroundColor={selected ? colors.headerBg : undefined}
+          wrap="truncate-end"
         >
-          <HighlightedText value={item.highlightedTitle || item.title} />
+          <HighlightedText value={item.highlightedTitle || item.title} maxWidth={titleBudget} />
         </Text>
       </Box>
       {item.url ? (
         <Box paddingLeft={2}>
-          <Text color={colors.muted}>{item.url}</Text>
+          <Text color={colors.muted} wrap="truncate-end">
+            {subBudget != null ? truncateByDisplayWidth(item.url, subBudget) : item.url}
+          </Text>
         </Box>
       ) : null}
       {selected && item.summary ? (
         <Box paddingLeft={2}>
-          <HighlightedText value={item.highlightedSummary || item.summary} />
+          <HighlightedText value={item.highlightedSummary || item.summary} maxWidth={subBudget} />
         </Box>
       ) : null}
       <Text> </Text>
@@ -102,6 +165,8 @@ export function InteractiveDocsSearch({
   fetchContent,
 }: InteractiveDocsSearchProps) {
   const { exit } = useApp();
+  const { columns: termCols, rows: termRows } = useTerminalSize();
+  const inAltScreen = useContext(AltScreenContext);
 
   const [mode, setMode] = useState<Mode>('list');
   const [page, setPage] = useState<number>(initialVm.page);
@@ -183,7 +248,7 @@ export function InteractiveDocsSearch({
     }
     if (input === 'o') {
       const item = vm.items[selectedIndex];
-      if (item && !item.isDegraded && item.url) openBrowser(item.url);
+      if (item && !item.isDegraded && item.url) void openBrowser(item.url);
       return;
     }
     if (key.return) {
@@ -226,38 +291,67 @@ export function InteractiveDocsSearch({
   }
   const footer = stableFooterRef.current || currentFooter;
 
+  // On the alt-screen, keep the total rendered height strictly below termRows:
+  // hitting the full height flips Ink into its full-repaint path which emits
+  // \x1b[3J and wipes main-screen scrollback (same guard as InteractiveTable /
+  // DocsViewer). Off the alt-screen pad to the full terminal height so Ink
+  // full-repaints and never leaves stale rows. Floor at 1, not 5: on terminals
+  // ≤ 5 rows a fixed floor would put minHeight back at >= termRows and
+  // re-trigger clearTerminal on every frame.
+  const safeMinHeight = inAltScreen ? Math.max(1, termRows - 1) : termRows;
+  // Width budget for result rows: Section paddingLeft (2) + list Box
+  // paddingLeft (2). Recomputed on resize via useTerminalSize so every logical
+  // line stays <= terminal columns and never physically wraps.
+  const contentWidth = Math.max(1, termCols - 4);
+
   if (vm.isEmpty) {
     return (
-      <Section title="Documentation Search" subtitle={subtitle} footer={footer}>
-        <Box paddingLeft={2}>
-          <Text color={colors.muted}>No results.</Text>
-        </Box>
-      </Section>
+      <Box flexDirection="column" width={termCols} minHeight={safeMinHeight}>
+        <Section
+          title="Documentation Search"
+          subtitle={subtitle}
+          footer={footer}
+          maxWidth={termCols}
+        >
+          <Box paddingLeft={2}>
+            <Text color={colors.muted} wrap="truncate-end">
+              No results.
+            </Text>
+          </Box>
+        </Section>
+      </Box>
     );
   }
 
   return (
-    <Section title="Documentation Search" subtitle={subtitle} footer={footer}>
-      {loading && vm.items.length === 0 ? (
-        <Box paddingLeft={2}>
-          <Text color={colors.muted}>Loading...</Text>
-        </Box>
-      ) : contentLoading ? (
-        <Box paddingLeft={2}>
-          <Text color={colors.muted}>Fetching document...</Text>
-        </Box>
-      ) : (
-        <Box flexDirection="column" paddingLeft={2}>
-          {vm.items.map((item, idx) => (
-            <ResultRow
-              key={idx}
-              item={item}
-              selected={idx === selectedIndex}
-              placeholder={vm.degradedPlaceholder}
-            />
-          ))}
-        </Box>
-      )}
-    </Section>
+    <Box flexDirection="column" width={termCols} minHeight={safeMinHeight}>
+      <Section title="Documentation Search" subtitle={subtitle} footer={footer} maxWidth={termCols}>
+        {loading && vm.items.length === 0 ? (
+          <Box paddingLeft={2}>
+            <Text color={colors.muted} wrap="truncate-end">
+              Loading...
+            </Text>
+          </Box>
+        ) : contentLoading ? (
+          <Box paddingLeft={2}>
+            <Text color={colors.muted} wrap="truncate-end">
+              Fetching document...
+            </Text>
+          </Box>
+        ) : (
+          <Box flexDirection="column" paddingLeft={2}>
+            {vm.items.map((item, idx) => (
+              <ResultRow
+                key={idx}
+                item={item}
+                selected={idx === selectedIndex}
+                placeholder={vm.degradedPlaceholder}
+                maxWidth={contentWidth}
+              />
+            ))}
+          </Box>
+        )}
+      </Section>
+    </Box>
   );
 }

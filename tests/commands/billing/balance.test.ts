@@ -170,7 +170,7 @@ describe('billing balance recharge', () => {
   const expectedUrl = 'https://platform.qianwenai.com/home/billing/overview?target=recharge';
 
   it('successfully opens browser with --format json', async () => {
-    openBrowserSpy.mockImplementation(() => {});
+    openBrowserSpy.mockResolvedValue(true);
     const r = await runCommand(buildRecharge, [
       'billing',
       'balance',
@@ -186,9 +186,7 @@ describe('billing balance recharge', () => {
   });
 
   it('sets opened to false when browser open fails with --format json', async () => {
-    openBrowserSpy.mockImplementation(() => {
-      throw new Error('spawn failed');
-    });
+    openBrowserSpy.mockResolvedValue(false);
     const r = await runCommand(buildRecharge, [
       'billing',
       'balance',
@@ -204,7 +202,7 @@ describe('billing balance recharge', () => {
   });
 
   it('outputs recharge URL in text format', async () => {
-    openBrowserSpy.mockImplementation(() => {});
+    openBrowserSpy.mockResolvedValue(true);
     const r = await runCommand(buildRecharge, [
       'billing',
       'balance',

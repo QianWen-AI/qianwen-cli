@@ -3,6 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import { Section } from './Section.js';
 import { colors } from './theme.js';
 import { openBrowser } from '../utils/open-browser.js';
+import { truncateByDisplayWidth, visibleWidth } from './textWrap.js';
 import { useTerminalSize } from './useTerminalSize.js';
 import { AltScreenContext } from './render.js';
 import type { DocContentViewModel } from '../view-models/docs/index.js';
@@ -36,8 +37,10 @@ function deriveTitle(lines: string[] | null, url: string): string {
   return extractDomain(url);
 }
 
+const INLINE_MARK_RE = /(\[BOLD\][\s\S]*?\[\/BOLD\]|\[ITALIC\][\s\S]*?\[\/ITALIC\])/g;
+
 function renderInlineMarks(text: string, baseKey: string): React.ReactNode {
-  const tokens = text.split(/(\[BOLD\][\s\S]*?\[\/BOLD\]|\[ITALIC\][\s\S]*?\[\/ITALIC\])/g);
+  const tokens = text.split(INLINE_MARK_RE);
   return tokens.map((token, idx) => {
     const boldMatch = token.match(/^\[BOLD\]([\s\S]*?)\[\/BOLD\]$/);
     if (boldMatch) {
@@ -59,55 +62,107 @@ function renderInlineMarks(text: string, baseKey: string): React.ReactNode {
   });
 }
 
-function MarkdownLine({ line, index }: { line: string; index: number }) {
+// Cap a marked-up paragraph line to `maxWidth` display columns. The
+// [BOLD]/[ITALIC] markers are invisible at render time, so truncating the raw
+// string would spend budget on marker characters and over-truncate; walk the
+// same token stream renderInlineMarks consumes and measure inner text only.
+function truncateMarkedLine(line: string, maxWidth: number): string {
+  let out = '';
+  let remaining = maxWidth;
+  for (const token of line.split(INLINE_MARK_RE)) {
+    if (!token || remaining <= 0) continue;
+    const mark = token.match(/^\[(BOLD|ITALIC)\]([\s\S]*?)\[\/\1\]$/);
+    const inner = mark ? (mark[2] ?? '') : token;
+    const w = visibleWidth(inner);
+    if (w <= remaining) {
+      out += token;
+      remaining -= w;
+      continue;
+    }
+    const cut = truncateByDisplayWidth(inner, remaining);
+    out += mark ? `[${mark[1]}]${cut}[/${mark[1]}]` : cut;
+    break;
+  }
+  return out;
+}
+
+function MarkdownLine({
+  line,
+  index,
+  maxWidth,
+}: {
+  line: string;
+  index: number;
+  maxWidth: number;
+}) {
   const key = `line-${index}`;
   // Empty lines must output at least one space so Yoga measures height = 1;
   // measureText('') returns height 0 and breaks total-output-height accounting.
   if (!line) return <Text key={key}> </Text>;
+  // Every branch hard-caps the visible width via truncateByDisplayWidth: a
+  // logical line wider than the terminal physically wraps, desyncing Ink's
+  // logical-line-count frame erasure (same root cause as the InteractiveTable
+  // resize corruption). Ink's own wrap="truncate-end" stays as a backstop, but
+  // it measures with string-width, which under-counts ZWJ emoji on xterm.js —
+  // our visibleWidth-based truncation is the authoritative cap.
   if (line.startsWith('[H1] ')) {
     return (
       <Text bold color={colors.brand} wrap="truncate-end">
-        {line.slice(5)}
+        {truncateByDisplayWidth(line.slice(5), maxWidth)}
       </Text>
     );
   }
   if (line.startsWith('[H2] ')) {
     return (
       <Text bold wrap="truncate-end">
-        {line.slice(5)}
+        {truncateByDisplayWidth(line.slice(5), maxWidth)}
       </Text>
     );
   }
   if (line.startsWith('[H3] ')) {
     return (
       <Text underline wrap="truncate-end">
-        {line.slice(5)}
+        {truncateByDisplayWidth(line.slice(5), maxWidth)}
       </Text>
     );
   }
   if (line.startsWith('[CODE] ')) {
     return (
       <Text backgroundColor={colors.codeBg} color={colors.codeFg} wrap="truncate-end">
-        {line.slice(7) || ' '}
+        {truncateByDisplayWidth(line.slice(7) || ' ', maxWidth)}
       </Text>
     );
   }
   if (line.startsWith('[LIST] ')) {
-    return <Text wrap="truncate-end">{`  \u2022 ${line.slice(7)}`}</Text>;
+    return (
+      <Text wrap="truncate-end">
+        {truncateByDisplayWidth(`  \u2022 ${line.slice(7)}`, maxWidth)}
+      </Text>
+    );
   }
-  return <Text wrap="truncate-end">{renderInlineMarks(line, key)}</Text>;
+  return (
+    <Text wrap="truncate-end">{renderInlineMarks(truncateMarkedLine(line, maxWidth), key)}</Text>
+  );
 }
 
 export function DocsViewer({ vm, url, onBack, onQuit }: DocsViewerProps) {
-  const { rows } = useTerminalSize();
+  const { columns, rows } = useTerminalSize();
   const inAltScreen = useContext(AltScreenContext);
+  // Width budget for content lines: Section paddingLeft (2) + content Box
+  // paddingLeft (2). Recomputed on resize via useTerminalSize so every logical
+  // line stays <= terminal columns and never physically wraps.
+  const contentWidth = Math.max(1, columns - 4);
   // On the alt-screen, keep the total rendered height strictly below `rows`.
   // Ink switches to its clearTerminal path when output height >= rows (see
   // ink: `outputHeight >= stdout.rows`), and that path emits \x1b[2J\x1b[3J\x1b[H
   // — the \x1b[3J wipes terminal scrollback on Terminal.app/iTerm2. Reserving one
   // row keeps Ink on plain line-redraws, so the scrollback (the user's command
-  // history) survives. Off the alt-screen this reservation is not applied.
-  const viewHeight = Math.max(5, rows - FIXED_CHROME_LINES - (inAltScreen ? 1 : 0));
+  // history) survives. On tiny terminals the floor compresses to 1 (not 5):
+  // a fixed floor would push chrome + content back to >= rows and re-trigger
+  // clearTerminal on every frame. Off the alt-screen the floor of 5 stays.
+  const viewHeight = inAltScreen
+    ? Math.max(1, rows - FIXED_CHROME_LINES - 1)
+    : Math.max(5, rows - FIXED_CHROME_LINES);
 
   const lines = useMemo<string[]>(() => {
     if (vm.renderedLines && vm.renderedLines.length > 0) return vm.renderedLines;
@@ -145,7 +200,7 @@ export function DocsViewer({ vm, url, onBack, onQuit }: DocsViewerProps) {
       return;
     }
     if (input === 'o') {
-      openBrowser(url);
+      void openBrowser(url);
       return;
     }
     if (key.upArrow && key.shift) {
@@ -179,10 +234,14 @@ export function DocsViewer({ vm, url, onBack, onQuit }: DocsViewerProps) {
   });
 
   if (vm.content == null) {
+    // Error/URL lines keep Ink's default wrap: folding into multiple logical
+    // lines is safe (logical = physical) and preserves the full message.
     return (
-      <Section title={title} subtitle={domain} footer="b: back   q: quit">
+      <Section title={title} subtitle={domain} footer="b: back   q: quit" maxWidth={columns}>
         <Box paddingLeft={2} flexDirection="column">
-          <Text color={colors.muted}>{'\u2190'} Back to results (press b)</Text>
+          <Text color={colors.muted}>
+            {truncateByDisplayWidth('\u2190 Back to results (press b)', contentWidth)}
+          </Text>
           <Text> </Text>
           <Text color={colors.error}>Failed to load document.</Text>
           {vm.error ? <Text color={colors.muted}>{vm.error}</Text> : null}
@@ -209,21 +268,24 @@ export function DocsViewer({ vm, url, onBack, onQuit }: DocsViewerProps) {
 
   return (
     <Box flexDirection="column">
-      <Section title={title} subtitle={domain} footer={footer}>
+      <Section title={title} subtitle={domain} footer={footer} maxWidth={columns}>
         <Box paddingLeft={2} flexDirection="column">
           <Text color={colors.muted} wrap="truncate-end">
-            {'\u2190'} Back to results (press b)
+            {truncateByDisplayWidth('\u2190 Back to results (press b)', contentWidth)}
           </Text>
         </Box>
         <Box paddingLeft={2} flexDirection="column" marginTop={1}>
           {visible.length === 0 ? (
-            <Text color={colors.muted}>(empty document)</Text>
+            <Text color={colors.muted} wrap="truncate-end">
+              (empty document)
+            </Text>
           ) : (
             visible.map((line, idx) => (
               <MarkdownLine
                 key={`${clampedScrollOffset}-${idx}`}
                 line={line}
                 index={clampedScrollOffset + idx}
+                maxWidth={contentWidth}
               />
             ))
           )}

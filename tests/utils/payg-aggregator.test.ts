@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   aggregatePaygByModel,
   aggregatePaygByDate,
+  mergePaygModelData,
   type PaygItem,
-} from '../../src/api/payg-aggregator.js';
+} from '../../src/utils/payg-aggregator.js';
+import type { ConsumeBreakdownRow } from '../../src/types/billing-extra.js';
 
 function item(overrides: Partial<PaygItem>): PaygItem {
   return {
@@ -62,6 +64,17 @@ describe('aggregatePaygByModel (summary view)', () => {
     ];
     const r = aggregatePaygByModel(items);
     expect(r.total.cost).toBeCloseTo(3.6, 6);
+  });
+
+  it('keeps sub-cent digits beyond four decimals in per-model and total costs', () => {
+    const items: PaygItem[] = [
+      item({ modelId: 'a', cost: 0.000123456789, usageValue: 1 }),
+      item({ modelId: 'a', cost: 0.000000000001, usageValue: 1 }),
+    ];
+    const r = aggregatePaygByModel(items);
+    // Exact BigInt fixed-point sum — no rounding to 4 decimals.
+    expect(r.models[0].cost).toBe(0.00012345679);
+    expect(r.total.cost).toBe(0.00012345679);
   });
 
   it('drops items missing modelId', () => {
@@ -149,12 +162,22 @@ describe('aggregatePaygByDate (breakdown view)', () => {
     expect(rows[0].tokens_in).toBe(2);
   });
 
-  it('rounds cost to 4 decimal places', () => {
+  it('preserves full cost precision without fixed-decimal rounding', () => {
     const items: PaygItem[] = [
       item({ billingDate: '2026-04-01', cost: 0.123456789, usageValue: 1 }),
     ];
     const rows = aggregatePaygByDate(items);
-    expect(rows[0].cost).toBe(0.1235);
+    expect(rows[0].cost).toBe(0.123456789);
+  });
+
+  it('sums costs exactly without floating-point drift digits', () => {
+    const items: PaygItem[] = [
+      item({ billingDate: '2026-04-01', cost: 0.1, usageValue: 1 }),
+      item({ billingDate: '2026-04-01', cost: 0.2, usageValue: 1 }),
+    ];
+    const rows = aggregatePaygByDate(items);
+    // Plain float addition would yield 0.30000000000000004.
+    expect(rows[0].cost).toBe(0.3);
   });
 
   it('returns [] on empty input', () => {
@@ -261,5 +284,79 @@ describe('summary and breakdown reconcile on shared input', () => {
     const summaryCost = summary.models[0].cost;
     const breakdownCost = breakdown.reduce((s, r) => s + r.cost, 0);
     expect(Math.abs(summaryCost - breakdownCost)).toBeLessThan(0.0001);
+  });
+});
+
+describe('mergePaygModelData', () => {
+  it('uses cost from costRows and usage from items', () => {
+    const costRows: ConsumeBreakdownRow[] = [
+      { groupKey: 'qwen-plus', groupLabel: 'qwen-plus', amount: '15.5' },
+      { groupKey: 'qwen-max', groupLabel: 'qwen-max', amount: '8.2' },
+    ];
+    const items: PaygItem[] = [
+      item({ modelId: 'qwen-plus', usageValue: 5000, cost: 10, billingUnit: 'tokens' }),
+      item({ modelId: 'qwen-plus', usageValue: 3000, cost: 5.5, billingUnit: 'tokens' }),
+      item({ modelId: 'qwen-max', usageValue: 2000, cost: 8.2, billingUnit: 'tokens' }),
+    ];
+    const models = mergePaygModelData(costRows, items);
+
+    expect(models).toHaveLength(2);
+    const plus = models.find((m) => m.model_id === 'qwen-plus')!;
+    expect(plus.cost).toBe(15.5);
+    expect(plus.usage.tokens).toBe(8000);
+
+    const max = models.find((m) => m.model_id === 'qwen-max')!;
+    expect(max.cost).toBe(8.2);
+    expect(max.usage.tokens).toBe(2000);
+  });
+
+  it('includes models from costRows even without matching items (usage={})', () => {
+    const costRows: ConsumeBreakdownRow[] = [
+      { groupKey: 'qwen3.7-max', groupLabel: 'qwen3.7-max', amount: '22.0' },
+    ];
+    const models = mergePaygModelData(costRows, []);
+
+    expect(models).toHaveLength(1);
+    expect(models[0].model_id).toBe('qwen3.7-max');
+    expect(models[0].cost).toBe(22);
+    expect(models[0].usage).toEqual({});
+  });
+
+  it('includes items-only models with cost=0 when they have non-zero usage', () => {
+    const costRows: ConsumeBreakdownRow[] = [
+      { groupKey: 'qwen-plus', groupLabel: 'qwen-plus', amount: '5.0' },
+    ];
+    const items: PaygItem[] = [
+      item({ modelId: 'qwen-plus', usageValue: 1000, cost: 5, billingUnit: 'tokens' }),
+      item({ modelId: 'free-model', usageValue: 500, cost: 0, billingUnit: 'tokens' }),
+    ];
+    const models = mergePaygModelData(costRows, items);
+
+    expect(models).toHaveLength(2);
+    const free = models.find((m) => m.model_id === 'free-model')!;
+    expect(free.cost).toBe(0);
+    expect(free.usage.tokens).toBe(500);
+  });
+
+  it('sorts by cost descending', () => {
+    const costRows: ConsumeBreakdownRow[] = [
+      { groupKey: 'a', groupLabel: 'a', amount: '1' },
+      { groupKey: 'b', groupLabel: 'b', amount: '10' },
+      { groupKey: 'c', groupLabel: 'c', amount: '5' },
+    ];
+    const models = mergePaygModelData(costRows, []);
+    expect(models.map((m) => m.model_id)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('handles mixed billing units correctly', () => {
+    const costRows: ConsumeBreakdownRow[] = [
+      { groupKey: 'wan2.6-t2v', groupLabel: 'wan2.6-t2v', amount: '3.0' },
+    ];
+    const items: PaygItem[] = [
+      item({ modelId: 'wan2.6-t2v', usageValue: 60, cost: 3, billingUnit: 'seconds' }),
+    ];
+    const models = mergePaygModelData(costRows, items);
+    expect(models[0].usage.seconds).toBe(60);
+    expect(models[0].cost).toBe(3);
   });
 });

@@ -478,6 +478,31 @@ describe('transformConsumeBreakdown', () => {
   it('handles a non-array GroupByTotal field gracefully', () => {
     expect(transformConsumeBreakdown({ GroupByTotal: 'not-an-array' })).toEqual({ rows: [] });
   });
+
+  it('includes totalAmount from CostTotals.Amount when present', () => {
+    const result = transformConsumeBreakdown({
+      GroupByTotal: [{ Key: 'qwen-plus', Amount: '10.00' }],
+      CostTotals: { Amount: '25.50', Currency: 'CNY' },
+    });
+    expect(result.totalAmount).toBe('25.50');
+    expect(result.rows).toHaveLength(1);
+  });
+
+  it('omits totalAmount when CostTotals.Amount is null or missing', () => {
+    const result = transformConsumeBreakdown({
+      GroupByTotal: [{ Key: 'qwen-plus', Amount: '10.00' }],
+      CostTotals: { Currency: 'CNY' },
+    });
+    expect(result.totalAmount).toBeUndefined();
+  });
+
+  it('handles numeric CostTotals.Amount', () => {
+    const result = transformConsumeBreakdown({
+      GroupByTotal: [],
+      CostTotals: { Amount: 42.5 },
+    });
+    expect(result.totalAmount).toBe('42.5');
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────
@@ -518,12 +543,14 @@ describe('transformSettleBillSummary', () => {
           pretaxAmount: '100.00',
           tax: '6.50',
           aftertaxAmount: '106.50',
+          settled: true,
         },
         {
           billingCycle: '2026-05',
           pretaxAmount: '50',
           tax: '3',
           aftertaxAmount: '53',
+          settled: true,
         },
       ],
       // Top-level Currency missing → fall back to first item Currency.

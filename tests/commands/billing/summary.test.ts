@@ -4,6 +4,7 @@ import { makeMockServices } from '../../helpers/service-container-mock.js';
 import type { ServiceContainer } from '../../../src/services/index.js';
 import type { SettleBillSummary } from '../../../src/types/billing-extra.js';
 import { renderInkForTest, clearRenderedFrames } from '../../helpers/ink-render-mock.js';
+import { EXIT_CODES } from '../../../src/utils/exit-codes.js';
 
 const holder: { services: ServiceContainer } = { services: makeMockServices() };
 
@@ -54,6 +55,7 @@ const sample: SettleBillSummary = {
       pretaxAmount: '100.0',
       tax: '10.0',
       aftertaxAmount: '110.0',
+      settled: true,
     },
   ],
   totals: {
@@ -87,6 +89,35 @@ describe('billing summary command', () => {
     expect(spy).toHaveBeenCalledWith({ from: '2026-04', to: '2026-04', chargeType: 'all' });
   });
 
+  it('JSON emits null amount + settled=false for months with no bill record', async () => {
+    const withGap: SettleBillSummary = {
+      cycles: [
+        { billingCycle: '202601', pretaxAmount: '0', tax: '0', aftertaxAmount: '0', settled: false },
+        { billingCycle: '202602', pretaxAmount: '5', tax: '0', aftertaxAmount: '5', settled: true },
+      ],
+      totals: { pretaxAmount: '5', tax: '0', aftertaxAmount: '5' },
+      currency: 'CNY',
+      period: { from: '2026-01', to: '2026-02' },
+      chargeType: 'all',
+    };
+    holder.services = makeMockServices({
+      billingService: { getSettleBillSummary: vi.fn(async () => withGap) },
+    });
+    const r = await runCommand(build, [
+      'billing',
+      'summary',
+      '--from',
+      '2026-01',
+      '--to',
+      '2026-02',
+      '--format',
+      'json',
+    ]);
+    const cycles = JSON.parse(r.stdout).cycles;
+    expect(cycles[0]).toEqual({ billingCycle: '202601', aftertaxAmount: null, settled: false });
+    expect(cycles[1]).toEqual({ billingCycle: '202602', aftertaxAmount: '5', settled: true });
+  });
+
   it('uses default current-month cycle when --from/--to omitted', async () => {
     const spy = vi.fn(async () => sample);
     holder.services = makeMockServices({
@@ -98,24 +129,86 @@ describe('billing summary command', () => {
     expect(arg.to).toBe(arg.from);
   });
 
-  it('ignores invalid YYYY-MM cycle and falls back to default', async () => {
+  it('rejects --from with invalid month (2026-13)', async () => {
     const spy = vi.fn(async () => sample);
     holder.services = makeMockServices({
       billingService: { getSettleBillSummary: spy },
     });
-    await runCommand(build, [
+    const r = await runCommand(build, [
       'billing',
       'summary',
       '--from',
-      '2026/04/01',
-      '--to',
-      'oops',
+      '2026-13',
       '--format',
       'json',
     ]);
-    const arg = spy.mock.calls[0][0] as { from: string; to: string };
-    expect(arg.from).toMatch(/^\d{4}-\d{2}$/);
-    expect(arg.to).toMatch(/^\d{4}-\d{2}$/);
+    expect(r.exitCode).toBe(EXIT_CODES.INVALID_ARGUMENT);
+    const payload = JSON.parse(r.stderr);
+    expect(payload.error.code).toBe('INVALID_ARGUMENT');
+    expect(payload.error.message).toContain('Invalid --from "2026-13"');
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('rejects --to with invalid month (2025-00)', async () => {
+    const spy = vi.fn(async () => sample);
+    holder.services = makeMockServices({
+      billingService: { getSettleBillSummary: spy },
+    });
+    const r = await runCommand(build, [
+      'billing',
+      'summary',
+      '--to',
+      '2025-00',
+      '--format',
+      'json',
+    ]);
+    expect(r.exitCode).toBe(EXIT_CODES.INVALID_ARGUMENT);
+    const payload = JSON.parse(r.stderr);
+    expect(payload.error.code).toBe('INVALID_ARGUMENT');
+    expect(payload.error.message).toContain('Invalid --to "2025-00"');
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-YYYY-MM format strings (abc, 2026-1, 2026-123)', async () => {
+    const spy = vi.fn(async () => sample);
+    holder.services = makeMockServices({
+      billingService: { getSettleBillSummary: spy },
+    });
+
+    for (const badValue of ['abc', '2026-1', '2026-123']) {
+      const r = await runCommand(build, [
+        'billing',
+        'summary',
+        '--from',
+        badValue,
+        '--format',
+        'json',
+      ]);
+      expect(r.exitCode).toBe(EXIT_CODES.INVALID_ARGUMENT);
+      const payload = JSON.parse(r.stderr);
+      expect(payload.error.code).toBe('INVALID_ARGUMENT');
+      expect(payload.error.message).toContain(`Invalid --from "${badValue}"`);
+    }
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('accepts valid --from/--to values (2026-01, 2025-12)', async () => {
+    const spy = vi.fn(async () => sample);
+    holder.services = makeMockServices({
+      billingService: { getSettleBillSummary: spy },
+    });
+    const r = await runCommand(build, [
+      'billing',
+      'summary',
+      '--from',
+      '2025-12',
+      '--to',
+      '2026-01',
+      '--format',
+      'json',
+    ]);
+    expect(r.exitCode).toBeUndefined();
+    expect(spy).toHaveBeenCalledWith({ from: '2025-12', to: '2026-01', chargeType: 'all' });
   });
 
   it('text mode renders without throwing', async () => {

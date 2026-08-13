@@ -20,12 +20,9 @@ export function balanceRechargeAction(cmd: Command) {
     const config = getEffectiveConfig();
     const format = resolveFormatFromCommand(this ?? cmd, config);
 
-    let opened = true;
-    try {
-      openBrowser(RECHARGE_URL);
-    } catch {
-      opened = false;
-    }
+    // openBrowser resolves to the real launch result (false in sandboxed /
+    // headless environments such as the Codex desktop app), and never rejects.
+    const opened = await openBrowser(RECHARGE_URL);
 
     if (format === 'json') {
       outputJSON({

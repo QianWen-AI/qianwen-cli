@@ -51,6 +51,8 @@ import { WorkspaceService } from './workspace-service.js';
 import { SubscriptionService, type SubscriptionAdapter } from './subscription-service.js';
 import { SubscriptionTokenPlanService } from './subscription-tokenplan-service.js';
 import { SupportService } from './support-service.js';
+import { SkillsHubService } from './skills-hub-service.js';
+import { SkillsInstallService } from './skills-install-service.js';
 
 import type { CachedFetcher } from '../types/cache.js';
 import type { ApiModelGroup, ApiModelItem, ConsumeSummaryLineItem } from '../types/api-models.js';
@@ -76,6 +78,8 @@ export interface ServiceContainer {
   subscriptionService: SubscriptionService;
   subscriptionTokenPlanService: SubscriptionTokenPlanService;
   supportService: SupportService;
+  skillsHubService: SkillsHubService;
+  skillsInstallService: SkillsInstallService;
 }
 
 export interface CreateServicesOptions {
@@ -175,6 +179,8 @@ export function createServices(options: CreateServicesOptions = {}): ServiceCont
   );
   const subscriptionTokenPlanService = new SubscriptionTokenPlanService(apiClient);
   const supportService = new SupportService(apiClient);
+  const skillsHubService = new SkillsHubService(apiClient);
+  const skillsInstallService = new SkillsInstallService(skillsHubService);
 
   return {
     apiClient,
@@ -191,5 +197,7 @@ export function createServices(options: CreateServicesOptions = {}): ServiceCont
     subscriptionService,
     subscriptionTokenPlanService,
     supportService,
+    skillsHubService,
+    skillsInstallService,
   };
 }

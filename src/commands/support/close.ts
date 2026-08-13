@@ -25,7 +25,7 @@ export async function supportCloseAction(
       throw new CliError({
         code: 'INVALID_ARGUMENT',
         message: 'Support close requires interactive terminal (use --yes to skip confirmation)',
-        exitCode: EXIT_CODES.GENERAL_ERROR,
+        exitCode: EXIT_CODES.INVALID_ARGUMENT,
       });
     }
 
@@ -35,7 +35,9 @@ export async function supportCloseAction(
     await withSpinner('Verifying ticket', () => supportService.getTicket(ticketId), format);
 
     if (!options.yes) {
-      const confirmed = await confirmPrompt(`Close ticket ${ticketId}? This cannot be undone. [y/N]`);
+      const confirmed = await confirmPrompt(
+        `Close ticket ${ticketId}? This cannot be undone. [y/N]`,
+      );
       if (!confirmed) {
         if (format === 'json') {
           printJSON({ ticketId, cancelled: true });

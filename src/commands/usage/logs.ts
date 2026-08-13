@@ -1,7 +1,8 @@
 /**
  * `usage logs` — paginated call-log query.
  *
- * Resolves the time range, dispatches to UsageService via the CliFacade, then
+ * Resolves the time range, dispatches to UsageService through the ApiClient
+ * (`createClient` composes the ServiceContainer), then
  * fans out to the three rendering modes (TUI / TEXT / JSON). Filter flags
  * (`--model`, `--status`) are repeatable; `--request-id` short-circuits the
  * other filters to mimic the upstream exact-match contract.

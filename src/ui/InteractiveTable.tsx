@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import { Table } from './Table.js';
 import type { Column } from './Table.js';
 import { Section } from './Section.js';
+import { AltScreenContext } from './render.js';
 import { theme } from './theme.js';
 import { useTerminalSize } from './useTerminalSize.js';
-import { isConHost } from './terminalCompat.js';
+import { truncateByDisplayWidth } from './textWrap.js';
 import { CliError } from '../utils/errors.js';
 
 export interface InteractiveTableProps {
@@ -40,6 +41,7 @@ export function InteractiveTable({
 }: InteractiveTableProps) {
   const { exit } = useApp();
   const { columns: termCols, rows: termRows } = useTerminalSize();
+  const inAltScreen = useContext(AltScreenContext);
   const startPage = initialPage ?? 1;
   const [page, setPage] = useState(startPage);
   const hasInitialRows = initialRows != null && initialRows.length > 0;
@@ -189,22 +191,30 @@ export function InteractiveTable({
   if (!loading) {
     stableFooterRef.current = currentFooter;
   }
-  const sectionFooter = stableFooterRef.current || currentFooter;
+  // Hard-truncate to the terminal width: a physically wrapped status line
+  // desyncs Ink's logical-line-count frame erasure just like a wrapped row.
+  const sectionFooter = truncateByDisplayWidth(
+    stableFooterRef.current || currentFooter,
+    Math.max(1, termCols - 2),
+  );
 
-  // ConHost has no alternate screen buffer (entering it closes the window on
-  // exit), so Ink falls back to log-update's diff erase — which miscounts
-  // physical lines and leaves the title/header duplicated on redraw, anchored
-  // at the bottom of the scrollback. Padding the frame to the full terminal
-  // height forces Ink onto its clearTerminal full-repaint path instead: clean,
-  // top-left-anchored output with no residue. Alt-screen terminals must NOT do
-  // this — the padding rows collide with the alt-screen exit erase (residue).
-  const fillScreen = isConHost();
+  // On the alt-screen, keep total height strictly below terminal rows so Ink
+  // stays on differential redraws instead of its clearTerminal path — that
+  // path emits \x1b[3J which wipes the main screen's scrollback right through
+  // the alt-screen on Terminal.app/iTerm2 (same guard as DocsViewer). Row
+  // wrap is already impossible (all lines are width-capped ≤ termCols), so
+  // the diff erase line accounting stays correct without full repaints.
+  // Off the alt-screen (ConHost main-screen rendering) keep padding to the
+  // full terminal height so Ink full-repaints and never leaves stale rows.
+  // Floor at 1, not 5: on terminals ≤ 5 rows a fixed floor would put minHeight
+  // back at >= termRows and re-trigger clearTerminal on every frame.
+  const safeMinHeight = inAltScreen ? Math.max(1, termRows - 1) : termRows;
 
   return (
-    <Box flexDirection="column" width={termCols} {...(fillScreen ? { minHeight: termRows } : {})}>
+    <Box flexDirection="column" width={termCols} minHeight={safeMinHeight}>
       {/* Title - dynamic render to avoid Static residue on resize */}
       {title && (
-        <Section title={sectionTitle} subtitle={subtitle} footer="">
+        <Section title={sectionTitle} subtitle={subtitle} footer="" maxWidth={termCols}>
           <Box />
         </Section>
       )}
@@ -212,15 +222,22 @@ export function InteractiveTable({
       {/* Table content */}
       {loading && rows.length === 0 ? (
         <Box paddingLeft={2}>
-          <Text>{theme.info(`Loading page ${page}...`)}</Text>
+          <Text wrap="truncate-end">{theme.info(`Loading page ${page}...`)}</Text>
         </Box>
       ) : error ? (
         <Box paddingLeft={2}>
-          <Text>{theme.error(`${theme.symbols.fail} Error: ${error}`)}</Text>
+          <Text wrap="truncate-end">{theme.error(`${theme.symbols.fail} Error: ${error}`)}</Text>
         </Box>
       ) : (
         <Box paddingLeft={2}>
-          <Table columns={columns} data={visibleData} footer={footer} paddingLeft={0} truncate />
+          <Table
+            columns={columns}
+            data={visibleData}
+            footer={footer}
+            paddingLeft={0}
+            truncate
+            maxTotalWidth={Math.max(1, termCols - 2)}
+          />
         </Box>
       )}
 

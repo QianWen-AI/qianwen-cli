@@ -12,6 +12,8 @@
  *   tsx scripts/build.ts --analyze              # production build + bundle analysis
  *   tsx scripts/build.ts --skip-smoke           # skip smoke test
  *   tsx scripts/build.ts --skip-obfuscate       # skip obfuscation step (legacy, same as --obfuscator none)
+ *   tsx scripts/build.ts --allow-proxy          # proxy-enabled variant (global EnvHttpProxyAgent dispatcher
+ *                                               # for Node fetch); proxy-enabled variant — not included in the public distribution
  */
 
 import { spawnSync } from 'child_process';
@@ -29,6 +31,7 @@ const mode = (() => {
 const analyze = argv.includes('--analyze');
 const skipSmoke = argv.includes('--skip-smoke');
 const skipObfuscate = argv.includes('--skip-obfuscate');
+const allowProxy = argv.includes('--allow-proxy');
 const isProd = mode === 'prod';
 
 // Obfuscator selection: 'none' | 'terser' | 'jso' (javascript-obfuscator)
@@ -107,6 +110,13 @@ console.log(
 console.log(`  obfuscator : ${isProd ? obfuscator : 'n/a'}`);
 console.log(`  sourcemap  : ${isProd ? (enableSourcemap ? 'yes (linked)' : 'no') : 'inline'}`);
 console.log(`  analyze  : ${analyze}`);
+console.log(`  proxy    : ${allowProxy ? 'enabled' : 'disabled'}`);
+if (allowProxy) {
+  console.log('');
+  console.log('  ⚠️  ─────────────────────────────────────────────────────────');
+  console.log('  ⚠️  proxy-enabled variant — not included in the public distribution');
+  console.log('  ⚠️  ─────────────────────────────────────────────────────────');
+}
 console.log('');
 
 // ── Build ─────────────────────────────────────────────────────────────────────
@@ -118,6 +128,7 @@ const env: NodeJS.ProcessEnv = {
   TSUP_MODE: isProd ? 'production' : 'development',
   TSUP_SOURCEMAP: enableSourcemap ? '1' : '',
   BUILD_ERROR_VERBOSITY: errorVerbosity,
+  BUILD_ALLOW_PROXY: allowProxy ? '1' : '',
 };
 
 console.log('  Building...');

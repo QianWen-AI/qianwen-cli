@@ -214,6 +214,7 @@ export interface CategorySuggestion {
 export interface CreateTicketParams {
   categoryId: string;
   description: string;
+  acceptLanguage?: string;
 }
 
 export interface RawCreateTicketResponse {

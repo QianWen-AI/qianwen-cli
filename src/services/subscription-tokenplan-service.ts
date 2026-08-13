@@ -245,10 +245,15 @@ export class SubscriptionTokenPlanService {
     >(subscriptionSummaryRaw);
 
     const period = this.buildPeriod(seatInner);
-    const groups = this.buildSeatGroups(seatInner);
     const total = this.buildSeatTotal(subscriptionInner);
     const autoRenew = this.buildAutoRenew(autoRenewalRaw);
     const renewable = this.buildRenewable(renewableRaw);
+    // Seat groups must know whether auto-renewal is on: when it is explicitly
+    // OFF there is no next cycle, so the per-group nextCycleFlushTime (which the
+    // server still returns, equal to the expiry date) must be nulled to avoid
+    // being misread as a quota-reset date. A null autoRenew means "unknown" —
+    // do not clear in that case.
+    const groups = this.buildSeatGroups(seatInner, autoRenew?.enabled ?? null);
 
     // seatSummary is null when GetSeatSubscriptionSummary failed.
     const seatSummary = seatSummaryRaw === undefined ? null : { groups, total };
@@ -281,12 +286,16 @@ export class SubscriptionTokenPlanService {
 
   private buildSeatGroups(
     inner: GetSeatSubscriptionSummaryDataInner | undefined,
+    autoRenewEnabled: boolean | null,
   ): TokenPlanSeatGroup[] {
     if (!inner || !Array.isArray(inner.SubscriptionGroupList)) return [];
     return inner.SubscriptionGroupList.map((group: SeatSubscriptionGroupItem) => {
       const equity = Array.isArray(group.EquityList) ? group.EquityList[0] : undefined;
       const totalValue = equity?.TotalValue ?? group.TotalValue ?? '0';
       const surplusValue = equity?.SurplusValue ?? group.SurplusValue ?? '0';
+      // Only suppress the flush time when auto-renewal is explicitly disabled.
+      const nextCycleFlushTime =
+        autoRenewEnabled === false ? null : toIsoString(group.NextCycleFlushTime);
       return {
         specType: group.SpecType ?? 'unknown',
         seats: group.SubscriptionTotalNumber ?? 0,
@@ -294,7 +303,7 @@ export class SubscriptionTokenPlanService {
         totalValue,
         surplusValue,
         unit: 'Credits',
-        nextCycleFlushTime: toIsoString(group.NextCycleFlushTime),
+        nextCycleFlushTime,
       };
     });
   }

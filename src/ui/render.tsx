@@ -20,6 +20,16 @@ const EXIT_ALT_SCREEN = '\x1b[?1049l';
 // instead of leaving the last frame stranded on the main screen.
 const CLEAR_SCREEN = '\x1b[2J\x1b[H';
 
+// The scrollback-erase sequence Ink's clearTerminal path emits. On
+// Terminal.app/iTerm2 it wipes the MAIN screen's scrollback right through the
+// alt-screen, so alt-screen sessions filter it out of the stdout stream.
+const ERASE_SCROLLBACK = '\x1b[3J';
+
+// The visible-screen clear that marks an Ink clearTerminal frame. During an
+// alt-screen session its presence identifies a stale resize-race frame (see
+// the filter in renderInteractive), which gets suppressed wholesale.
+const CLEAR_VISIBLE = '\x1b[2J';
+
 // React context exposing whether the current interactive render runs on the
 // alternative screen buffer. Full-screen components read this to skip the
 // height-padding that would otherwise push Ink into its clearTerminal path —
@@ -60,10 +70,7 @@ interface InkErrorBoundaryProps {
  * picker and `reply` ticket view crashed with an unreadable dump instead of a
  * graceful CLI error.
  */
-export class InkErrorBoundary extends React.Component<
-  InkErrorBoundaryProps,
-  { failed: boolean }
-> {
+export class InkErrorBoundary extends React.Component<InkErrorBoundaryProps, { failed: boolean }> {
   constructor(props: InkErrorBoundaryProps) {
     super(props);
     this.state = { failed: false };
@@ -213,8 +220,50 @@ export async function renderInteractive(
   // teardown. Callers that explicitly opt out of the alt-screen (altScreen:
   // false, e.g. inline editors) are excluded so their output stays anchored.
   const clearOnExit = wantsAltScreen && !useAltScreen;
+
+  // Ink's resize handler races ahead of React state: on a height shrink it
+  // re-renders the stale (taller) frame first, hits its clearTerminal path and
+  // writes \x1b[2J\x1b[3J\x1b[H + frame straight to stdout, bypassing
+  // log-update — its previousOutput/previousLineCount go stale, causing
+  // dedup-skips and under-erasure (the fast-drag artifacts) — while the
+  // \x1b[3J erases the main screen's scrollback (see ERASE_SCROLLBACK above).
+  // With the alt-screen height guard (frames ≤ rows-1) a fresh render never
+  // reaches clearTerminal, so any \x1b[2J seen here IS such a stale frame and
+  // is suppressed wholesale: the previous correct frame stays on screen for
+  // ≤1 render cycle until the React-driven diff render replaces it — no
+  // flicker, no residue. Ink writes strings; Buffer chunks (which could in
+  // theory split the escape sequence across writes) pass through untouched.
+  // The ConHost main-screen fallback intentionally skips the filter — there
+  // clearTerminal repaints are the desired behaviour.
+  let restoreWrite: (() => void) | null = null;
   if (useAltScreen) {
     process.stdout.write(ENTER_ALT_SCREEN);
+    const originalWrite = process.stdout.write;
+    const boundWrite = originalWrite.bind(process.stdout);
+    const strippingWrite = (
+      chunk: Uint8Array | string,
+      encodingOrCb?: BufferEncoding | ((err?: Error | null) => void),
+      cb?: (err?: Error | null) => void,
+    ): boolean => {
+      const data = typeof chunk === 'string' ? chunk.replaceAll(ERASE_SCROLLBACK, '') : chunk;
+      // Drop the whole stale clearTerminal frame (see block comment above).
+      // Known edge: Ink's lastOutput gate still records the suppressed frame,
+      // so a later fresh render producing a byte-identical string would be
+      // skipped at the Ink layer — needs the size to oscillate back with
+      // identical content, negligible in practice.
+      if (typeof data === 'string' && data.includes(CLEAR_VISIBLE)) {
+        if (typeof encodingOrCb === 'function') encodingOrCb(null);
+        else if (typeof cb === 'function') cb(null);
+        return true;
+      }
+      return typeof encodingOrCb === 'function'
+        ? boundWrite(data, encodingOrCb)
+        : boundWrite(data, encodingOrCb, cb);
+    };
+    process.stdout.write = strippingWrite as typeof process.stdout.write;
+    restoreWrite = () => {
+      process.stdout.write = originalWrite;
+    };
   }
 
   let capturedError: unknown = null;
@@ -243,8 +292,14 @@ export async function renderInteractive(
     // Drain any residual bytes from stdin buffer
     await drainStdin();
   } finally {
+    // Uninstall the \x1b[3J filter before any teardown writes so it can never
+    // leak past the session (exceptions included).
+    restoreWrite?.();
     if (useAltScreen) {
       process.stdout.write(EXIT_ALT_SCREEN);
+      // Land the shell prompt on a fresh line after the alt-screen restores the
+      // main screen (mirrors renderWithInk's trailing newline).
+      process.stdout.write('\n');
     } else if (clearOnExit) {
       process.stdout.write(CLEAR_SCREEN);
     }

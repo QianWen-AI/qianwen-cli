@@ -20,7 +20,6 @@ import { normalizeToFullDate, resolveDateRange } from '../../utils/date.js';
 import { EXIT_CODES } from '../../utils/exit-codes.js';
 import { createServices } from '../../services/index.js';
 import {
-  clampTop,
   defaultCurrentMonthCycle,
   defaultMonthRange,
   parseChargeType,
@@ -46,7 +45,7 @@ export function registerBillingBreakdownCommand(parent: Command): void {
         .choices(['all', 'subscription', 'payg'])
         .default('all'),
     )
-    .option('--top <n>', 'Top N rows', (v) => parseInt(v, 10), 10)
+    .option('--top <n>', 'Top N rows (1-20, default: 10)', (v) => parseInt(v, 10), 10)
     .option('--format <fmt>', 'Output format: table, json, text (default: auto)');
 
   breakdown.action(billingBreakdownAction(breakdown));
@@ -57,15 +56,27 @@ export function billingBreakdownAction(cmd: Command) {
     const config = getEffectiveConfig();
     const format = resolveFormatFromCommand(this ?? cmd, config);
 
+    const rawTop = options.top as number;
+    if (typeof rawTop === 'number' && (rawTop < 1 || rawTop > 20)) {
+      handleError(
+        new CliError({
+          code: 'INVALID_ARGUMENT',
+          message: `Invalid --top "${rawTop}": must be between 1 and 20.`,
+          exitCode: EXIT_CODES.INVALID_ARGUMENT,
+        }),
+        format,
+      );
+      return;
+    }
+
     let groupBy: ReturnType<typeof parseGroupBy>;
     let chargeType: ReturnType<typeof parseChargeType>;
     let granularity: ReturnType<typeof parseGranularity>;
-    let top: number;
+    const top: number = typeof rawTop === 'number' && Number.isFinite(rawTop) ? rawTop : 10;
     try {
       groupBy = parseGroupBy(options.groupBy);
       chargeType = parseChargeType(options.chargeType);
       granularity = parseGranularity(options.granularity, 'month');
-      top = clampTop(options.top);
     } catch (err) {
       handleError(err, format);
       return;
@@ -74,6 +85,17 @@ export function billingBreakdownAction(cmd: Command) {
     let from: string;
     let to: string;
     if (options.from || options.to || options.period) {
+      if (typeof options.period === 'string' && !isValidPeriod(options.period)) {
+        handleError(
+          new CliError({
+            code: 'INVALID_ARGUMENT',
+            message: `Invalid --period "${options.period}": must be one of: today, yesterday, week, this-week, month, this-month, last-month, quarter, year, or YYYY-MM format.`,
+            exitCode: EXIT_CODES.INVALID_ARGUMENT,
+          }),
+          format,
+        );
+        return;
+      }
       try {
         const range = resolveDateRange({
           from: typeof options.from === 'string' ? options.from : undefined,
@@ -93,13 +115,11 @@ export function billingBreakdownAction(cmd: Command) {
     }
 
     if (options.period && !options.from && !options.to) {
-      const spanFrom = new Date(normalizeToFullDate(from, 'start'));
-      const spanTo = new Date(normalizeToFullDate(to, 'end'));
-      const spanDays = (spanTo.getTime() - spanFrom.getTime()) / (1000 * 60 * 60 * 24);
+      const isShortPeriod = isShortNamedPeriod(String(options.period), from, to);
 
       const cmdInstance = this ?? cmd;
       const granularitySource = cmdInstance.getOptionValueSource('granularity');
-      if (spanDays < 31) {
+      if (isShortPeriod) {
         if (granularitySource === 'cli' && granularity === 'month') {
           handleError(
             new CliError({
@@ -251,8 +271,29 @@ export function billingBreakdownAction(cmd: Command) {
   };
 }
 
+// Named presets shorter than a month; aliases mirror parsePeriod's normalization.
+const SHORT_NAMED_PERIODS = new Set(['today', 'yesterday', 'week', 'this-week']);
+// Named presets spanning a month or more, regardless of the current date.
+const LONG_NAMED_PERIODS = new Set(['month', 'this-month', 'last-month', 'quarter', 'year']);
+
+/**
+ * Classify a --period preset as "shorter than a month" by its semantic name
+ * rather than the elapsed days of the resolved range, so e.g. `quarter` stays
+ * a long period even on the first days of a quarter. Custom YYYY-MM periods
+ * fall back to the actual span in days.
+ */
+function isShortNamedPeriod(period: string, from: string, to: string): boolean {
+  if (SHORT_NAMED_PERIODS.has(period)) return true;
+  if (LONG_NAMED_PERIODS.has(period)) return false;
+  const spanFrom = new Date(normalizeToFullDate(from, 'start'));
+  const spanTo = new Date(normalizeToFullDate(to, 'end'));
+  const spanDays = (spanTo.getTime() - spanFrom.getTime()) / (1000 * 60 * 60 * 24);
+  return spanDays < 31;
+}
+
 function detectMultiPeriod(from: string, to: string, granularity: 'day' | 'month'): boolean {
   if (granularity === 'month') {
+    // multi-period if dates span more than one calendar month
     const fromMonth = from.substring(0, 7);
     const toMonth = to.substring(0, 7);
     return fromMonth !== toMonth;
@@ -261,4 +302,21 @@ function detectMultiPeriod(from: string, to: string, granularity: 'day' | 'month
   const fromDay = from.substring(0, 10);
   const toDay = to.substring(0, 10);
   return fromDay !== toDay;
+}
+
+const VALID_PERIOD_PRESETS = new Set([
+  'today',
+  'yesterday',
+  'week',
+  'this-week',
+  'month',
+  'this-month',
+  'last-month',
+  'quarter',
+  'year',
+]);
+
+function isValidPeriod(period: string): boolean {
+  if (VALID_PERIOD_PRESETS.has(period)) return true;
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(period);
 }

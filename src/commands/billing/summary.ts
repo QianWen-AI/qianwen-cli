@@ -9,11 +9,12 @@ import {
 } from '../../view-models/billing/index.js';
 import { renderBillingSummaryInk } from '../../ui/BillingSummary.js';
 import { renderTextBillingSummary } from '../../output/text/billing.js';
-import { handleError } from '../../utils/errors.js';
+import { handleError, CliError } from '../../utils/errors.js';
+import { EXIT_CODES } from '../../utils/exit-codes.js';
 import { createServices } from '../../services/index.js';
 import { defaultCurrentMonthCycle, parseChargeType } from './shared.js';
 
-const CYCLE_PATTERN = /^\d{4}-\d{2}$/;
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 export function registerBillingSummaryCommand(parent: Command): void {
   const summary = parent
@@ -38,12 +39,32 @@ export function billingSummaryAction(cmd: Command) {
 
     const chargeType = parseChargeType(options.chargeType);
     const defaults = defaultCurrentMonthCycle();
-    const from =
-      typeof options.from === 'string' && CYCLE_PATTERN.test(options.from)
-        ? options.from
-        : defaults.from;
-    const to =
-      typeof options.to === 'string' && CYCLE_PATTERN.test(options.to) ? options.to : defaults.to;
+
+    if (typeof options.from === 'string' && !MONTH_PATTERN.test(options.from)) {
+      handleError(
+        new CliError({
+          code: 'INVALID_ARGUMENT',
+          message: `Invalid --from "${options.from}": month must be between 01 and 12 (expected format YYYY-MM).`,
+          exitCode: EXIT_CODES.INVALID_ARGUMENT,
+        }),
+        format,
+      );
+      return;
+    }
+    if (typeof options.to === 'string' && !MONTH_PATTERN.test(options.to)) {
+      handleError(
+        new CliError({
+          code: 'INVALID_ARGUMENT',
+          message: `Invalid --to "${options.to}": month must be between 01 and 12 (expected format YYYY-MM).`,
+          exitCode: EXIT_CODES.INVALID_ARGUMENT,
+        }),
+        format,
+      );
+      return;
+    }
+
+    const from = typeof options.from === 'string' ? options.from : defaults.from;
+    const to = typeof options.to === 'string' ? options.to : defaults.to;
 
     try {
       ensureAuthenticated();
@@ -61,7 +82,8 @@ export function billingSummaryAction(cmd: Command) {
           currency: data.currency,
           cycles: data.cycles.map((c) => ({
             billingCycle: c.billingCycle,
-            aftertaxAmount: c.aftertaxAmount,
+            aftertaxAmount: c.settled ? c.aftertaxAmount : null,
+            settled: c.settled,
           })),
           totals: {
             aftertaxAmount: data.totals.aftertaxAmount,

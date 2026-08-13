@@ -63,7 +63,7 @@ export function subscriptionOrdersAction(cmd: Command) {
         new CliError({
           code: 'INVALID_ARGUMENT',
           message: `--page-size must not exceed ${MAX_PAGE_SIZE}`,
-          exitCode: EXIT_CODES.GENERAL_ERROR,
+          exitCode: EXIT_CODES.INVALID_ARGUMENT,
         }),
         format,
       );

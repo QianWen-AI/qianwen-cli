@@ -39,7 +39,11 @@ export function registerSupportCommands(program: Command): void {
     .description('Create a new support ticket')
     .option('--list-categories', 'List all available categories and exit')
     .option('--category-id <id>', 'Category ID for non-interactive ticket creation')
-    .option('--description <text>', 'Issue description for non-interactive ticket creation (max 2000 chars)')
+    .option(
+      '--description <text>',
+      'Issue description for non-interactive ticket creation (max 2000 chars)',
+    )
+    .option('--accept-language <lang>', 'Ticket language: zh_CN or en_US (default: zh_CN)')
     .option('--format <fmt>', 'Output format: table, json, text (default: auto)')
     .action(async function (this: Command, opts) {
       opts.format = opts.format ?? resolveFormatFromCommand(this, getEffectiveConfig());
@@ -49,7 +53,9 @@ export function registerSupportCommands(program: Command): void {
   addExamples(createCmd, [
     formatCmd('support create'),
     formatCmd('support create --list-categories'),
-    formatCmd('support create --category-id 582262 --description "\u6A21\u578B\u8C03\u7528\u8D85\u65F6"'),
+    formatCmd(
+      'support create --category-id 582262 --description "\u6A21\u578B\u8C03\u7528\u8D85\u65F6"',
+    ),
     formatCmd('support create --list-categories --format json'),
   ]);
 
@@ -79,7 +85,10 @@ export function registerSupportCommands(program: Command): void {
     .command('rate')
     .description('Rate a resolved support ticket (0-2)')
     .argument('<ticket-id>', 'Ticket ID to rate')
-    .option('--rating <n>', 'Satisfaction rating: 0=不满意, 1=一般, 2=满意. Omit to enter interactive mode.')
+    .option(
+      '--rating <n>',
+      'Satisfaction rating: 0=不满意, 1=一般, 2=满意. Omit to enter interactive mode.',
+    )
     .option('--comment <text>', 'Optional comment (max 500 characters)')
     .option('--format <fmt>', 'Output format: table, json, text (default: auto)')
     .action(async function (this: Command, ticketId: string, opts) {

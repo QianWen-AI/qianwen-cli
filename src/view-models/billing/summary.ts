@@ -6,6 +6,9 @@ import type {
 } from '../../types/billing-extra.js';
 import { CURRENCY_CODE, formatMoney, type ViewContext } from './shared.js';
 
+/** Shown for a cycle the server returned no settled bill record for. */
+export const NO_BILL_LABEL = 'No bill';
+
 export interface BillingSummaryFieldViewModel {
   label: string;
   value: string;
@@ -15,6 +18,7 @@ export interface BillingSummaryFieldViewModel {
 export interface BillingSummaryCycleViewModel {
   billingCycle: string;
   aftertaxAmount: string;
+  settled: boolean;
   display: BillingSummaryFieldViewModel[];
 }
 
@@ -127,11 +131,14 @@ export function buildBillingSummaryViewModel(
   const cycles: BillingSummaryCycleViewModel[] = data.cycles.map((c) => ({
     billingCycle: c.billingCycle,
     aftertaxAmount: c.aftertaxAmount,
+    settled: c.settled,
     display: [
       {
         label: 'Total',
-        value: formatMoney(c.aftertaxAmount, ctx),
-        raw: c.aftertaxAmount,
+        // A missing month has no bill record at all → NO_BILL_LABEL.
+        // A returned month keeps its real amount, including a genuine 0.
+        value: c.settled ? formatMoney(c.aftertaxAmount, ctx) : NO_BILL_LABEL,
+        raw: c.settled ? c.aftertaxAmount : '',
       },
     ],
   }));

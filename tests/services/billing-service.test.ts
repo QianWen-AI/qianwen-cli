@@ -207,30 +207,35 @@ describe('BillingService.getUsageLimit', () => {
 describe('BillingService.getPaygSummary', () => {
   it('fetches consume data per month and aggregates by model', async () => {
     const api = makeMockApiClient({
-      flat: async () => ({
-        Data: [
-          {
-            ModelName: 'qwen-plus',
-            BillingDate: '2026-06-01',
-            BillingMonth: '2026-06',
-            BillQuantity: 10,
-            StepQuantityUnit: '1K tokens',
-            BillingItemCode: 'token_number',
-            RequireAmount: 2,
-            LineItemCategory: 'LLM Token Consumption',
-          },
-          {
-            ModelName: 'qwen-plus',
-            BillingDate: '2026-06-02',
-            BillingMonth: '2026-06',
-            BillQuantity: 5,
-            StepQuantityUnit: '1K tokens',
-            BillingItemCode: 'token_number',
-            RequireAmount: 1,
-            LineItemCategory: 'LLM Token Consumption',
-          },
-        ],
-      }),
+      // The settlement call must return no cycles here, otherwise its total
+      // (a legitimate 0) would override the aggregated consume total.
+      flat: async (opts) =>
+        opts.action === 'ListSettleBillTotalSummary'
+          ? { Data: [] }
+          : {
+              Data: [
+                {
+                  ModelName: 'qwen-plus',
+                  BillingDate: '2026-06-01',
+                  BillingMonth: '2026-06',
+                  BillQuantity: 10,
+                  StepQuantityUnit: '1K tokens',
+                  BillingItemCode: 'token_number',
+                  RequireAmount: 2,
+                  LineItemCategory: 'LLM Token Consumption',
+                },
+                {
+                  ModelName: 'qwen-plus',
+                  BillingDate: '2026-06-02',
+                  BillingMonth: '2026-06',
+                  BillQuantity: 5,
+                  StepQuantityUnit: '1K tokens',
+                  BillingItemCode: 'token_number',
+                  RequireAmount: 1,
+                  LineItemCategory: 'LLM Token Consumption',
+                },
+              ],
+            },
     });
     const svc = new BillingService(api, stubBillingAdapter, makeMockCachedFetcher());
     const out = await svc.getPaygSummary({ from: '2026-06-01', to: '2026-06-30' });
@@ -261,14 +266,76 @@ describe('BillingService.getPaygSummary', () => {
     expect(out.models).toHaveLength(0);
   });
 
-  it('issues one callFlatApi per calendar month in the range', async () => {
+  it('issues one callFlatApi per calendar month in the range plus settlement and cost-analysis calls', async () => {
     const api = makeMockApiClient({
       flat: async () => ({ Data: [] }),
     });
     const svc = new BillingService(api, stubBillingAdapter, makeMockCachedFetcher());
     await svc.getPaygSummary({ from: '2026-05-15', to: '2026-07-10' });
-    // splitIntoMonths should give 3 sub-ranges
-    expect(api.callFlatApi).toHaveBeenCalledTimes(3);
+    // splitIntoMonths gives 3 sub-ranges + 1 ListSettleBillTotalSummary + 1 MaasDescribeCostAnalysis = 5 calls
+    expect(api.callFlatApi).toHaveBeenCalledTimes(5);
+  });
+
+  it('keeps a legitimate zero settlement total instead of falling back to the aggregated total', async () => {
+    const api = makeMockApiClient({
+      flat: async (opts) => {
+        if (opts.action === 'ListSettleBillTotalSummary') {
+          return {
+            Data: [{ BillingCycle: '202606', TotalPricePostTaxFee: '0', Currency: 'CNY' }],
+          };
+        }
+        return {
+          Data: [
+            {
+              ModelName: 'qwen-plus',
+              BillingDate: '2026-06-01',
+              BillingMonth: '2026-06',
+              BillQuantity: 10,
+              StepQuantityUnit: '1K tokens',
+              BillingItemCode: 'token_number',
+              RequireAmount: 2,
+              LineItemCategory: 'LLM Token Consumption',
+            },
+          ],
+        };
+      },
+    });
+    const svc = new BillingService(api, stubBillingAdapter, makeMockCachedFetcher());
+    const out = await svc.getPaygSummary({ from: '2026-06-01', to: '2026-06-30' });
+    // Fee waiver / full credit offset: settlement says 0 while raw items cost 2.
+    expect(out.total.cost).toBe(0);
+    expect(out.models[0]?.cost).toBeCloseTo(2, 10);
+  });
+
+  it('falls back to the aggregated total when the settlement amount is not numeric', async () => {
+    const api = makeMockApiClient({
+      flat: async () => ({
+        Data: [
+          {
+            ModelName: 'qwen-plus',
+            BillingDate: '2026-06-01',
+            BillingMonth: '2026-06',
+            BillQuantity: 10,
+            StepQuantityUnit: '1K tokens',
+            BillingItemCode: 'token_number',
+            RequireAmount: 2,
+            LineItemCategory: 'LLM Token Consumption',
+          },
+        ],
+      }),
+    });
+    const svc = new BillingService(api, stubBillingAdapter, makeMockCachedFetcher());
+    vi.spyOn(svc, 'getSettleBillSummary').mockResolvedValue({
+      cycles: [
+        { billingCycle: '202606', pretaxAmount: '2', tax: '0', aftertaxAmount: 'N/A', settled: true },
+      ],
+      totals: { pretaxAmount: '2', tax: '0', aftertaxAmount: 'N/A' },
+      currency: 'CNY',
+      period: { from: '2026-06', to: '2026-06' },
+      chargeType: 'postpaid',
+    });
+    const out = await svc.getPaygSummary({ from: '2026-06-01', to: '2026-06-30' });
+    expect(out.total.cost).toBeCloseTo(2, 10);
   });
 });
 
@@ -360,18 +427,18 @@ describe('BillingService.getPaygBreakdown', () => {
     expect(out.period).toEqual({ from: '2026-05-01', to: '2026-05-31' });
   });
 
-  it('getPaygSummary normalizes YYYY-MM inputs before calling API', async () => {
+  it('getPaygSummary normalizes YYYY-MM inputs and uses MONTHLY granularity', async () => {
     const api = makeMockApiClient({
       flat: async () => ({ Data: [] }),
     });
     const svc = new BillingService(api, stubBillingAdapter, makeMockCachedFetcher());
     await svc.getPaygSummary({ from: '2026-04', to: '2026-04' });
     const callParams = api.callFlatApi.mock.calls[0]?.[0]?.params as {
-      StartBillingDate: string;
-      EndBillingDate: string;
+      BillingMonth: string;
+      Granularity: string;
     };
-    expect(callParams.StartBillingDate).toBe('2026-04-01');
-    expect(callParams.EndBillingDate).toBe('2026-04-30');
+    expect(callParams.Granularity).toBe('MONTHLY');
+    expect(callParams.BillingMonth).toBe('2026-04');
   });
 });
 
@@ -475,7 +542,7 @@ describe('BillingService.getConsumeBreakdown', () => {
     expect(result.rows).toHaveLength(1);
   });
 
-  it('day granularity splits into monthly sub-ranges with single call per range', async () => {
+  it('day granularity splits into monthly sub-ranges with single call per range (>30 days)', async () => {
     const api = makeMockApiClient({
       flat: async () => ({
         GroupByTotal: [
@@ -492,10 +559,107 @@ describe('BillingService.getConsumeBreakdown', () => {
       top: 10,
       granularity: 'day',
     });
-    // 2 months * 1 call each = 2
+    // 2 months * 1 call each = 2 (span is 32 days > 30)
     expect((api.callFlatApi as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2);
     const firstCall = (api.callFlatApi as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(firstCall.params.Granularity).toBe('DAY');
+  });
+
+  it('day granularity uses single call when span ≤ 30 days even across months', async () => {
+    const api = makeMockApiClient({
+      flat: async () => ({
+        GroupByTotal: [
+          { Key: 'qwen-max', Name: 'qwen-max', Amount: '10.00' },
+        ],
+      }),
+    });
+    const svc = new BillingService(api, stubBillingAdapter, makeMockCachedFetcher());
+    await svc.getConsumeBreakdown({
+      from: '2026-07-28',
+      to: '2026-08-03',
+      groupBy: 'model',
+      chargeType: 'all',
+      top: 10,
+      granularity: 'day',
+    });
+    // 7 days ≤ 30 → single call even though it crosses July/August
+    expect((api.callFlatApi as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
+    const call = (api.callFlatApi as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.params.Granularity).toBe('DAY');
+    expect(call.params.TimePeriod).toEqual({ Start: '20260728', End: '20260803' });
+  });
+
+  it('appends Unlisted row when CostTotals.Amount exceeds sum of all API rows', async () => {
+    const api = makeMockApiClient({
+      flat: async () => ({
+        GroupByTotal: [
+          { Key: 'qwen-plus', Name: 'qwen-plus', Amount: '60.00' },
+          { Key: 'qwen-max', Name: 'qwen-max', Amount: '30.00' },
+        ],
+        CostTotals: { Amount: '100.00', Currency: 'CNY' },
+      }),
+    });
+    const svc = new BillingService(api, stubBillingAdapter, makeMockCachedFetcher());
+    const result = await svc.getConsumeBreakdown({
+      from: '2026-06-01',
+      to: '2026-06-30',
+      groupBy: 'model',
+      chargeType: 'all',
+      top: 2,
+      granularity: 'day',
+    });
+    expect(result.rows).toHaveLength(3);
+    expect(result.rows[2]).toEqual({
+      groupKey: 'UNLISTED',
+      groupLabel: 'Unlisted',
+      amount: '10',
+    });
+    expect(result.totalAmount).toBe('100');
+  });
+
+  it('does not append Unlisted row when CostTotals.Amount equals sum of all API rows', async () => {
+    const api = makeMockApiClient({
+      flat: async () => ({
+        GroupByTotal: [
+          { Key: 'qwen-plus', Name: 'qwen-plus', Amount: '50.00' },
+          { Key: 'qwen-max', Name: 'qwen-max', Amount: '50.00' },
+        ],
+        CostTotals: { Amount: '100.00', Currency: 'CNY' },
+      }),
+    });
+    const svc = new BillingService(api, stubBillingAdapter, makeMockCachedFetcher());
+    const result = await svc.getConsumeBreakdown({
+      from: '2026-06-01',
+      to: '2026-06-30',
+      groupBy: 'model',
+      chargeType: 'all',
+      top: 10,
+      granularity: 'day',
+    });
+    expect(result.rows).toHaveLength(2);
+    expect(result.totalAmount).toBe('100');
+  });
+
+  it('falls back to displayed sum when CostTotals.Amount is absent', async () => {
+    const api = makeMockApiClient({
+      flat: async () => ({
+        GroupByTotal: [
+          { Key: 'qwen-plus', Name: 'qwen-plus', Amount: '10.00' },
+          { Key: 'qwen-max', Name: 'qwen-max', Amount: '5.00' },
+        ],
+      }),
+    });
+    const svc = new BillingService(api, stubBillingAdapter, makeMockCachedFetcher());
+    const result = await svc.getConsumeBreakdown({
+      from: '2026-04-01',
+      to: '2026-04-30',
+      groupBy: 'model',
+      chargeType: 'all',
+      top: 10,
+      granularity: 'day',
+    });
+    expect(result.rows).toHaveLength(2);
+    expect(result.totalAmount).toBe('15');
   });
 });
 
@@ -518,6 +682,42 @@ describe('BillingService.getSettleBillSummary', () => {
     });
     expect(out.period).toEqual({ from: '2026-06', to: '2026-06' });
     expect(out.currency).toBeDefined();
+  });
+
+  it('fills missing months with settled=false while keeping returned months (incl. ¥0)', async () => {
+    const api = makeMockApiClient({
+      flat: async () => ({
+        Data: [
+          { BillingCycle: '202603', TotalPricePostTaxFee: '3.71' },
+          // A genuine zero-amount settled bill must survive as ¥0, not "No bill".
+          { BillingCycle: '202605', TotalPricePostTaxFee: '0' },
+        ],
+      }),
+    });
+    const svc = new BillingService(api, stubBillingAdapter, makeMockCachedFetcher());
+    const out = await svc.getSettleBillSummary({ from: '2026-01', to: '2026-06' });
+
+    // Continuous month coverage: Jan..Jun = 6 rows, in order.
+    expect(out.cycles.map((c) => c.billingCycle)).toEqual([
+      '202601',
+      '202602',
+      '202603',
+      '202604',
+      '202605',
+      '202606',
+    ]);
+
+    const march = out.cycles.find((c) => c.billingCycle === '202603');
+    expect(march).toMatchObject({ settled: true, aftertaxAmount: '3.71' });
+
+    const may = out.cycles.find((c) => c.billingCycle === '202605');
+    expect(may).toMatchObject({ settled: true, aftertaxAmount: '0' });
+
+    const jan = out.cycles.find((c) => c.billingCycle === '202601');
+    expect(jan?.settled).toBe(false);
+
+    // Totals only count the two returned months (3.71 + 0).
+    expect(out.totals.aftertaxAmount).toBe('3.71');
   });
 });
 

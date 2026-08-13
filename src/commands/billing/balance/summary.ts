@@ -3,7 +3,10 @@ import { resolveFormatFromCommand, outputJSON } from '../../../output/format.js'
 import { getEffectiveConfig } from '../../../config/manager.js';
 import { ensureAuthenticated } from '../../../auth/credentials.js';
 import { withSpinner } from '../../../ui/spinner.js';
-import { buildBalanceSummaryViewModel, defaultViewContext } from '../../../view-models/billing/index.js';
+import {
+  buildBalanceSummaryViewModel,
+  defaultViewContext,
+} from '../../../view-models/billing/index.js';
 import { renderBalanceSummaryInk } from '../../../ui/BillingBalanceSummary.js';
 import { renderTextBalanceSummary } from '../../../output/text/billing.js';
 import { handleError } from '../../../utils/errors.js';

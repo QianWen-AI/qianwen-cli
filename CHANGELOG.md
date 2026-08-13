@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-08-13
+
+### Added
+
+- `skills search` command for finding SkillHub skills by keyword
+- `skills install` command for installing a skill by slug
+
+### Changed
+
+- `usage` amounts now display full precision
+
 ## [1.3.0] - 2026-06-30
 
 ### Added
