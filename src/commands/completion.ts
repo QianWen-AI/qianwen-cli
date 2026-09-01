@@ -44,11 +44,11 @@ function getCompletionLine(shell: ShellType): string {
   const cli = site.cliName;
   switch (shell) {
     case 'zsh':
-      return `\n# ${site.cliDisplayName} completion\neval "$(${cli} completion generate --shell zsh)"`;
+      return `\n# ${site.cliDisplayName} completion\neval "$(${cli} completion generate --shell zsh)"\n`;
     case 'bash':
-      return `\n# ${site.cliDisplayName} completion\neval "$(${cli} completion generate --shell bash)"`;
+      return `\n# ${site.cliDisplayName} completion\neval "$(${cli} completion generate --shell bash)"\n`;
     case 'fish':
-      return `\n# ${site.cliDisplayName} completion\n${cli} completion generate --shell fish | source`;
+      return `\n# ${site.cliDisplayName} completion\n${cli} completion generate --shell fish | source\n`;
   }
 }
 
@@ -80,6 +80,8 @@ ${fnName}() {
     --group-by)    compadd model api-key; return ;;
     --thinking)    compadd true false; return ;;
     --upload)      compadd auto oss; return ;;
+    --texture-quality) compadd standard detailed; return ;;
+    --response-format) compadd url b64; return ;;
     --type)        compadd purchase renew upgrade; return ;;
     --source)      compadd official custom; return ;;
     --plan)        compadd token; return ;;
@@ -92,7 +94,14 @@ ${fnName}() {
   local -a top_commands
   top_commands=(
     'auth:Manage authentication'
+    'chat:Chat completions with Qwen models'
+    'image:Image generation and editing'
+    'video:Video generation and editing'
+    'audio:Audio synthesis and transcription'
+    'model3d:3D model generation'
+    'music:Music generation'
     'models:Browse and search models'
+    'task:Query asynchronous tasks'
     'usage:View usage and billing'
     'billing:View billing and costs'
     'subscription:Manage subscriptions'
@@ -100,6 +109,7 @@ ${fnName}() {
     'support:Support tickets'
     'update:Update CLI to the latest version'
     'docs:Search and view documentation'
+    'skills:Discover and install skills'
     'config:Manage CLI configuration'
     'doctor:Run diagnostics'
     'completion:Install shell tab completion'
@@ -134,6 +144,187 @@ ${fnName}() {
             ;;
           logout|status)
             _arguments \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+        esac
+      fi
+      ;;
+
+    chat)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('create:Create a chat completion')
+        _describe -t commands 'chat subcommand' subs
+      else
+        case "\${words[3]}" in
+          create)
+            _arguments \\
+              '1:prompt:()' \\
+              '--model[Model to use]:id:()' \\
+              '--temperature[Sampling temperature]:n:()' \\
+              '--max-tokens[Output token budget]:n:()' \\
+              '--stream[Stream the response as NDJSON]' \\
+              '--thinking[Reveal the model reasoning]' \\
+              '--no-thinking[Hide the model reasoning]' \\
+              '--image[Attach one image]:path:_files' \\
+              '--video[Attach one video]:path:_files' \\
+              '--request[Native request body passthrough]:json:()' \\
+              '--api-key[API key for this invocation]:key:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+        esac
+      fi
+      ;;
+
+    image)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('generate:Generate or edit an image')
+        _describe -t commands 'image subcommand' subs
+      else
+        case "\${words[3]}" in
+          generate)
+            _arguments \\
+              '1:prompt:()' \\
+              '--model[Model to use]:id:()' \\
+              '--size[Output image size, e.g. 1024*1024]:size:()' \\
+              '--n[Number of images]:count:()' \\
+              '--image[Source image to edit]:path:_files' \\
+              '--out[Output file or directory]:path:_files' \\
+              '--response-format[Response format]:fmt:(url b64)' \\
+              '--request[Native request body passthrough]:json:()' \\
+              '--no-wait[Return the task id immediately]' \\
+              '--timeout[Max seconds to wait]:seconds:()' \\
+              '--api-key[API key for this invocation]:key:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+        esac
+      fi
+      ;;
+
+    video)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('generate:Generate a video')
+        _describe -t commands 'video subcommand' subs
+      else
+        case "\${words[3]}" in
+          generate)
+            _arguments \\
+              '1:prompt:()' \\
+              '--model[Model to use]:id:()' \\
+              '--image[First-frame image (I2V)]:path:_files' \\
+              '--wait[Wait for the task to complete]' \\
+              '--no-wait[Return the task id immediately]' \\
+              '--timeout[Max seconds to wait]:seconds:()' \\
+              '--out[Output file or directory]:path:_files' \\
+              '--request[Native request body passthrough]:json:()' \\
+              '--api-key[API key for this invocation]:key:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+        esac
+      fi
+      ;;
+
+    audio)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('speech:Synthesize speech from text' 'transcribe:Transcribe audio to text')
+        _describe -t commands 'audio subcommand' subs
+      else
+        case "\${words[3]}" in
+          speech)
+            _arguments \\
+              '1:text:()' \\
+              '--model[Model to use]:id:()' \\
+              '--voice[Voice id or name]:voice:()' \\
+              '--out[Output file or directory]:path:_files' \\
+              '--request[Native request body passthrough]:json:()' \\
+              '--api-key[API key for this invocation]:key:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+          transcribe)
+            _arguments \\
+              '1:file-or-url:_files' \\
+              '--model[Model to use]:id:()' \\
+              '--language[Language hint]:lang:(en zh)' \\
+              '--wait[Wait for the task to complete]' \\
+              '--no-wait[Return the task id immediately]' \\
+              '--timeout[Max seconds to wait]:seconds:()' \\
+              '--request[Native request body passthrough]:json:()' \\
+              '--api-key[API key for this invocation]:key:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+        esac
+      fi
+      ;;
+
+    model3d)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('generate:Generate a 3D model')
+        _describe -t commands 'model3d subcommand' subs
+      else
+        case "\${words[3]}" in
+          generate)
+            _arguments \\
+              '1:prompt:()' \\
+              '--model[Model to use]:id:()' \\
+              '--image[Reference image]:path:_files' \\
+              '--texture-quality[Texture quality]:level:(standard detailed)' \\
+              '--wait[Wait for the task to complete]' \\
+              '--no-wait[Return the task id immediately]' \\
+              '--timeout[Max seconds to wait]:seconds:()' \\
+              '--out[Output file or directory]:path:_files' \\
+              '--request[Native request body passthrough]:json:()' \\
+              '--api-key[API key for this invocation]:key:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+        esac
+      fi
+      ;;
+
+    music)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('generate:Generate music')
+        _describe -t commands 'music subcommand' subs
+      else
+        case "\${words[3]}" in
+          generate)
+            _arguments \\
+              '1:prompt:()' \\
+              '--model[Model to use]:id:()' \\
+              '--out[Output file or directory]:path:_files' \\
+              '--timeout[Max seconds to wait]:seconds:()' \\
+              '--no-stream[Wait for the whole response in one request]' \\
+              '--request[Native request body passthrough]:json:()' \\
+              '--api-key[API key for this invocation]:key:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+        esac
+      fi
+      ;;
+
+    task)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('get:Query an asynchronous task')
+        _describe -t commands 'task subcommand' subs
+      else
+        case "\${words[3]}" in
+          get)
+            _arguments \\
+              '1:task-id:()' \\
+              '--api-key[API key for this invocation]:key:()' \\
               '--format[Output format]:format:(table json text)' \\
               '(-h --help)'{-h,--help}'[Show help]'
             ;;
@@ -404,6 +595,31 @@ ${fnName}() {
       fi
       ;;
 
+    skills)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('search:Search SkillHub' 'install:Install a skill')
+        _describe -t commands 'skills subcommand' subs
+      else
+        case "\${words[3]}" in
+          search)
+            _arguments \\
+              '1:query:()' \\
+              '--limit[Page size]:n:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+          install)
+            _arguments \\
+              '1:slug:()' \\
+              '--dir[Directory to install into]:dir:_files -/' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+        esac
+      fi
+      ;;
+
     doctor)
       _arguments \\
         '--format[Output format]:format:(table json text)' \\
@@ -453,6 +669,10 @@ function generateBashCompletion(): string {
       COMPREPLY=( $(compgen -W "all postpaid prepaid" -- "$cur") ); return 0 ;;
     --group-by)
       COMPREPLY=( $(compgen -W "model api-key" -- "$cur") ); return 0 ;;
+    --texture-quality)
+      COMPREPLY=( $(compgen -W "standard detailed" -- "$cur") ); return 0 ;;
+    --response-format)
+      COMPREPLY=( $(compgen -W "url b64" -- "$cur") ); return 0 ;;
     --type)
       COMPREPLY=( $(compgen -W "purchase renew upgrade" -- "$cur") ); return 0 ;;
     --source)
@@ -476,6 +696,35 @@ function generateBashCompletion(): string {
           list)   COMPREPLY=( $(compgen -W "--input --output --all --page --per-page --verbose --format -h --help" -- "$cur") ); return 0 ;;
           info)   COMPREPLY=( $(compgen -W "--model --format -h --help" -- "$cur") ); return 0 ;;
           search) COMPREPLY=( $(compgen -W "--page --per-page --all --format -h --help" -- "$cur") ); return 0 ;;
+        esac ;;
+      chat)
+        case "$sub" in
+          create) COMPREPLY=( $(compgen -W "--model --temperature --max-tokens --stream --thinking --no-thinking --image --video --request --api-key --format -h --help" -- "$cur") ); return 0 ;;
+        esac ;;
+      image)
+        case "$sub" in
+          generate) COMPREPLY=( $(compgen -W "--model --size --n --image --out --response-format --request --no-wait --timeout --api-key --format -h --help" -- "$cur") ); return 0 ;;
+        esac ;;
+      video)
+        case "$sub" in
+          generate) COMPREPLY=( $(compgen -W "--model --image --wait --no-wait --timeout --out --request --api-key --format -h --help" -- "$cur") ); return 0 ;;
+        esac ;;
+      audio)
+        case "$sub" in
+          speech)     COMPREPLY=( $(compgen -W "--model --voice --out --request --api-key --format -h --help" -- "$cur") ); return 0 ;;
+          transcribe) COMPREPLY=( $(compgen -W "--model --language --wait --no-wait --timeout --request --api-key --format -h --help" -- "$cur") ); return 0 ;;
+        esac ;;
+      model3d)
+        case "$sub" in
+          generate) COMPREPLY=( $(compgen -W "--model --image --texture-quality --wait --no-wait --timeout --out --request --api-key --format -h --help" -- "$cur") ); return 0 ;;
+        esac ;;
+      music)
+        case "$sub" in
+          generate) COMPREPLY=( $(compgen -W "--model --out --timeout --no-stream --request --api-key --format -h --help" -- "$cur") ); return 0 ;;
+        esac ;;
+      task)
+        case "$sub" in
+          get) COMPREPLY=( $(compgen -W "--api-key --format -h --help" -- "$cur") ); return 0 ;;
         esac ;;
       usage)
         local date_opts="--from --to --period --format"
@@ -535,6 +784,11 @@ function generateBashCompletion(): string {
           search) COMPREPLY=( $(compgen -W "--limit --page --language --view --format -h --help" -- "$cur") ); return 0 ;;
           view)   COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
         esac ;;
+      skills)
+        case "$sub" in
+          search)  COMPREPLY=( $(compgen -W "--limit --format -h --help" -- "$cur") ); return 0 ;;
+          install) COMPREPLY=( $(compgen -W "--dir --format -h --help" -- "$cur") ); return 0 ;;
+        esac ;;
     esac
   fi
 
@@ -543,12 +797,20 @@ function generateBashCompletion(): string {
     case "$cmd" in
       auth)       COMPREPLY=( $(compgen -W "login logout status" -- "$cur") ); return 0 ;;
       models)     COMPREPLY=( $(compgen -W "list info search" -- "$cur") ); return 0 ;;
+      chat)       COMPREPLY=( $(compgen -W "create" -- "$cur") ); return 0 ;;
+      image)      COMPREPLY=( $(compgen -W "generate" -- "$cur") ); return 0 ;;
+      video)      COMPREPLY=( $(compgen -W "generate" -- "$cur") ); return 0 ;;
+      audio)      COMPREPLY=( $(compgen -W "speech transcribe" -- "$cur") ); return 0 ;;
+      model3d)    COMPREPLY=( $(compgen -W "generate" -- "$cur") ); return 0 ;;
+      music)      COMPREPLY=( $(compgen -W "generate" -- "$cur") ); return 0 ;;
+      task)       COMPREPLY=( $(compgen -W "get" -- "$cur") ); return 0 ;;
       usage)      COMPREPLY=( $(compgen -W "summary breakdown free-tier payg logs" -- "$cur") ); return 0 ;;
       billing)    COMPREPLY=( $(compgen -W "limit breakdown summary" -- "$cur") ); return 0 ;;
       subscription) COMPREPLY=( $(compgen -W "status orders tokenplan" -- "$cur") ); return 0 ;;
       workspace)  COMPREPLY=( $(compgen -W "list limit" -- "$cur") ); return 0 ;;
       support)    COMPREPLY=( $(compgen -W "list view create reply close rate" -- "$cur") ); return 0 ;;
       docs)       COMPREPLY=( $(compgen -W "search view" -- "$cur") ); return 0 ;;
+      skills)     COMPREPLY=( $(compgen -W "search install" -- "$cur") ); return 0 ;;
       config)     COMPREPLY=( $(compgen -W "list get set unset" -- "$cur") ); return 0 ;;
       completion) COMPREPLY=( $(compgen -W "install generate" -- "$cur") ); return 0 ;;
     esac
@@ -556,7 +818,7 @@ function generateBashCompletion(): string {
 
   # ── Top-level command completions ─────────────────────────────────────────
   if [ "$COMP_CWORD" -eq 1 ]; then
-    COMPREPLY=( $(compgen -W "auth models usage billing subscription workspace support update docs config doctor completion version -h --help" -- "$cur") )
+    COMPREPLY=( $(compgen -W "auth chat image video audio model3d music models task usage billing subscription workspace support update docs skills config doctor completion version -h --help" -- "$cur") )
   fi
 }
 
@@ -567,6 +829,32 @@ complete -F ${fnName} ${cli}
 function generateFishCompletion(): string {
   const cli = site.cliName;
   const helperPrefix = `__${cli}`;
+  // Single source of truth for the top-level command list so the "not seen"
+  // guard and the offered completions can never drift apart.
+  const topCommands = [
+    'auth',
+    'chat',
+    'image',
+    'video',
+    'audio',
+    'model3d',
+    'music',
+    'models',
+    'task',
+    'usage',
+    'billing',
+    'subscription',
+    'workspace',
+    'support',
+    'docs',
+    'skills',
+    'config',
+    'doctor',
+    'completion',
+    'version',
+    'update',
+  ];
+  const topGuard = `not __fish_seen_subcommand_from ${topCommands.join(' ')}`;
   return `# ${site.cliDisplayName} completions for fish
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -581,26 +869,137 @@ function ${helperPrefix}_seen_sub
 end
 
 # ── Top-level commands ────────────────────────────────────────────────────────
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription workspace support docs config doctor completion version update' -f
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription workspace support docs config doctor completion version update' -a auth          -d 'Manage authentication'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription workspace support docs config doctor completion version update' -a models        -d 'Browse and search models'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription workspace support docs config doctor completion version update' -a usage         -d 'View usage and billing'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription workspace support docs config doctor completion version update' -a billing       -d 'View billing and costs'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription workspace support docs config doctor completion version update' -a subscription  -d 'Manage subscriptions'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription workspace support docs config doctor completion version update' -a workspace     -d 'Manage workspaces'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription workspace support docs config doctor completion version update' -a support       -d 'Support tickets'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription workspace support docs config doctor completion version update' -a update        -d 'Update CLI to latest version'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription workspace support docs config doctor completion version update' -a docs          -d 'Search documentation'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription workspace support docs config doctor completion version update' -a config        -d 'Manage CLI configuration'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription workspace support docs config doctor completion version update' -a doctor        -d 'Run diagnostics'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription workspace support docs config doctor completion version update' -a completion    -d 'Install shell tab completion'
-complete -c ${cli} -n 'not __fish_seen_subcommand_from auth models usage billing subscription workspace support docs config doctor completion version update' -a version       -d 'Show CLI version'
+complete -c ${cli} -n '${topGuard}' -f
+complete -c ${cli} -n '${topGuard}' -a auth          -d 'Manage authentication'
+complete -c ${cli} -n '${topGuard}' -a chat          -d 'Chat completions with Qwen models'
+complete -c ${cli} -n '${topGuard}' -a image         -d 'Image generation and editing'
+complete -c ${cli} -n '${topGuard}' -a video         -d 'Video generation and editing'
+complete -c ${cli} -n '${topGuard}' -a audio         -d 'Audio synthesis and transcription'
+complete -c ${cli} -n '${topGuard}' -a model3d       -d '3D model generation'
+complete -c ${cli} -n '${topGuard}' -a music         -d 'Music generation'
+complete -c ${cli} -n '${topGuard}' -a models        -d 'Browse and search models'
+complete -c ${cli} -n '${topGuard}' -a task          -d 'Query asynchronous tasks'
+complete -c ${cli} -n '${topGuard}' -a usage         -d 'View usage and billing'
+complete -c ${cli} -n '${topGuard}' -a billing       -d 'View billing and costs'
+complete -c ${cli} -n '${topGuard}' -a subscription  -d 'Manage subscriptions'
+complete -c ${cli} -n '${topGuard}' -a workspace     -d 'Manage workspaces'
+complete -c ${cli} -n '${topGuard}' -a support       -d 'Support tickets'
+complete -c ${cli} -n '${topGuard}' -a update        -d 'Update CLI to latest version'
+complete -c ${cli} -n '${topGuard}' -a docs          -d 'Search documentation'
+complete -c ${cli} -n '${topGuard}' -a skills        -d 'Discover and install skills'
+complete -c ${cli} -n '${topGuard}' -a config        -d 'Manage CLI configuration'
+complete -c ${cli} -n '${topGuard}' -a doctor        -d 'Run diagnostics'
+complete -c ${cli} -n '${topGuard}' -a completion    -d 'Install shell tab completion'
+complete -c ${cli} -n '${topGuard}' -a version       -d 'Show CLI version'
 
 # ── auth subcommands ──────────────────────────────────────────────────────────
 complete -c ${cli} -n '__fish_seen_subcommand_from auth; and not __fish_seen_subcommand_from login logout status' -f
 complete -c ${cli} -n '__fish_seen_subcommand_from auth; and not __fish_seen_subcommand_from login logout status' -a login   -d 'Login via Device Flow'
 complete -c ${cli} -n '__fish_seen_subcommand_from auth; and not __fish_seen_subcommand_from login logout status' -a logout  -d 'Remove credentials'
 complete -c ${cli} -n '__fish_seen_subcommand_from auth; and not __fish_seen_subcommand_from login logout status' -a status  -d 'Auth status'
+
+# ── chat subcommands ──────────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from chat; and not __fish_seen_subcommand_from create' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from chat; and not __fish_seen_subcommand_from create' -a create -d 'Create a chat completion'
+complete -c ${cli} -n '__fish_seen_subcommand_from chat; and __fish_seen_subcommand_from create' -l model       -d 'Model to use'
+complete -c ${cli} -n '__fish_seen_subcommand_from chat; and __fish_seen_subcommand_from create' -l temperature -d 'Sampling temperature'
+complete -c ${cli} -n '__fish_seen_subcommand_from chat; and __fish_seen_subcommand_from create' -l max-tokens  -d 'Output token budget'
+complete -c ${cli} -n '__fish_seen_subcommand_from chat; and __fish_seen_subcommand_from create' -l stream      -d 'Stream the response as NDJSON'
+complete -c ${cli} -n '__fish_seen_subcommand_from chat; and __fish_seen_subcommand_from create' -l thinking    -d 'Reveal the model reasoning'
+complete -c ${cli} -n '__fish_seen_subcommand_from chat; and __fish_seen_subcommand_from create' -l no-thinking -d 'Hide the model reasoning'
+complete -c ${cli} -n '__fish_seen_subcommand_from chat; and __fish_seen_subcommand_from create' -l image       -d 'Attach one image' -r
+complete -c ${cli} -n '__fish_seen_subcommand_from chat; and __fish_seen_subcommand_from create' -l video       -d 'Attach one video' -r
+complete -c ${cli} -n '__fish_seen_subcommand_from chat; and __fish_seen_subcommand_from create' -l request     -d 'Native request body passthrough'
+complete -c ${cli} -n '__fish_seen_subcommand_from chat; and __fish_seen_subcommand_from create' -l api-key     -d 'API key for this invocation'
+complete -c ${cli} -n '__fish_seen_subcommand_from chat; and __fish_seen_subcommand_from create' -l format      -d 'Output format' -a 'table json text'
+
+# ── image subcommands ─────────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from image; and not __fish_seen_subcommand_from generate' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from image; and not __fish_seen_subcommand_from generate' -a generate -d 'Generate or edit an image'
+
+# ── video subcommands ─────────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from video; and not __fish_seen_subcommand_from generate' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from video; and not __fish_seen_subcommand_from generate' -a generate -d 'Generate a video'
+
+# ── audio subcommands ─────────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and not __fish_seen_subcommand_from speech transcribe' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and not __fish_seen_subcommand_from speech transcribe' -a speech     -d 'Synthesize speech from text'
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and not __fish_seen_subcommand_from speech transcribe' -a transcribe -d 'Transcribe audio to text'
+
+# ── model3d subcommands ───────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from model3d; and not __fish_seen_subcommand_from generate' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from model3d; and not __fish_seen_subcommand_from generate' -a generate -d 'Generate a 3D model'
+
+# ── music subcommands ─────────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from music; and not __fish_seen_subcommand_from generate' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from music; and not __fish_seen_subcommand_from generate' -a generate -d 'Generate music'
+
+# ── task subcommands ──────────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from task; and not __fish_seen_subcommand_from get' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from task; and not __fish_seen_subcommand_from get' -a get -d 'Query an asynchronous task'
+complete -c ${cli} -n '__fish_seen_subcommand_from task; and __fish_seen_subcommand_from get' -l api-key -d 'API key for this invocation'
+complete -c ${cli} -n '__fish_seen_subcommand_from task; and __fish_seen_subcommand_from get' -l format  -d 'Output format' -a 'table json text'
+
+# ── image generate flags ──────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from image; and __fish_seen_subcommand_from generate' -l model           -d 'Model to use'
+complete -c ${cli} -n '__fish_seen_subcommand_from image; and __fish_seen_subcommand_from generate' -l size            -d 'Output image size, e.g. 1024*1024'
+complete -c ${cli} -n '__fish_seen_subcommand_from image; and __fish_seen_subcommand_from generate' -l n               -d 'Number of images'
+complete -c ${cli} -n '__fish_seen_subcommand_from image; and __fish_seen_subcommand_from generate' -l image           -d 'Source image to edit' -r
+complete -c ${cli} -n '__fish_seen_subcommand_from image; and __fish_seen_subcommand_from generate' -l out             -d 'Output file or directory' -r
+complete -c ${cli} -n '__fish_seen_subcommand_from image; and __fish_seen_subcommand_from generate' -l response-format -d 'Response format' -a 'url b64'
+complete -c ${cli} -n '__fish_seen_subcommand_from image; and __fish_seen_subcommand_from generate' -l request         -d 'Native request body passthrough'
+complete -c ${cli} -n '__fish_seen_subcommand_from image; and __fish_seen_subcommand_from generate' -l no-wait         -d 'Return the task id immediately'
+complete -c ${cli} -n '__fish_seen_subcommand_from image; and __fish_seen_subcommand_from generate' -l timeout         -d 'Max seconds to wait'
+complete -c ${cli} -n '__fish_seen_subcommand_from image; and __fish_seen_subcommand_from generate' -l api-key         -d 'API key for this invocation'
+complete -c ${cli} -n '__fish_seen_subcommand_from image; and __fish_seen_subcommand_from generate' -l format          -d 'Output format' -a 'table json text'
+
+# ── video generate flags ──────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from video; and __fish_seen_subcommand_from generate' -l model    -d 'Model to use'
+complete -c ${cli} -n '__fish_seen_subcommand_from video; and __fish_seen_subcommand_from generate' -l image    -d 'First-frame image (I2V)' -r
+complete -c ${cli} -n '__fish_seen_subcommand_from video; and __fish_seen_subcommand_from generate' -l wait     -d 'Wait for the task to complete'
+complete -c ${cli} -n '__fish_seen_subcommand_from video; and __fish_seen_subcommand_from generate' -l no-wait  -d 'Return the task id immediately'
+complete -c ${cli} -n '__fish_seen_subcommand_from video; and __fish_seen_subcommand_from generate' -l timeout  -d 'Max seconds to wait'
+complete -c ${cli} -n '__fish_seen_subcommand_from video; and __fish_seen_subcommand_from generate' -l out      -d 'Output file or directory' -r
+complete -c ${cli} -n '__fish_seen_subcommand_from video; and __fish_seen_subcommand_from generate' -l request  -d 'Native request body passthrough'
+complete -c ${cli} -n '__fish_seen_subcommand_from video; and __fish_seen_subcommand_from generate' -l api-key  -d 'API key for this invocation'
+complete -c ${cli} -n '__fish_seen_subcommand_from video; and __fish_seen_subcommand_from generate' -l format   -d 'Output format' -a 'table json text'
+
+# ── audio speech / transcribe flags ───────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and __fish_seen_subcommand_from speech' -l model   -d 'Model to use'
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and __fish_seen_subcommand_from speech' -l voice   -d 'Voice id or name'
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and __fish_seen_subcommand_from speech' -l out     -d 'Output file or directory' -r
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and __fish_seen_subcommand_from speech' -l request -d 'Native request body passthrough'
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and __fish_seen_subcommand_from speech' -l api-key -d 'API key for this invocation'
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and __fish_seen_subcommand_from speech' -l format  -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and __fish_seen_subcommand_from transcribe' -l model    -d 'Model to use'
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and __fish_seen_subcommand_from transcribe' -l language -d 'Language hint' -a 'en zh'
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and __fish_seen_subcommand_from transcribe' -l wait     -d 'Wait for the task to complete'
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and __fish_seen_subcommand_from transcribe' -l no-wait  -d 'Return the task id immediately'
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and __fish_seen_subcommand_from transcribe' -l timeout  -d 'Max seconds to wait'
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and __fish_seen_subcommand_from transcribe' -l request  -d 'Native request body passthrough'
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and __fish_seen_subcommand_from transcribe' -l api-key  -d 'API key for this invocation'
+complete -c ${cli} -n '__fish_seen_subcommand_from audio; and __fish_seen_subcommand_from transcribe' -l format   -d 'Output format' -a 'table json text'
+
+# ── model3d generate flags ────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from model3d; and __fish_seen_subcommand_from generate' -l model           -d 'Model to use'
+complete -c ${cli} -n '__fish_seen_subcommand_from model3d; and __fish_seen_subcommand_from generate' -l image           -d 'Reference image' -r
+complete -c ${cli} -n '__fish_seen_subcommand_from model3d; and __fish_seen_subcommand_from generate' -l texture-quality -d 'Texture quality' -a 'standard detailed'
+complete -c ${cli} -n '__fish_seen_subcommand_from model3d; and __fish_seen_subcommand_from generate' -l wait            -d 'Wait for the task to complete'
+complete -c ${cli} -n '__fish_seen_subcommand_from model3d; and __fish_seen_subcommand_from generate' -l no-wait         -d 'Return the task id immediately'
+complete -c ${cli} -n '__fish_seen_subcommand_from model3d; and __fish_seen_subcommand_from generate' -l timeout         -d 'Max seconds to wait'
+complete -c ${cli} -n '__fish_seen_subcommand_from model3d; and __fish_seen_subcommand_from generate' -l out             -d 'Output file or directory' -r
+complete -c ${cli} -n '__fish_seen_subcommand_from model3d; and __fish_seen_subcommand_from generate' -l request         -d 'Native request body passthrough'
+complete -c ${cli} -n '__fish_seen_subcommand_from model3d; and __fish_seen_subcommand_from generate' -l api-key         -d 'API key for this invocation'
+complete -c ${cli} -n '__fish_seen_subcommand_from model3d; and __fish_seen_subcommand_from generate' -l format          -d 'Output format' -a 'table json text'
+
+# ── music generate flags ──────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from music; and __fish_seen_subcommand_from generate' -l model     -d 'Model to use'
+complete -c ${cli} -n '__fish_seen_subcommand_from music; and __fish_seen_subcommand_from generate' -l out       -d 'Output file or directory' -r
+complete -c ${cli} -n '__fish_seen_subcommand_from music; and __fish_seen_subcommand_from generate' -l timeout   -d 'Max seconds to wait'
+complete -c ${cli} -n '__fish_seen_subcommand_from music; and __fish_seen_subcommand_from generate' -l no-stream -d 'Wait for the whole response in one request'
+complete -c ${cli} -n '__fish_seen_subcommand_from music; and __fish_seen_subcommand_from generate' -l request   -d 'Native request body passthrough'
+complete -c ${cli} -n '__fish_seen_subcommand_from music; and __fish_seen_subcommand_from generate' -l api-key   -d 'API key for this invocation'
+complete -c ${cli} -n '__fish_seen_subcommand_from music; and __fish_seen_subcommand_from generate' -l format    -d 'Output format' -a 'table json text'
 
 # ── models subcommands ────────────────────────────────────────────────────────
 complete -c ${cli} -n '__fish_seen_subcommand_from models; and not __fish_seen_subcommand_from list info search' -f
@@ -750,6 +1149,15 @@ complete -c ${cli} -n '__fish_seen_subcommand_from docs search' -l language -d '
 complete -c ${cli} -n '__fish_seen_subcommand_from docs search' -l view -d 'View result at index'
 complete -c ${cli} -n '__fish_seen_subcommand_from docs search' -l format -d 'Output format' -a 'table json text'
 complete -c ${cli} -n '__fish_seen_subcommand_from docs view' -l format -d 'Output format' -a 'table json text'
+
+# ── skills subcommands ────────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from skills; and not __fish_seen_subcommand_from search install' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from skills; and not __fish_seen_subcommand_from search install' -a search  -d 'Search SkillHub'
+complete -c ${cli} -n '__fish_seen_subcommand_from skills; and not __fish_seen_subcommand_from search install' -a install -d 'Install a skill'
+complete -c ${cli} -n '__fish_seen_subcommand_from skills; and __fish_seen_subcommand_from search' -l limit  -d 'Page size'
+complete -c ${cli} -n '__fish_seen_subcommand_from skills; and __fish_seen_subcommand_from search' -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from skills; and __fish_seen_subcommand_from install' -l dir    -d 'Directory to install into' -r
+complete -c ${cli} -n '__fish_seen_subcommand_from skills; and __fish_seen_subcommand_from install' -l format -d 'Output format' -a 'table json text'
 
 # ── Global options ────────────────────────────────────────────────────────────
 complete -c ${cli} -l format -d 'Output format' -a 'table json text'

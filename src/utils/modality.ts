@@ -50,14 +50,3 @@ export function abbreviateModality(type: ModalityType): string {
       return type;
   }
 }
-
-/**
- * Format modality types for info display (full names, sorted).
- * Example: "Image  Text  Video"
- */
-export function formatModalityList(types: ModalityType[]): string {
-  return types
-    .map((t) => t.charAt(0).toUpperCase() + t.slice(1))
-    .sort()
-    .join('  ');
-}

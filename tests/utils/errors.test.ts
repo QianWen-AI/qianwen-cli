@@ -56,16 +56,18 @@ describe('CliError', () => {
       code: 'NETWORK_ERROR',
       message: 'API unreachable',
       exitCode: EXIT_CODES.NETWORK_ERROR,
-      detail: 'HTTP 500: Internal Server Error\n  URL: https://api.example.com',
+      detail: 'HTTP 500: Internal Server Error\n  URL: https://api.test.qianwenai.com',
     });
 
-    expect(err.detail).toBe('HTTP 500: Internal Server Error\n  URL: https://api.example.com');
+    expect(err.detail).toBe(
+      'HTTP 500: Internal Server Error\n  URL: https://api.test.qianwenai.com',
+    );
     expect(err.toJSON()).toEqual({
       error: {
         code: 'NETWORK_ERROR',
         message: 'API unreachable',
         exit_code: 3,
-        detail: 'HTTP 500: Internal Server Error\n  URL: https://api.example.com',
+        detail: 'HTTP 500: Internal Server Error\n  URL: https://api.test.qianwenai.com',
       },
     });
   });
@@ -188,6 +190,25 @@ describe('handleError', () => {
       ) + '\n',
     );
     expect(thrown.exitCode).toBe(2);
+  });
+
+  it('handles plain Error with numeric exitCode hint in json format', () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    const err = Object.assign(new Error('Service contract violated'), { exitCode: 4 });
+
+    const thrown = catchHandledError(err, 'json');
+
+    expect(stderrSpy).toHaveBeenCalledWith(
+      JSON.stringify(
+        {
+          error: { code: 'ERROR', message: 'Service contract violated', exit_code: 4 },
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+    expect(thrown.exitCode).toBe(4);
   });
 
   it('handles CliError in text format', () => {
@@ -368,7 +389,7 @@ describe('handleError with error verbosity', () => {
       code: 'NETWORK_ERROR',
       message: 'API unreachable',
       exitCode: EXIT_CODES.NETWORK_ERROR,
-      detail: 'HTTP 500: Internal Server Error\n  URL: https://api.example.com',
+      detail: 'HTTP 500: Internal Server Error\n  URL: https://api.test.qianwenai.com',
     });
 
     const thrown = catchHandledError(err, 'table');
@@ -520,6 +541,47 @@ describe('handleError graceful mode (explicit)', () => {
 
     expect(consoleErrorSpy).toHaveBeenCalledWith('Error: Not authenticated');
     expect(thrown.exitCode).toBe(2);
+  });
+
+  it('CliError with hint → text output appends the hint line', () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    process.env[`${envPrefix}_ERROR_VERBOSITY`] = 'graceful';
+
+    const err = new CliError({
+      code: 'InvalidParameter',
+      message: 'The parameter foo is not supported',
+      exitCode: EXIT_CODES.GENERAL_ERROR,
+      model: 'wan2.7-t2v',
+      hint: 'Check the supported fields with `qianwen docs search`.',
+    });
+
+    catchHandledError(err, 'text');
+
+    expect(consoleErrorSpy).toHaveBeenNthCalledWith(1, 'Error: The parameter foo is not supported');
+    expect(consoleErrorSpy).toHaveBeenNthCalledWith(
+      2,
+      '  Check the supported fields with `qianwen docs search`.',
+    );
+  });
+
+  it('CliError with model/hint → json output includes both under error', () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    process.env[`${envPrefix}_ERROR_VERBOSITY`] = 'graceful';
+
+    const err = new CliError({
+      code: 'InvalidParameter',
+      message: 'bad field',
+      exitCode: EXIT_CODES.GENERAL_ERROR,
+      model: 'wan2.7-t2v',
+      hint: 'Rebuild --request.',
+    });
+
+    catchHandledError(err, 'json');
+
+    const payload = JSON.parse((stderrSpy.mock.calls[0] as unknown[])[0] as string);
+    expect(payload.error.model).toBe('wan2.7-t2v');
+    expect(payload.error.hint).toBe('Rebuild --request.');
+    expect(payload.error.code).toBe('InvalidParameter');
   });
 });
 

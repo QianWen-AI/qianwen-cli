@@ -33,7 +33,7 @@ vi.mock('../../src/auth/credentials.js', async (importOriginal) => {
       credentials: {
         access_token: 'test-token',
         expires_at: new Date(Date.now() + 7_200_000).toISOString(),
-        user: { email: 'test@example.com', aliyunId: 'test_id' },
+        user: { email: 'test@test.qianwenai.com', aliyunId: 'test_id' },
       },
       source: 'mock' as const,
     }),

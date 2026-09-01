@@ -5,7 +5,6 @@ import type { Model, ModelDetail } from '../../types/model.js';
 import { splitPrice } from '../../utils/formatting.js';
 import { formatFreeTierSplit, formatPriceFromPricing } from '../../view-models/models.js';
 
-// Re-export formatting utilities for backward compatibility
 export { formatFreeTier, formatPriceFromPricing } from '../../view-models/models.js';
 
 /**

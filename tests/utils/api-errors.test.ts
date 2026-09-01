@@ -26,7 +26,7 @@ describe('classifyHttpError', () => {
   it('classifies AbortError (timeout) as NETWORK_ERROR', () => {
     const err = new Error('aborted');
     err.name = 'AbortError';
-    const result = classifyHttpError(err, 'https://example.com/api');
+    const result = classifyHttpError(err, 'https://mock-api.test.qianwenai.com/api');
     expect(result.code).toBe('NETWORK_ERROR');
     expect(result.message).toBe('Request timed out. Try again later.');
     expect(result.exitCode).toBe(EXIT_CODES.NETWORK_ERROR);
@@ -42,15 +42,34 @@ describe('classifyHttpError', () => {
   });
 
   it('classifies ENOTFOUND as NETWORK_ERROR', () => {
-    const err = new Error('getaddrinfo ENOTFOUND api.example.com');
+    const err = new Error('getaddrinfo ENOTFOUND api.test.qianwenai.com');
     const result = classifyHttpError(err);
     expect(result.code).toBe('NETWORK_ERROR');
     expect(result.message).toBe('API unreachable. Check your network connection.');
   });
 
+  it('classifies a mid-stream "terminated" (undici) drop as NETWORK_ERROR', () => {
+    const err = new Error('terminated');
+    (err as { cause?: unknown }).cause = Object.assign(new Error('other side closed'), {
+      code: 'UND_ERR_SOCKET',
+    });
+    const result = classifyHttpError(err);
+    expect(result.code).toBe('NETWORK_ERROR');
+    expect(result.exitCode).toBe(EXIT_CODES.NETWORK_ERROR);
+  });
+
+  it('classifies a reset carried on error.cause as NETWORK_ERROR', () => {
+    const err = new Error('request to https://api failed');
+    (err as { cause?: unknown }).cause = Object.assign(new Error('read ECONNRESET'), {
+      code: 'ECONNRESET',
+    });
+    const result = classifyHttpError(err);
+    expect(result.code).toBe('NETWORK_ERROR');
+  });
+
   it('classifies HTTP 401 as AUTH_REQUIRED', () => {
     const err = new Error('HTTP 401: Unauthorized');
-    const result = classifyHttpError(err, 'https://example.com/api');
+    const result = classifyHttpError(err, 'https://mock-api.test.qianwenai.com/api');
     expect(result.code).toBe('AUTH_REQUIRED');
     expect(result.message).toContain('Not authenticated');
     expect(result.exitCode).toBe(EXIT_CODES.AUTH_FAILURE);
@@ -132,6 +151,43 @@ describe('classifyHttpError', () => {
     expect(result.exitCode).toBe(EXIT_CODES.GENERAL_ERROR);
   });
 
+  it('classifies a filesystem EACCES error as IO_ERROR', () => {
+    const err = Object.assign(new Error("EACCES: permission denied, open '/x/y.mp3'"), {
+      code: 'EACCES',
+    });
+    const result = classifyHttpError(err);
+    expect(result.code).toBe('IO_ERROR');
+    expect(result.message).toBe('Permission denied writing the output file.');
+    expect(result.exitCode).toBe(EXIT_CODES.GENERAL_ERROR);
+  });
+
+  it('classifies a filesystem ENOSPC error as IO_ERROR', () => {
+    const err = Object.assign(new Error('ENOSPC: no space left on device, write'), {
+      code: 'ENOSPC',
+    });
+    const result = classifyHttpError(err);
+    expect(result.code).toBe('IO_ERROR');
+    expect(result.message).toBe('Cannot write the output file: no space left on device.');
+  });
+
+  it('classifies a filesystem ENOENT error (missing parent dir) as IO_ERROR', () => {
+    const err = Object.assign(new Error("ENOENT: no such file or directory, mkdir '/x/y'"), {
+      code: 'ENOENT',
+    });
+    const result = classifyHttpError(err);
+    expect(result.code).toBe('IO_ERROR');
+    expect(result.message).toBe(
+      'Cannot write the output file: a parent directory does not exist or is not writable.',
+    );
+    expect(result.exitCode).toBe(EXIT_CODES.GENERAL_ERROR);
+  });
+
+  it('leaves a non-filesystem code as UNKNOWN_ERROR', () => {
+    const err = Object.assign(new Error('weird failure'), { code: 'ESOMETHINGELSE' });
+    const result = classifyHttpError(err);
+    expect(result.code).toBe('UNKNOWN_ERROR');
+  });
+
   it('classifies non-Error value as UNKNOWN_ERROR', () => {
     const result = classifyHttpError('string error');
     expect(result.code).toBe('UNKNOWN_ERROR');
@@ -163,14 +219,14 @@ describe('classifyHttpError', () => {
 
   it('includes URL in detail when provided', () => {
     const err = new Error('HTTP 500: Internal Server Error');
-    const result = classifyHttpError(err, 'https://api.example.com/v2');
-    expect(result.detail).toContain('https://api.example.com/v2');
+    const result = classifyHttpError(err, 'https://api.test.qianwenai.com/v2');
+    expect(result.detail).toContain('https://api.test.qianwenai.com/v2');
   });
 
   it('includes cause chain in detail', () => {
     const cause = new Error('Root cause');
     const err = new Error('Failed to connect', { cause });
-    const result = classifyHttpError(err, 'https://example.com');
+    const result = classifyHttpError(err, 'https://mock-api.test.qianwenai.com');
     expect(result.detail).toContain('Caused by: Root cause');
   });
 });

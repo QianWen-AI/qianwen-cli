@@ -34,7 +34,7 @@ describe('VALID_KEYS', () => {
   });
 
   it('has correct length', () => {
-    expect(VALID_KEYS).toHaveLength(5);
+    expect(VALID_KEYS).toHaveLength(7);
   });
 });
 
@@ -106,7 +106,7 @@ describe('validateConfigValue', () => {
 
   describe('api.endpoint', () => {
     it('accepts valid URLs', () => {
-      expect(validateConfigValue('api.endpoint', 'https://api.example.com')).toBeNull();
+      expect(validateConfigValue('api.endpoint', 'https://api.test.qianwenai.com')).toBeNull();
       expect(validateConfigValue('api.endpoint', 'http://localhost:3000')).toBeNull();
       expect(validateConfigValue('api.endpoint', `${s.apiEndpoint}/api/v1`)).toBeNull();
     });
@@ -120,7 +120,7 @@ describe('validateConfigValue', () => {
 
   describe('auth.endpoint', () => {
     it('accepts valid URLs', () => {
-      expect(validateConfigValue('auth.endpoint', 'https://auth.example.com')).toBeNull();
+      expect(validateConfigValue('auth.endpoint', 'https://auth.test.qianwenai.com')).toBeNull();
       expect(validateConfigValue('auth.endpoint', 'http://localhost:8080')).toBeNull();
     });
 

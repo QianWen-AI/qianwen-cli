@@ -35,7 +35,7 @@ function validMeta(overrides: Partial<SkillMetadataV1> = {}): SkillMetadataV1 {
     sha256: 'ab'.repeat(32),
     installMethod: 'copy',
     installedAt: '2026-07-27T00:00:00.000Z',
-    clientVersion: '1.4.0',
+    clientVersion: '1.5.0',
     ...overrides,
   };
 }

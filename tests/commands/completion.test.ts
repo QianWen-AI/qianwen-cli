@@ -93,5 +93,13 @@ describe('completion install — fish rc filesystem safety', () => {
     expect(r.stderr).toMatch(/failed to write completion config/i);
     expect(r.stderr).not.toMatch(/\n\s+at\s/);
   });
-});
 
+  it('appends a completion block that ends with a newline so a later append starts on its own line', async () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+
+    await runCommand(setupCompletion, ['completion', 'install', '--shell', 'zsh']);
+
+    const written = vi.mocked(appendFileSync).mock.calls[0]?.[1] as string;
+    expect(written).toMatch(/\n$/);
+  });
+});

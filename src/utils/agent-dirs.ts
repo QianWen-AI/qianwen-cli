@@ -68,7 +68,7 @@ const KNOWN_AGENTS: AgentDirEntry[] = [
     displayName: 'OpenCode',
     projectDir: '.agents/skills',
     globalDir: '.agents/skills',
-  }
+  },
 ];
 
 export function getKnownAgents(): AgentDirEntry[] {

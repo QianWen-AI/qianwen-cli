@@ -4,22 +4,43 @@ import { loginCommand } from './runtime-mode.js';
 import { resetGlobalCache } from './cache.js';
 import { classifyHttpError } from './api-errors.js';
 import { clearSpinnerLine } from '../ui/spinner.js';
+import { theme } from '../ui/theme.js';
 
 // Re-export from leaf module (avoids circular deps with debug-buffer.ts)
 export { getErrorVerbosity, type ErrorVerbosity } from './verbosity.js';
 import { getErrorVerbosity } from './verbosity.js';
+
+/**
+ * Format an error headline for stderr. On a TTY it gains a red ✗ icon and a
+ * bold-red message; piped/non-TTY output stays the plain `Error: <message>`
+ * string so scripts and tests keep a stable contract.
+ */
+function errorLine(message: string): string {
+  if (!process.stderr.isTTY) return `Error: ${message}`;
+  return `${theme.errorForced(theme.symbols.fail)} ${theme.errorForced.bold(message)}`;
+}
+
+/** Format an actionable hint line: dim, with a subtle arrow, only on a TTY. */
+function hintLine(hint: string): string {
+  if (!process.stderr.isTTY) return `  ${hint}`;
+  return `  ${theme.dim(theme.symbols.arrow)} ${theme.dim(hint)}`;
+}
 
 export interface CliErrorOptions {
   code: string; // e.g., 'AUTH_REQUIRED', 'MODEL_NOT_FOUND'
   message: string; // Human-readable message (shown in graceful mode)
   exitCode: ExitCode;
   detail?: string; // Full diagnostic info (shown in verbose mode)
+  model?: string; // Model the failed request targeted, when known
+  hint?: string; // Actionable next step (e.g. how to inspect supported fields)
 }
 
 export class CliError extends Error {
   readonly code: string;
   readonly exitCode: ExitCode;
   readonly detail?: string;
+  readonly model?: string;
+  readonly hint?: string;
 
   constructor(options: CliErrorOptions) {
     super(options.message);
@@ -27,6 +48,8 @@ export class CliError extends Error {
     this.code = options.code;
     this.exitCode = options.exitCode;
     this.detail = options.detail;
+    this.model = options.model;
+    this.hint = options.hint;
   }
 
   toJSON() {
@@ -34,6 +57,8 @@ export class CliError extends Error {
       error: {
         code: this.code,
         message: this.message,
+        ...(this.model ? { model: this.model } : {}),
+        ...(this.hint ? { hint: this.hint } : {}),
         exit_code: this.exitCode,
         ...(this.detail ? { detail: this.detail } : {}),
       },
@@ -176,11 +201,11 @@ export function handleError(error: unknown, format: 'json' | 'table' | 'text'): 
     const code = typeof e.code === 'string' ? e.code : 'ERROR';
     if (format === 'json') {
       process.stderr.write(
-        JSON.stringify({ error: { code, message: e.message, exitCode: e.exitCode } }, null, 2) +
+        JSON.stringify({ error: { code, message: e.message, exit_code: e.exitCode } }, null, 2) +
           '\n',
       );
     } else {
-      console.error(`Error: ${e.message}`);
+      console.error(errorLine(e.message));
     }
     resetGlobalCache();
     throw new HandledError(e.exitCode);
@@ -196,9 +221,10 @@ export function handleError(error: unknown, format: 'json' | 'table' | 'text'): 
         process.stderr.write(JSON.stringify(cliError.toJSON(), null, 2) + '\n');
       } else {
         const output = cliError.detail
-          ? `Error: ${cliError.message}\n${cliError.detail}`
-          : `Error: ${cliError.message}`;
+          ? `${errorLine(cliError.message)}\n${process.stderr.isTTY ? theme.dim(cliError.detail) : cliError.detail}`
+          : errorLine(cliError.message);
         console.error(output);
+        if (cliError.hint) console.error(hintLine(cliError.hint));
       }
     } else {
       // Non-CliError: preserve legacy verbose output with cause chain
@@ -214,7 +240,7 @@ export function handleError(error: unknown, format: 'json' | 'table' | 'text'): 
           ) + '\n',
         );
       } else {
-        console.error(`Error: ${fullMessage}`);
+        console.error(errorLine(fullMessage));
       }
     }
     resetGlobalCache();
@@ -226,14 +252,21 @@ export function handleError(error: unknown, format: 'json' | 'table' | 'text'): 
     process.stderr.write(
       JSON.stringify(
         {
-          error: { code: cliError.code, message: cliError.message, exit_code: cliError.exitCode },
+          error: {
+            code: cliError.code,
+            message: cliError.message,
+            ...(cliError.model ? { model: cliError.model } : {}),
+            ...(cliError.hint ? { hint: cliError.hint } : {}),
+            exit_code: cliError.exitCode,
+          },
         },
         null,
         2,
       ) + '\n',
     );
   } else {
-    console.error(`Error: ${cliError.message}`);
+    console.error(errorLine(cliError.message));
+    if (cliError.hint) console.error(hintLine(cliError.hint));
   }
   resetGlobalCache();
   throw new HandledError(cliError.exitCode);

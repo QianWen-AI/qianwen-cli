@@ -6,7 +6,11 @@ import { getEffectiveConfig } from './config/manager.js';
 import { VERSION } from './index.js';
 import { flushDebugReport, clearDebugBuffer } from './api/debug-buffer.js';
 import { SUBCOMMANDS, tabCompleter, getGhostSuffix, unknownCommandMsg } from './repl/completer.js';
-import { surfaceCommanderError, shouldSwallowReplError } from './repl/repl-error.js';
+import {
+  surfaceCommanderError,
+  shouldSwallowReplError,
+  shouldRestorePrompt,
+} from './repl/repl-error.js';
 import { setReplMode } from './utils/runtime-mode.js';
 import { setActivePromptInterface, clearActivePromptInterface } from './utils/confirm.js';
 import chalk from 'chalk';
@@ -82,6 +86,10 @@ export async function startRepl(): Promise<void> {
 
   // Track whether we're currently executing a command (for process.exit interception)
   let executingCommand = false;
+  // Set once the readline interface is closed (exit/quit/q or EOF) so that a
+  // command still finishing its async teardown does not call rl.prompt() on a
+  // closed interface, which throws ERR_USE_AFTER_CLOSE.
+  let replClosed = false;
   const realExit = process.exit;
 
   // Override process.exit once — intercept only during command execution
@@ -177,6 +185,7 @@ export async function startRepl(): Promise<void> {
   // case we must NOT exit — the command's finally block will restore stdin.
   rl.on('close', () => {
     if (executingCommand) return;
+    replClosed = true;
     clearActivePromptInterface();
     realExit(0);
   });
@@ -203,6 +212,7 @@ export async function startRepl(): Promise<void> {
     // Exit commands
     if (['exit', 'quit', 'q'].includes(input.toLowerCase())) {
       console.log('  Goodbye!');
+      replClosed = true;
       rl.close();
       return;
     }
@@ -364,6 +374,14 @@ export async function startRepl(): Promise<void> {
     // reconciler cleanup) has completed and stdout has been flushed.
     // Then restore stdin state and call rl.prompt().
     await new Promise<void>((resolve) => setTimeout(resolve, 32));
+    // If the user typed exit/quit/q (or sent EOF) while this command was still
+    // running, the readline interface is already closed. Calling rl.prompt()
+    // or setRawMode on it now would throw ERR_USE_AFTER_CLOSE and crash the
+    // process with a non-zero exit. Bail out and let the close path exit.
+    if (!shouldRestorePrompt(replClosed)) {
+      executingCommand = false;
+      return;
+    }
     rl.setPrompt(getPrompt());
     if (process.stdin.isTTY && process.stdin.setRawMode) {
       process.stdin.setRawMode(true);

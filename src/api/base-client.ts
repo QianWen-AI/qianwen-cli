@@ -172,8 +172,8 @@ export function createBaseClient(opts?: BaseClientOptions): BaseClient {
           throw err;
         }
 
-        // Network-layer failure (DNS, refused, TLS, etc.) — wrap with the
-        // legacy diagnostic envelope so error consumers see a stable prefix.
+        // Network-layer failure (DNS, refused, TLS, etc.) — wrap with a
+        // stable "Network request failed" prefix for downstream consumers.
         const baseMsg = err instanceof Error ? err.message : String(err);
         const cause = err instanceof Error && err.cause ? err.cause : undefined;
         const causeMsg = cause instanceof Error ? cause.message : cause ? String(cause) : '';

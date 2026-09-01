@@ -158,7 +158,7 @@ vi.mock('../../src/config/paths.js', async (orig) => {
   };
 });
 
-const ENDPOINT = 'https://api.test.example.com';
+const ENDPOINT = 'https://api.test.qianwenai.com';
 const KEY = CacheKeys.MODELS_RAW_LIST;
 const FILE_NAME = CacheFileNames[KEY];
 
@@ -261,7 +261,7 @@ describe('FileCache', () => {
   it('rejects entries with mismatched endpoint', () => {
     cache.set(KEY, 'v1');
     setFileCacheContextResolver(() => ({
-      endpoint: 'https://api.other.example.com',
+      endpoint: 'https://api-other.test.qianwenai.com',
       ttlMs: 60_000,
     }));
     expect(cache.get(KEY)).toBeNull();

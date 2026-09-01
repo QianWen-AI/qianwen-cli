@@ -387,7 +387,7 @@ describe('DocsService.fetchDocContent (extensions & redirects)', () => {
       status: 302,
       headers: {
         get: (name: string) =>
-          name.toLowerCase() === 'location' ? 'https://evil.example.com/leak' : null,
+          name.toLowerCase() === 'location' ? 'https://evil.test.attacker-domain.net/leak' : null,
       },
     });
 

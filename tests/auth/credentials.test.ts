@@ -9,7 +9,7 @@ function makeCredentials(expiresAt: Date): Credentials {
   return {
     access_token: 'test-token',
     expires_at: expiresAt.toISOString(),
-    user: { email: 'test@example.com', aliyunId: 'test-user' },
+    user: { email: 'test@test.qianwenai.com', aliyunId: 'test-user' },
   };
 }
 

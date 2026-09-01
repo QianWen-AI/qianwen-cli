@@ -49,6 +49,8 @@ describe('resolveFormat', () => {
     const parsed = JSON.parse(written);
     expect(parsed.error.code).toBe('INVALID_FORMAT');
     expect(parsed.error.message).toContain("'yaml'");
+    expect(parsed.error.exit_code).toBe(1);
+    expect(parsed.error).not.toHaveProperty('exitCode');
 
     stderrSpy.mockRestore();
     exitSpy.mockRestore();

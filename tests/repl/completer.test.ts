@@ -62,8 +62,9 @@ describe('tabCompleter', () => {
   });
 
   it('partial top command → fuzzy-filtered candidates', () => {
+    // "mod" is a prefix of both "models" and "model3d".
     const [completions, partial] = tabCompleter('mod');
-    expect(completions).toEqual(['models']);
+    expect(completions).toEqual(['models', 'model3d']);
     expect(partial).toBe('mod');
   });
 
@@ -310,7 +311,9 @@ describe('getGhostSuffix', () => {
   });
 
   it('completes a partial top command (single match)', () => {
-    expect(getGhostSuffix('au')).toBe('th'); // → auth
+    // "au" now matches both "auth" and "audio", so it is no longer unique;
+    // use a prefix that resolves to a single command.
+    expect(getGhostSuffix('mus')).toBe('ic'); // → music
   });
 
   it('returns longest common prefix when multiple match', () => {

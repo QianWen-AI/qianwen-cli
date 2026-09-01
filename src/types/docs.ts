@@ -11,7 +11,7 @@ export interface RawSearchAllItem {
   nodesInfo?: string | null; // JSON string: [{nodeName, nodeUrl}]
   extInfo?: string | null; // JSON string with paragraph metadata
   id?: string | null;
-  // Normalized / legacy field names (backward compat)
+  // Normalized field aliases
   highlightedTitle?: string | null;
   summary?: string | null;
   highlightedSummary?: string | null;
@@ -26,7 +26,7 @@ export interface RawSearchAllResponse {
   Info?: RawSearchAllItem[] | null;
   ErrorCode?: string | null;
   Message?: string | null;
-  // Legacy / normalized field names (backward compat with tests)
+  // Normalized field aliases
   totalCount?: number | null;
   pageNo?: number | null;
   pageSize?: number | null;

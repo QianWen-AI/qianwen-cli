@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { surfaceCommanderError, shouldSwallowReplError } from '../../src/repl/repl-error.js';
+import {
+  surfaceCommanderError,
+  shouldSwallowReplError,
+  shouldRestorePrompt,
+} from '../../src/repl/repl-error.js';
 import { HandledError } from '../../src/utils/errors.js';
 
 describe('surfaceCommanderError', () => {
@@ -68,5 +72,17 @@ describe('shouldSwallowReplError', () => {
     expect(shouldSwallowReplError({ code: 'commander.error', message: 'x' })).toBe(false);
     expect(shouldSwallowReplError({ exitCode: 1 })).toBe(false);
     expect(shouldSwallowReplError(undefined)).toBe(false);
+  });
+});
+
+describe('shouldRestorePrompt', () => {
+  it('restores the prompt when the REPL is still open', () => {
+    expect(shouldRestorePrompt(false)).toBe(true);
+  });
+
+  it('skips prompt restoration once the REPL is closed (exit while a command ran)', () => {
+    // Guards against calling rl.prompt() on a closed readline interface, which
+    // throws ERR_USE_AFTER_CLOSE and crashes the process with a non-zero exit.
+    expect(shouldRestorePrompt(true)).toBe(false);
   });
 });

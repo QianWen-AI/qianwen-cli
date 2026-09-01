@@ -63,7 +63,7 @@ export function renderTextModelDetail(vm: ModelDetailViewModel): void {
       return row;
     });
 
-    lines.push('  ' + formatTextTable(headers, rows, 0).replace(/^ {2}/gm, ''));
+    lines.push(formatTextTable(headers, rows, 2));
 
     // Built-in tools
     if (vm.builtInTools.length > 0) {

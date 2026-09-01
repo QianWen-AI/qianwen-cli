@@ -482,7 +482,7 @@ export function normalizeSearchAllResponse(
   raw: RawSearchAllResponse | null | undefined,
   fallback: { page: number; pageSize: number },
 ): DocsSearchResponse {
-  // Prefer PascalCase (actual API) fields, fall back to camelCase (legacy/test).
+  // Prefer PascalCase API fields, fall back to camelCase aliases.
   const rawItems = Array.isArray(raw?.Info)
     ? raw!.Info!
     : Array.isArray(raw?.items)
@@ -498,7 +498,7 @@ export function normalizeSearchAllResponse(
 }
 
 function normalizeSearchAllItem(item: RawSearchAllItem): DocsSearchItem {
-  // Parse breadcrumb from nodesInfo JSON string (actual API), or use legacy breadcrumb array.
+  // Parse breadcrumb from the nodesInfo JSON string, or use the breadcrumb array.
   let breadcrumb: string[] = [];
   if (Array.isArray(item.breadcrumb)) {
     breadcrumb = item.breadcrumb as string[];
@@ -510,7 +510,7 @@ function normalizeSearchAllItem(item: RawSearchAllItem): DocsSearchItem {
       // ignore parse failures
     }
   }
-  // Use content/description for summary when legacy summary is absent.
+  // Fall back to content/description when summary is absent.
   const summary = item.summary ?? item.content ?? item.description ?? '';
   const highlightedSummary = item.highlightedSummary ?? item.content ?? item.description ?? '';
   return {

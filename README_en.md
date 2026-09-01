@@ -6,7 +6,7 @@
 
 > Official command-line tool for [QianWen](https://www.qianwenai.com/). Discover models, check usage, manage authentication, and diagnose local setup from a terminal or an AI agent runtime.
 
-![Version](https://img.shields.io/badge/version-1.4.0-blue)
+![Version](https://img.shields.io/badge/version-1.5.0-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
@@ -19,6 +19,7 @@
 ## Features
 
 - **Interactive and one-shot modes**: run `qianwen` with no arguments for a REPL, or pass a command for scripts, CI, and agent tools.
+- **Model invocation command family**: call chat, image, video, speech, 3D, and music models directly via `chat`, `image`, `video`, `audio`, `model3d`, `music`, and `task`, with streaming output, file downloads, and async task polling.
 - **Agent-ready contract**: commands support `--format json`, standardized exit codes, parseable JSON errors, and `--quiet` for exit-code-only checks.
 - **Model and usage workflows**: browse models, inspect model metadata, search by keyword, and review Free Tier, Token Plan, and PAYG usage.
 - **Skill discovery and install**: search SkillHub with `skills search` and install into a local directory with `skills install`; no login required.
@@ -146,6 +147,7 @@ Run diagnostics to verify authentication, network access, configuration, and she
 
 | Area | Commands | Common flags |
 |---|---|---|
+| Model invocation | `chat create`, `image generate`, `video generate`, `audio transcribe`, `audio speech`, `model3d generate`, `music generate`, `task get` | `--model`, `--stream`, `--size`, `--image`, `--voice`, `--out`, `--no-wait`, `--timeout`, `--request`, `--api-key`, `--format` |
 | Auth | `auth login`, `auth logout`, `auth status` | `--init-only`, `--complete`, `--timeout`, `--format` |
 | Models | `models list`, `models info`, `models search` | `--input`, `--output`, `--all`, `--verbose`, `--page`, `--per-page`, `--format` |
 | Usage | `usage summary`, `usage breakdown`, `usage free-tier`, `usage payg`, `usage logs` | `--period`, `--from`, `--to`, `--days`, `--model`, `--granularity`, `--format` |
