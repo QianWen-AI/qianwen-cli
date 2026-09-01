@@ -13,7 +13,7 @@ vi.mock('../../../src/config/manager.js', () => ({
     { key: 'output.format', value: 'auto', source: 'default' },
     {
       key: 'api.endpoint',
-      value: 'https://example.com',
+      value: 'https://api.test.qianwenai.com',
       source: 'global',
       sourcePath: `~/${s.configDirName}/config.json`,
     },

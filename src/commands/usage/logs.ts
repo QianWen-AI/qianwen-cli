@@ -247,9 +247,3 @@ function clampPageSize(raw: unknown): number {
   if (!Number.isFinite(n) || n < 1) return DEFAULT_PAGE_SIZE;
   return Math.min(MAX_PAGE_SIZE, Math.floor(n));
 }
-
-export const USAGE_LOGS_DEFAULTS = {
-  DEFAULT_PAGE,
-  DEFAULT_PAGE_SIZE,
-  MAX_PAGE_SIZE,
-};

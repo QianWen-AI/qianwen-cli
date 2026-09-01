@@ -17,6 +17,8 @@ export const CONFIG_DEFAULTS: ConfigSchema = {
   'auth.endpoint': site.authEndpoint,
   'cache.ttl': String(DEFAULT_CACHE_TTL_MS),
   'support.categorySource': '',
+  'model.endpoint': site.dashscopeEndpoint,
+  'model.api_key': '',
 };
 
 /**
@@ -61,13 +63,15 @@ const VALIDATORS: Record<ConfigKey, (value: string) => boolean> = {
   'auth.endpoint': isValidUrl,
   // Non-negative integer milliseconds. '0' disables the file cache.
   'cache.ttl': (v) => /^\d+$/.test(v),
-  // Allowed: empty string (use embedded local data), 'cli-api' (legacy gateway),
+  // Allowed: empty string (use embedded local data), 'cli-api' (Workorder gateway),
   // or an http(s):// URL pointing at a CDN-hosted JSON document.
   'support.categorySource': (v) => {
     if (!v) return true;
     if (v === 'cli-api') return true;
     return /^https?:\/\//.test(v);
   },
+  'model.endpoint': (v) => v === site.dashscopeEndpointName || isValidUrl(v),
+  'model.api_key': (v) => v.trim().length > 0,
 };
 
 /**
@@ -90,6 +94,10 @@ export function validateConfigValue(key: ConfigKey, value: string): string | nul
         return `Invalid value for cache.ttl. Must be a non-negative integer (milliseconds); '0' disables the file cache`;
       case 'support.categorySource':
         return `Invalid value for support.categorySource. Allowed: empty string, 'cli-api', or an http(s):// URL`;
+      case 'model.endpoint':
+        return `Invalid value for model.endpoint. Must be a valid URL or '${site.dashscopeEndpointName}'`;
+      case 'model.api_key':
+        return `Invalid value for model.api_key. Must be a non-empty string`;
       default:
         return `Invalid value for ${key}`;
     }

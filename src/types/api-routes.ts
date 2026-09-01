@@ -22,8 +22,6 @@ export const API_ACTION_GATEWAY = 'BroadScopeAspnGateway';
 export const API_ACTION_CONSUME_SUMMARY = 'MaasListConsumeSummary';
 export const API_ACTION_SEARCH_ALL = 'SearchAll';
 
-export const API_ACTION_GET_FUND_ACCOUNT_BALANCE = 'GetFundAccountAvailableAmount';
-
 // SkillHub actions (WebsitePortal) — search plus the two install-side actions.
 export const API_ACTION_SEARCH_HUB = 'SearchHub';
 export const API_ACTION_GET_HUB_SKILL = 'GetHubSkill';

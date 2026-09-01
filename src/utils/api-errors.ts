@@ -25,6 +25,8 @@ export function classifyHttpError(error: unknown, url?: string): CliError {
   if (error instanceof Error) {
     const name = error.name;
     const msg = error.message;
+    const causeText = readCauseText(error);
+    const netHaystack = `${msg} ${causeText}`;
 
     // Gateway business / envelope errors carry a server-provided message that
     // explains *why* the request was rejected (e.g. a ticket-creation policy
@@ -54,11 +56,16 @@ export function classifyHttpError(error: unknown, url?: string): CliError {
 
     // DNS / connection refused / network unreachable
     if (
-      msg.includes('ECONNREFUSED') ||
-      msg.includes('ENOTFOUND') ||
-      msg.includes('ENETUNREACH') ||
-      msg.includes('EAI_AGAIN') ||
-      msg.includes('ECONNRESET')
+      netHaystack.includes('ECONNREFUSED') ||
+      netHaystack.includes('ENOTFOUND') ||
+      netHaystack.includes('ENETUNREACH') ||
+      netHaystack.includes('EAI_AGAIN') ||
+      netHaystack.includes('ECONNRESET') ||
+      netHaystack.includes('EPIPE') ||
+      msg === 'terminated' ||
+      netHaystack.includes('other side closed') ||
+      msg.includes('fetch failed') ||
+      name === 'ConnectionClosedError'
     ) {
       return new CliError({
         code: 'NETWORK_ERROR',
@@ -106,6 +113,12 @@ export function classifyHttpError(error: unknown, url?: string): CliError {
       });
     }
 
+    // Local filesystem failures (e.g. writing an artifact via --out). These
+    // carry a POSIX `code`; surface an actionable message instead of masking
+    // the real cause behind a generic "unexpected error".
+    const fsError = classifyFsError(error, msg);
+    if (fsError) return fsError;
+
     // Fallback: any other Error
     return new CliError({
       code: 'UNKNOWN_ERROR',
@@ -122,6 +135,54 @@ export function classifyHttpError(error: unknown, url?: string): CliError {
     message: 'An unexpected error occurred.',
     exitCode: EXIT_CODES.GENERAL_ERROR,
     detail: str || undefined,
+  });
+}
+
+/** Read the code/message of a nested `error.cause` (undici surfaces the real network reason there). */
+function readCauseText(error: Error): string {
+  const cause = (error as { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    const code = (cause as { code?: unknown }).code;
+    return `${typeof code === 'string' ? code : ''} ${cause.message}`;
+  }
+  if (typeof cause === 'string') return cause;
+  return '';
+}
+
+/**
+ * Map a POSIX filesystem error `code` (e.g. writing an artifact via --out) to
+ * an actionable message. Returns undefined for non-filesystem errors.
+ */
+export function friendlyFsMessage(error: unknown): string | undefined {
+  const code = (error as { code?: unknown }).code;
+  const fsCodes: Record<string, string> = {
+    EACCES: 'Permission denied writing the output file.',
+    EPERM: 'Operation not permitted writing the output file.',
+    ENOENT: 'Cannot write the output file: a parent directory does not exist or is not writable.',
+    EEXIST: 'Output path already exists and cannot be replaced.',
+    EROFS: 'Cannot write the output file: read-only filesystem.',
+    ENOSPC: 'Cannot write the output file: no space left on device.',
+    EISDIR: 'Output path is a directory, not a file.',
+    ENOTDIR: 'A path component of the output is not a directory.',
+    ENAMETOOLONG: 'Output file name is too long.',
+    EMFILE: 'Too many open files; close some and retry.',
+    ENFILE: 'System file-table is full; retry later.',
+  };
+  return typeof code === 'string' ? fsCodes[code] : undefined;
+}
+
+/**
+ * Classify a local filesystem error (POSIX `code`) into a CliError with an
+ * actionable message. Returns undefined for non-filesystem errors.
+ */
+function classifyFsError(error: Error, msg: string): CliError | undefined {
+  const friendly = friendlyFsMessage(error);
+  if (!friendly) return undefined;
+  return new CliError({
+    code: 'IO_ERROR',
+    message: friendly,
+    exitCode: EXIT_CODES.GENERAL_ERROR,
+    detail: buildDetail(msg, undefined, error),
   });
 }
 

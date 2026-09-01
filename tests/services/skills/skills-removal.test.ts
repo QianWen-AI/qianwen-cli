@@ -68,7 +68,7 @@ function makeManaged(slug: string): string {
     sha256: 'aa'.repeat(32),
     installMethod: 'copy',
     installedAt: '2026-07-01T00:00:00.000Z',
-    clientVersion: '1.4.0',
+    clientVersion: '1.5.0',
   };
   writeSkillMeta(dir, meta);
   return dir;

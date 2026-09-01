@@ -150,6 +150,7 @@ export class MemoryCache {
 export const CacheKeys = {
   MODELS_RAW_LIST: 'models:raw_list',
   MODEL_MAPPING: 'models:mapping',
+  DEFAULT_MODEL_MAPPING: 'models:default_mapping',
 } as const;
 
 export type CacheKey = (typeof CacheKeys)[keyof typeof CacheKeys];
@@ -161,17 +162,17 @@ export type CacheKey = (typeof CacheKeys)[keyof typeof CacheKeys];
 export const CacheFileNames: Record<CacheKey, string> = {
   [CacheKeys.MODELS_RAW_LIST]: 'models-raw-list.json',
   [CacheKeys.MODEL_MAPPING]: 'model-mapping.json',
+  [CacheKeys.DEFAULT_MODEL_MAPPING]: 'default-model-mapping.json',
 };
 
 // ============================================================
 // Default cache configuration
-// Note: only model data is cached; all other data (usage, auth, etc.)
-// is queried in real time.
 // ============================================================
 
 export const CacheTTL = {
   MODELS_LIST: 10 * 60 * 1000, // Raw model data: 10 minutes (excluding quota)
   MODEL_MAPPING: 10 * 60 * 1000, // Model mapping: 10 minutes
+  DEFAULT_MODEL_MAPPING: 3 * 24 * 60 * 60 * 1000, // Per-command default model: 3 days
 } as const;
 
 // ============================================================

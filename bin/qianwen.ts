@@ -20,6 +20,7 @@ if (args.length === 0) {
   // One-shot mode
   const { createProgram } = await import('../src/cli.js');
   const { CliError, HandledError } = await import('../src/utils/errors.js');
+  const { classifyHttpError } = await import('../src/utils/api-errors.js');
   const { flushDebugReport } = await import('../src/api/debug-buffer.js');
   const program = createProgram();
 
@@ -72,7 +73,7 @@ if (args.length === 0) {
           process.stderr.write(
             JSON.stringify(
               {
-                error: { code, message, exitCode },
+                error: { code, message, exit_code: exitCode },
               },
               null,
               2,
@@ -96,22 +97,29 @@ if (args.length === 0) {
       resetGlobalCache();
       process.exitCode = err.exitCode;
     } else {
-      const message = err instanceof Error ? err.message : String(err);
+      // Classify raw errors (including local filesystem failures such as an
+      // EACCES/ENOSPC while writing a config file) into a structured CliError.
+      // Unclassified errors still fall back to UNKNOWN_ERROR.
+      const cliError = classifyHttpError(err);
       if (wantsJSON()) {
         process.stderr.write(
           JSON.stringify(
             {
-              error: { code: 'UNKNOWN_ERROR', message, exitCode: 1 },
+              error: {
+                code: cliError.code,
+                message: cliError.message,
+                exit_code: cliError.exitCode,
+              },
             },
             null,
             2,
           ) + '\n',
         );
       } else {
-        console.error(`Error: ${message}`);
+        console.error(`Error: ${cliError.message}`);
       }
       resetGlobalCache();
-      process.exitCode = 1;
+      process.exitCode = cliError.exitCode;
     }
   }
 

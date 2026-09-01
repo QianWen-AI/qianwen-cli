@@ -6,7 +6,7 @@
 
 > 千问AI平台官方命令行工具。在终端或 AI Agent 运行时中，发现模型、查看用量、管理认证与诊断本地环境。
 
-![Version](https://img.shields.io/badge/version-1.4.0-blue)
+![Version](https://img.shields.io/badge/version-1.5.0-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
@@ -19,6 +19,7 @@
 ## 功能特性
 
 - **交互模式与一次性命令**：不带参数运行 `qianwen` 进入 REPL，传递命令则适用于脚本、CI 和 Agent 工具。
+- **模型调用命令族**：通过 `chat`、`image`、`video`、`audio`、`model3d`、`music` 与 `task` 直接调用对话、图像、视频、语音、3D 与音乐模型，支持流式输出、文件落盘和异步任务查询。
 - **Agent 友好协议**：命令支持 `--format json`、标准化退出码、可解析的 JSON 错误信息，以及 `--quiet` 仅返回退出码。
 - **模型与用量工作流**：浏览模型、查看模型详情、按关键词搜索，以及查看免费额度、Token Plan 和按量计费用量。
 - **技能发现与安装**：通过 `skills search` 搜索 SkillHub 技能，通过 `skills install` 安装到本地目录，无需登录即可使用。
@@ -144,6 +145,7 @@ qianwen auth login --complete --format json
 
 | 领域 | 命令 | 常用标志 |
 |---|---|---|
+| 模型调用 | `chat create`, `image generate`, `video generate`, `audio transcribe`, `audio speech`, `model3d generate`, `music generate`, `task get` | `--model`, `--stream`, `--size`, `--image`, `--voice`, `--out`, `--no-wait`, `--timeout`, `--request`, `--api-key`, `--format` |
 | 认证 | `auth login`, `auth logout`, `auth status` | `--init-only`, `--complete`, `--timeout`, `--format` |
 | 模型 | `models list`, `models info`, `models search` | `--input`, `--output`, `--all`, `--verbose`, `--page`, `--per-page`, `--format` |
 | 用量 | `usage summary`, `usage breakdown`, `usage free-tier`, `usage payg`, `usage logs` | `--period`, `--from`, `--to`, `--days`, `--model`, `--granularity`, `--format` |

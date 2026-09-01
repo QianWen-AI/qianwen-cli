@@ -7,7 +7,7 @@ vi.mock('../../../src/config/schema.js', () => ({
 vi.mock('../../../src/config/manager.js', () => ({
   getConfigValue: () => 'auto',
   getConfigValueWithSource: (k: string) => ({
-    value: k === 'output.format' ? 'auto' : 'https://example.com',
+    value: k === 'output.format' ? 'auto' : 'https://api.test.qianwenai.com',
     source: 'default',
     sourcePath: undefined,
   }),

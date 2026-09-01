@@ -147,7 +147,7 @@ export interface LoginPendingState {
   expires_in: number;
   interval: number;
   code_verifier?: string;
-  /** Mode used to acquire this pending session. Defaults to `device-flow` when absent for backwards compatibility with sessions created before the PKCE migration. */
+  /** Mode used to acquire this pending session. Defaults to `device-flow` when absent. */
   auth_mode?: AuthMode;
   /** ISO timestamp when the device code was issued */
   created_at: string;
@@ -175,7 +175,7 @@ export function readPendingState(): LoginPendingState | null {
   if (!existsSync(filePath)) return null;
   try {
     const state: LoginPendingState = JSON.parse(readFileSync(filePath, 'utf-8'));
-    // Backfill auth_mode for sessions written before the PKCE migration.
+    // Backfill auth_mode when absent: pkce if a verifier is present, else device-flow.
     if (!state.auth_mode) {
       state.auth_mode = state.code_verifier ? 'pkce' : 'device-flow';
     }

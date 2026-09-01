@@ -63,8 +63,8 @@ export function renderTextUsageSummary(vm: UsageSummaryViewModel): void {
 function formatSectionLine(title: string, subtitle?: string): string {
   const width = 80;
   const titlePart = subtitle ? `${title}  ·  ${subtitle}` : title;
-  const dashes = '─'.repeat(Math.max(0, width - titlePart.length - 4));
-  return `  ── ${titlePart}${dashes}`;
+  const dashes = '─'.repeat(Math.max(3, width - titlePart.length - 6));
+  return `  ── ${titlePart} ${dashes}`;
 }
 
 function renderFreeTierTable(section: NonNullable<UsageSummaryViewModel['freeTier']>): string {
@@ -76,7 +76,7 @@ function renderFreeTierTable(section: NonNullable<UsageSummaryViewModel['freeTie
     return [row.modelId, row.remaining, row.total, row.progressBar.label];
   });
 
-  return '  ' + formatTextTable(headers, rows, 0).replace(/^ {2}/gm, '');
+  return formatTextTable(headers, rows, 2);
 }
 
 function renderPayAsYouGoTable(section: NonNullable<UsageSummaryViewModel['payAsYouGo']>): string {
@@ -86,7 +86,7 @@ function renderPayAsYouGoTable(section: NonNullable<UsageSummaryViewModel['payAs
   // Add total row
   rows.push(['Total', '—', section.total.cost]);
 
-  return '  ' + formatTextTable(headers, rows, 0).replace(/^ {2}/gm, '');
+  return formatTextTable(headers, rows, 2);
 }
 
 // ── Usage Breakdown Text Renderer ────────────────────────────────────
@@ -145,7 +145,7 @@ export function renderTextUsageBreakdown(vm: UsageBreakdownViewModel): void {
   }
   rows.push(totalCells);
 
-  lines.push('  ' + formatTextTable(headers, rows, 0).replace(/^ {2}/gm, ''));
+  lines.push(formatTextTable(headers, rows, 2));
   lines.push('');
 
   console.log(lines.join('\n'));
@@ -192,7 +192,7 @@ export function renderTextUsageLogs(vm: UsageLogsViewModel): void {
     row.usage,
     row.errorCode ?? '\u2014',
   ]);
-  lines.push('  ' + formatTextTable(headers, rows, 0).replace(/^ {2}/gm, ''));
+  lines.push(formatTextTable(headers, rows, 2));
   lines.push('');
   lines.push(`  ${vm.totalCount} entries  \u00b7  Page ${vm.page} of ${vm.pageCount}`);
   console.log(lines.join('\n'));

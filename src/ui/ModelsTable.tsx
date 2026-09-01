@@ -120,6 +120,5 @@ export async function renderModelsTableInk(
   await renderWithInk(<ModelsTableInk uiData={uiData} {...options} />);
 }
 
-// Re-export shared constants for backward compatibility
 export { MODEL_LIST_COLUMNS, buildModelListViewModelFromModels as buildModelsViewModel };
 export type { ModelsListViewModel, ModelRowViewModel };

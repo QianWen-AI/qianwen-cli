@@ -9,15 +9,22 @@ import { isReplMode, formatCmd } from './utils/runtime-mode.js';
 
 // Command groups (alphabetical by feature directory)
 import { registerAuthCommands } from './commands/auth/index.js';
+import { registerAudioCommands } from './commands/audio/index.js';
 import { registerBillingCommands } from './commands/billing/index.js';
+import { registerChatCommands } from './commands/chat/index.js';
 import { registerCompletionCommand } from './commands/completion.js';
 import { registerConfigCommands } from './commands/config/index.js';
 import { registerDocsCommands } from './commands/docs/index.js';
 import { registerDoctorCommand } from './commands/doctor.js';
+import { registerImageCommands } from './commands/image/index.js';
+import { registerModel3dCommands } from './commands/model3d/index.js';
 import { registerModelsCommands as registerModelsCommandsImpl } from './commands/models/index.js';
+import { registerMusicCommands } from './commands/music/index.js';
 import { registerSkillsCommands } from './commands/skills/index.js';
 import { registerSubscriptionCommands } from './commands/subscription/index.js';
 import { registerSupportCommands } from './commands/support/index.js';
+import { registerTaskCommands } from './commands/task/index.js';
+import { registerVideoCommands } from './commands/video/index.js';
 import {
   usageBreakdownAction,
   usageSummaryAction,
@@ -508,7 +515,14 @@ function setTopLevelHelpMetadata(
 }
 
 function applyTopLevelHelpMetadata(program: Command): void {
+  setTopLevelHelpMetadata(program, 'chat', 'Core', 90);
+  setTopLevelHelpMetadata(program, 'image', 'Core', 95);
+  setTopLevelHelpMetadata(program, 'video', 'Core', 96);
+  setTopLevelHelpMetadata(program, 'audio', 'Core', 97);
+  setTopLevelHelpMetadata(program, 'model3d', 'Core', 98);
+  setTopLevelHelpMetadata(program, 'music', 'Core', 99);
   setTopLevelHelpMetadata(program, 'models', 'Core', 110);
+  setTopLevelHelpMetadata(program, 'task', 'Core', 115);
   setTopLevelHelpMetadata(program, 'docs', 'Core', 120);
   setTopLevelHelpMetadata(program, 'skills', 'Core', 130);
 
@@ -546,6 +560,13 @@ export function createProgram(): Command {
   // Identity & primary resources
   registerAuthCommands(program);
   registerModelsCommands(program);
+  registerChatCommands(program);
+  registerImageCommands(program);
+  registerVideoCommands(program);
+  registerAudioCommands(program);
+  registerModel3dCommands(program);
+  registerMusicCommands(program);
+  registerTaskCommands(program);
   registerUsageCommandsWithMeta(program);
 
   // Billing & subscription

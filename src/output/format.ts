@@ -55,7 +55,7 @@ function rejectInvalidFormat(value: string): never {
     error: {
       code: 'INVALID_FORMAT',
       message: `Invalid format '${value}'. Supported: ${VALID_FORMATS.join(', ')}`,
-      exitCode: 1,
+      exit_code: 1,
     },
   };
   process.stderr.write(JSON.stringify(payload, null, 2) + '\n');
@@ -103,12 +103,6 @@ export function outputJSON(data: unknown): void {
 
 export function outputText(text: string): void {
   console.log(text);
-}
-
-// Errors must go to stderr so Agent pipelines (`cmd --format json | jq`) don't
-// see error JSON mixed into the data stream.
-export function outputErrorJSON(data: unknown): void {
-  process.stderr.write(JSON.stringify(data, null, 2) + '\n');
 }
 
 /**

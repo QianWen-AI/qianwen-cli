@@ -250,7 +250,7 @@ export class SupportService {
       return DEFAULT_CATEGORY_TREE;
     }
 
-    // Strategy 2: 'cli-api' → legacy Workorder gateway.
+    // Strategy 2: 'cli-api' → Workorder gateway.
     if (source === 'cli-api') {
       const raw = await this.apiClient.callFlatApi<RawGetCategoryTreeResponse>({
         product: API_PRODUCT_WORKORDER,

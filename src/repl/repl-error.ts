@@ -20,3 +20,12 @@ export function surfaceCommanderError(err: {
 export function shouldSwallowReplError(err: unknown): boolean {
   return err instanceof HandledError;
 }
+
+// After a command finishes, the REPL restores its prompt. But if the user
+// typed exit/quit/q (or sent EOF) while the command was still running, the
+// readline interface is already closed; calling rl.prompt()/setRawMode on it
+// throws ERR_USE_AFTER_CLOSE and crashes the process with a non-zero exit.
+// Return false in that case so the caller skips prompt restoration.
+export function shouldRestorePrompt(replClosed: boolean): boolean {
+  return !replClosed;
+}

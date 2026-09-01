@@ -139,21 +139,21 @@ describe('support create command', () => {
     holder.services = makeMockServices({
       supportService: {
         getCategoryTree: async () => [
-          { id: 'miaowu', name: '\u79D2\u609F', helpUrl: 'https://www.miaowu.example.com', children: [] },
+          { id: 'miaowu', name: '\u79D2\u609F', helpUrl: 'https://miaowu.test.qianwenai.com', children: [] },
         ],
       },
     });
     renderWithInkSpy.mockImplementationOnce(async (el: any) => {
       const props = el.props;
       if (props.onSelect) {
-        const sel: CategorySelection = { id: 'miaowu', name: '\u79D2\u609F', path: '\u79D2\u609F', helpUrl: 'https://www.miaowu.example.com' };
+        const sel: CategorySelection = { id: 'miaowu', name: '\u79D2\u609F', path: '\u79D2\u609F', helpUrl: 'https://miaowu.test.qianwenai.com' };
         props.onSelect(sel);
       }
     });
     const r = await runCommand(build, ['support', 'create', '--format', 'text']);
     expect(r.stdout).toContain('\u5982\u9700\u670D\u52A1\u652F\u6301');
     expect(r.stdout).toContain('\u79D2\u609F');
-    expect(r.stdout).toContain('https://www.miaowu.example.com');
+    expect(r.stdout).toContain('https://miaowu.test.qianwenai.com');
     expect(r.exitCode).toBeUndefined();
   });
 
@@ -162,14 +162,14 @@ describe('support create command', () => {
     holder.services = makeMockServices({
       supportService: {
         getCategoryTree: async () => [
-          { id: 'miaowu', name: '\u79D2\u609F', helpUrl: 'https://www.miaowu.example.com', children: [] },
+          { id: 'miaowu', name: '\u79D2\u609F', helpUrl: 'https://miaowu.test.qianwenai.com', children: [] },
         ],
       },
     });
     renderWithInkSpy.mockImplementationOnce(async (el: any) => {
       const props = el.props;
       if (props.onSelect) {
-        const sel: CategorySelection = { id: 'miaowu', name: '\u79D2\u609F', path: '\u79D2\u609F', helpUrl: 'https://www.miaowu.example.com' };
+        const sel: CategorySelection = { id: 'miaowu', name: '\u79D2\u609F', path: '\u79D2\u609F', helpUrl: 'https://miaowu.test.qianwenai.com' };
         props.onSelect(sel);
       }
     });
@@ -177,7 +177,7 @@ describe('support create command', () => {
     const payload = JSON.parse(r.stdout);
     expect(payload.redirect).toBe(true);
     expect(payload.name).toBe('\u79D2\u609F');
-    expect(payload.url).toBe('https://www.miaowu.example.com');
+    expect(payload.url).toBe('https://miaowu.test.qianwenai.com');
     expect(r.exitCode).toBeUndefined();
   });
 
@@ -186,14 +186,14 @@ describe('support create command', () => {
     holder.services = makeMockServices({
       supportService: {
         getCategoryTree: async () => [
-          { id: '582262', name: '\u6A21\u578B\u670D\u52A1', helpUrl: 'https://help.example.com', children: [] },
+          { id: '582262', name: '\u6A21\u578B\u670D\u52A1', helpUrl: 'https://help.test.qianwenai.com', children: [] },
         ],
       },
     });
     renderWithInkSpy.mockImplementationOnce(async (el: any) => {
       const props = el.props;
       if (props.onSelect) {
-        const sel: CategorySelection = { id: '582262', name: '\u6A21\u578B\u670D\u52A1', path: '\u6A21\u578B\u670D\u52A1', helpUrl: 'https://help.example.com' };
+        const sel: CategorySelection = { id: '582262', name: '\u6A21\u578B\u670D\u52A1', path: '\u6A21\u578B\u670D\u52A1', helpUrl: 'https://help.test.qianwenai.com' };
         props.onSelect(sel);
       }
     });

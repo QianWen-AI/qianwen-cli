@@ -391,8 +391,7 @@ function drainStdin(): Promise<void> {
 }
 
 /**
- * Alias kept for one-shot mode (non-REPL). Behaviour is identical to
- * `renderWithInk` — both now properly await Ink's exit signal.
- * @deprecated Use renderWithInk directly. This alias exists for backward compatibility.
+ * Alias for one-shot mode (non-REPL); identical to `renderWithInk`.
+ * @deprecated Use renderWithInk directly.
  */
 export const renderWithInkSync = renderWithInk;
