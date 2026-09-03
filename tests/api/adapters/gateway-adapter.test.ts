@@ -32,7 +32,7 @@ describe('buildEnvelopePayload', () => {
   });
 
   it('honours an explicit cornerstoneParam override', () => {
-    const corner = { domain: 'override.test.qianwen.com', protocol: 'V3', productCode: 'p_test' };
+    const corner = { domain: 'override.test.qianwenai.com', protocol: 'V3', productCode: 'p_test' };
     const out = buildEnvelopePayload({
       api: 'foo.bar.baz',
       data: { x: 1 },
@@ -44,12 +44,12 @@ describe('buildEnvelopePayload', () => {
 
   it('does not share references with caller-supplied data or cornerstoneParam', () => {
     const data = { x: 1 };
-    const corner = { domain: 'a.test.qianwen.com' };
+    const corner = { domain: 'a.test.qianwenai.com' };
     const out = buildEnvelopePayload({ api: 'a.b', data, cornerstoneParam: corner });
     out.data.reqDTO.x = 999;
     out.cornerstoneParam.domain = 'mutated';
     expect(data.x).toBe(1);
-    expect(corner.domain).toBe('a.test.qianwen.com');
+    expect(corner.domain).toBe('a.test.qianwenai.com');
   });
 });
 

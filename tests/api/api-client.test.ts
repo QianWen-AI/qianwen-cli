@@ -5,7 +5,7 @@
  *   - Inject a stub BaseClient via createApiClient({ baseClient }) so we
  *     avoid mocking global fetch and credentials. The stub records every
  *     RequestOptions it receives and returns whatever the test sets up.
- *   - Mock domain: *.test.qianwen.com (the URL is built from site.apiEndpoint
+ *   - Mock domain: *.test.qianwenai.com (the URL is built from site.apiEndpoint
  *     under the hood, so we only need to assert on body/route shape).
  */
 import { describe, it, expect, vi } from 'vitest';
@@ -17,6 +17,7 @@ import {
 } from '../../src/api/request-adapter.js';
 import type { BaseClient, RequestOptions } from '../../src/api/base-client.js';
 import type { RawApiEnvelope, GatewayEnvelope } from '../../src/types/api-envelope.js';
+import { redactPaymentData } from '../../src/utils/strings.js';
 
 interface StubBaseClient extends BaseClient {
   calls: RequestOptions[];
@@ -105,6 +106,25 @@ describe('ApiClient.callFlatApi', () => {
     expect(base.calls[0]!.authMode).toBe('optional');
   });
 
+  it('passes the caller AbortSignal to the transport without serializing it into parameters', async () => {
+    const base = makeStubBaseClient();
+    base.setResponse({ code: '200', data: { RechargeStatus: 'WAIT' } });
+    const client = createApiClient({ baseClient: base });
+    const controller = new AbortController();
+
+    await client.callFlatApi({
+      product: 'BssOpenAPI-V3',
+      action: 'GetRechargeResult',
+      params: { Nbid: 'nbid-test', ChargeOrderId: 'order-test' },
+      signal: controller.signal,
+    });
+
+    expect(base.calls[0]?.signal).toBe(controller.signal);
+    const body = JSON.parse(base.calls[0]?.body ?? '{}') as Record<string, unknown>;
+    expect(body).not.toHaveProperty('signal');
+    expect(body.params).toEqual({ Nbid: 'nbid-test', ChargeOrderId: 'order-test' });
+  });
+
   it('throws GatewayEnvelopeError when the gateway returns a non-200 code', async () => {
     const base = makeStubBaseClient();
     base.setResponse({ code: '500', message: 'Server error' });
@@ -120,9 +140,32 @@ describe('ApiClient.callFlatApi', () => {
     expect((caught as GatewayEnvelopeError).code).toBe('500');
   });
 
+  it('registers protocol error context so diagnostics redact Nbid without mutating the original error', async () => {
+    const nbid = 'nbid-sensitive-api-client';
+    const orderId = 'order-visible';
+    const base = makeStubBaseClient();
+    base.setResponse({ code: '500', message: `account ${nbid}, order ${orderId} unavailable` });
+    const client = createApiClient({ baseClient: base });
+
+    const caught = await client
+      .callFlatApi({
+        product: 'BssOpenAPI-V3',
+        action: 'GetRechargeResult',
+        params: { Nbid: nbid, ChargeOrderId: orderId },
+      })
+      .catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(GatewayEnvelopeError);
+    expect((caught as Error).message).toContain(nbid);
+    const safe = redactPaymentData(caught);
+    expect(JSON.stringify(safe)).not.toContain(nbid);
+    expect(JSON.stringify(safe)).toContain(orderId);
+    expect((caught as Error).message).toContain(nbid);
+  });
+
   it('propagates HTTP errors from the BaseClient verbatim', async () => {
     const base = makeStubBaseClient();
-    base.setError(new Error('HTTP 403: Forbidden\n  URL: https://api.test.qianwen.com'));
+    base.setError(new Error('HTTP 403: Forbidden\n  URL: https://api.test.qianwenai.com'));
     const client = createApiClient({ baseClient: base });
     await expect(client.callFlatApi({ product: 'p', action: 'a' })).rejects.toThrow(
       /HTTP 403: Forbidden/,
@@ -175,7 +218,7 @@ describe('ApiClient.callEnvelopeApi', () => {
     const base = makeStubBaseClient();
     base.setResponse(makeSuccessEnvelope({ ok: true }));
     const client = createApiClient({ baseClient: base });
-    const corner = { domain: 'override.test.qianwen.com', protocol: 'V3' };
+    const corner = { domain: 'override.test.qianwenai.com', protocol: 'V3' };
     await client.callEnvelopeApi({ api: 'a.b.c', data: {}, cornerstoneParam: corner });
 
     const body = JSON.parse(base.calls[0]!.body!);

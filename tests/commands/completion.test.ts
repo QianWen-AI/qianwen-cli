@@ -103,3 +103,43 @@ describe('completion install — fish rc filesystem safety', () => {
     expect(written).toMatch(/\n$/);
   });
 });
+
+describe('completion generate — recharge command definitions', () => {
+  it.each(['bash', 'zsh', 'fish'])(
+    '%s script includes public recharge commands and options',
+    async (shell) => {
+      const script = await generateScript(shell);
+      const compact = script.replace(/\s+/gu, ' ');
+
+      expect(script).toContain('recharge-history');
+      if (shell === 'zsh') {
+        expect(compact).toContain(
+          "recharge) _arguments '--channel[Payment channel]:channel:(alipay)' '--amount[CNY amount]:amount:()'",
+        );
+        expect(compact).toContain(
+          "recharge-history) _arguments '--range[Shanghai day range]:range:(1d 3d 7d 30d)' '--start-time[Start time]:time:()' '--end-time[End time]:time:()'",
+        );
+      } else if (shell === 'bash') {
+        expect(compact).toContain(
+          'recharge) COMPREPLY=( $(compgen -W "--channel --amount --format -h --help"',
+        );
+        expect(compact).toContain(
+          'recharge-history) COMPREPLY=( $(compgen -W "--range --start-time --end-time --page --page-size --format -h --help"',
+        );
+        expect(compact).toContain('--range) COMPREPLY=( $(compgen -W "1d 3d 7d 30d"');
+      } else {
+        expect(compact).toContain(
+          "_seen_path billing balance recharge' -l channel -d 'Payment channel' -a 'alipay'",
+        );
+        expect(compact).toContain(
+          "_seen_path billing balance recharge-history' -l range -d 'Shanghai day range' -a '1d 3d 7d 30d'",
+        );
+        expect(compact).toContain(
+          "_seen_path billing balance recharge-history' -l start-time -d 'Start time'",
+        );
+      }
+      expect(script).not.toContain('--method');
+      expect(script).not.toMatch(/recharge[^\n]*\bresult\b/);
+    },
+  );
+});

@@ -110,8 +110,24 @@ describe('SubscriptionStatusInk', () => {
     const vm = makeVm({
       recentOrdersSection: {
         orders: [
-          { id: 'ord-101', type: 'purchase', typeLabel: 'Purchase', date: '2026-04-15', amount: '¥199.00', statusLabel: 'Paid', statusColor: 'green' as const },
-          { id: 'ord-102', type: 'renew', typeLabel: 'Renew', date: '2026-04-20', amount: '¥99.00', statusLabel: 'Unpaid', statusColor: 'orange' as const },
+          {
+            id: 'ord-101',
+            type: 'purchase',
+            typeLabel: 'Purchase',
+            date: '2026-04-15',
+            amount: '¥199.00',
+            statusLabel: 'Paid',
+            statusColor: 'green' as const,
+          },
+          {
+            id: 'ord-102',
+            type: 'renew',
+            typeLabel: 'Renew',
+            date: '2026-04-20',
+            amount: '¥99.00',
+            statusLabel: 'Unpaid',
+            statusColor: 'orange' as const,
+          },
         ],
       },
       tokenPlanSection: {

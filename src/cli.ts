@@ -1,10 +1,11 @@
 // Third-party
-import { Command } from 'commander';
+import { Command, type CommanderError, type Help } from 'commander';
 
 // Project metadata & runtime helpers
 import { VERSION } from './index.js';
 import { site } from './site.js';
 import { theme } from './ui/theme.js';
+import { padEndVisible, visibleWidth, wrapText } from './ui/textWrap.js';
 import { isReplMode, formatCmd } from './utils/runtime-mode.js';
 
 // Command groups (alphabetical by feature directory)
@@ -33,15 +34,54 @@ import {
 import { collectRepeatable } from './commands/usage/logs.js';
 import { registerUpdateCommand, registerVersionCommand } from './commands/version.js';
 import { registerWorkspaceCommands } from './commands/workspace/index.js';
-import { setCommandHelpMetadata } from './utils/commander-helpers.js';
+import { getCommandErrorSupplement, setCommandHelpMetadata } from './utils/commander-helpers.js';
 import { isHelpRequest } from './utils/cli-help.js';
 
 // ---------------------------------------------------------------------------
 // Custom help formatter for the layered help layout
 // ---------------------------------------------------------------------------
 
-function padCmd(name: string, width: number): string {
-  return name.padEnd(width);
+const HELP_DESCRIPTION_GAP = 4;
+const MAX_HELP_WIDTH = 80;
+const HELP_RIGHT_MARGIN = 1;
+
+/** Resolve a help width that cannot cross the current terminal's right edge. */
+function resolveHelpWidth(helper: Help): number {
+  const requestedWidth = helper.helpWidth;
+  const configuredWidth =
+    typeof requestedWidth === 'number' && Number.isFinite(requestedWidth) && requestedWidth > 0
+      ? Math.min(Math.floor(requestedWidth), MAX_HELP_WIDTH)
+      : MAX_HELP_WIDTH;
+  const terminalWidth = process.stdout.columns;
+  if (!Number.isFinite(terminalWidth) || terminalWidth <= HELP_RIGHT_MARGIN) {
+    return configuredWidth;
+  }
+  return Math.max(1, Math.min(configuredWidth, Math.floor(terminalWidth) - HELP_RIGHT_MARGIN));
+}
+
+/** Wrap free-form help text while keeping every physical line inside the help indent. */
+function formatHelpParagraph(text: string, leadingIndent: string, helpWidth: number): string[] {
+  const contentWidth = Math.max(1, helpWidth - visibleWidth(leadingIndent));
+  return wrapText(text, contentWidth).map((line) => (line ? `${leadingIndent}${line}` : ''));
+}
+
+/** Format a help-list entry and align every wrapped line with its description column. */
+function formatHelpEntry(
+  name: string,
+  nameWidth: number,
+  description: string,
+  leadingIndent: string,
+  helpWidth: number,
+  styleName: (value: string) => string = (value) => value,
+): string[] {
+  const paddedName = padEndVisible(name, nameWidth + HELP_DESCRIPTION_GAP);
+  const firstLinePrefix = `${leadingIndent}${styleName(paddedName)}`;
+  const descriptionColumn = visibleWidth(leadingIndent) + visibleWidth(paddedName);
+  const descriptionLines = wrapText(description, Math.max(1, helpWidth - descriptionColumn));
+
+  return descriptionLines.map((line, index) =>
+    index === 0 ? `${firstLinePrefix}${line}` : `${' '.repeat(descriptionColumn)}${line}`,
+  );
 }
 
 // Help styling helpers — only emit ANSI in REPL mode, matching upstream
@@ -63,9 +103,10 @@ function styleCommandName(text: string): string {
  * Build a fully custom help string for a Command.
  * Returns the layered help text (L0 / L1 / L2).
  */
-function formatHelp(cmd: Command): string {
+function formatHelp(cmd: Command, helper: Help): string {
   const lines: string[] = [];
   const indent = '  ';
+  const helpWidth = resolveHelpWidth(helper);
 
   // --- Usage line ---
   // In REPL mode, strip the root program name so help reads
@@ -108,13 +149,19 @@ function formatHelp(cmd: Command): string {
   }
 
   const namePart = [prefix, fullName].filter(Boolean).join('');
-  lines.push(`${indent}Usage: ${namePart ? namePart + ' ' : ''}${usageSuffix}`);
+  lines.push(
+    ...formatHelpParagraph(
+      `Usage: ${namePart ? namePart + ' ' : ''}${usageSuffix}`,
+      indent,
+      helpWidth,
+    ),
+  );
   lines.push('');
 
   // --- Description ---
   const desc = getLongDescription(cmd);
   if (desc) {
-    lines.push(`${indent}${desc}`);
+    lines.push(...formatHelpParagraph(desc, indent, helpWidth));
     lines.push('');
   }
 
@@ -124,9 +171,9 @@ function formatHelp(cmd: Command): string {
   const describedArgs = args.filter((a) => a.description);
   if (describedArgs.length > 0) {
     lines.push(`${indent}${styleSectionTitle('Arguments:')}`);
-    const maxArgLen = Math.max(...describedArgs.map((a) => a.name().length));
+    const maxArgLen = Math.max(...describedArgs.map((a) => visibleWidth(a.name())));
     for (const a of describedArgs) {
-      lines.push(`${indent}  ${padCmd(a.name(), maxArgLen + 4)}${a.description}`);
+      lines.push(...formatHelpEntry(a.name(), maxArgLen, a.description, `${indent}  `, helpWidth));
     }
     lines.push('');
   }
@@ -137,7 +184,7 @@ function formatHelp(cmd: Command): string {
     lines.push(`${indent}${styleSectionTitle(`${label}:`)}`);
 
     // Calculate max name length for padding
-    const maxLen = Math.max(...subs.map((s) => commandNameWithArgs(s).length));
+    const maxLen = Math.max(...subs.map((s) => visibleWidth(commandNameWithArgs(s))));
 
     if (shouldGroupRootCommands) {
       const groups = new Map<string, Command[]>();
@@ -158,15 +205,31 @@ function formatHelp(cmd: Command): string {
         lines.push(`${indent}  ${styleGroupTitle(`${groupName}:`)}`);
         for (const sub of groupCommands.sort(compareCommands)) {
           const nameWithArgs = commandNameWithArgs(sub);
-          const padded = padCmd(nameWithArgs, maxLen + 4);
-          lines.push(`${indent}    ${styleCommandName(padded)}${sub.description()}`);
+          lines.push(
+            ...formatHelpEntry(
+              nameWithArgs,
+              maxLen,
+              sub.description(),
+              `${indent}    `,
+              helpWidth,
+              styleCommandName,
+            ),
+          );
         }
       }
     } else {
       for (const sub of subs) {
         const nameWithArgs = commandNameWithArgs(sub);
-        const padded = padCmd(nameWithArgs, maxLen + 4);
-        lines.push(`${indent}  ${styleCommandName(padded)}${sub.description()}`);
+        lines.push(
+          ...formatHelpEntry(
+            nameWithArgs,
+            maxLen,
+            sub.description(),
+            `${indent}  `,
+            helpWidth,
+            styleCommandName,
+          ),
+        );
       }
     }
     lines.push('');
@@ -190,9 +253,9 @@ function formatHelp(cmd: Command): string {
   if (versionOpt) {
     flagEntries.push({ flags: versionOpt.flags, desc: versionOpt.description });
   }
-  const maxOptLen = Math.max(...flagEntries.map((f) => f.flags.length));
+  const maxOptLen = Math.max(...flagEntries.map((f) => visibleWidth(f.flags)));
   for (const f of flagEntries) {
-    lines.push(`${indent}  ${padCmd(f.flags, maxOptLen + 4)}${f.desc}`);
+    lines.push(...formatHelpEntry(f.flags, maxOptLen, f.desc, `${indent}  `, helpWidth));
   }
   lines.push('');
 
@@ -201,7 +264,7 @@ function formatHelp(cmd: Command): string {
   if (examples.length > 0) {
     lines.push(`${indent}${styleSectionTitle('Examples:')}`);
     for (const ex of examples) {
-      lines.push(`${indent}  ${ex}`);
+      lines.push(...formatHelpParagraph(ex, `${indent}  `, helpWidth));
     }
     lines.push('');
   }
@@ -210,12 +273,20 @@ function formatHelp(cmd: Command): string {
   if (hasSubcommands) {
     if (isRoot) {
       lines.push(
-        `${indent}Run ${fullName ? fullName + ' ' : ''}<command> --help for command-specific help.`,
+        ...formatHelpParagraph(
+          `Run ${fullName ? fullName + ' ' : ''}<command> --help for command-specific help.`,
+          indent,
+          helpWidth,
+        ),
       );
     } else {
       const cmdPath = [prefix, fullName].filter(Boolean).join('');
       lines.push(
-        `${indent}Run ${cmdPath ? cmdPath + ' ' : ''}<subcommand> --help for subcommand-specific help.`,
+        ...formatHelpParagraph(
+          `Run ${cmdPath ? cmdPath + ' ' : ''}<subcommand> --help for subcommand-specific help.`,
+          indent,
+          helpWidth,
+        ),
       );
     }
   }
@@ -297,7 +368,7 @@ function addExamples(cmd: Command, examples: string[]): void {
 
 function applyCustomHelp(cmd: Command): void {
   cmd.configureHelp({
-    formatHelp: () => formatHelp(cmd),
+    formatHelp: (_command, helper) => formatHelp(cmd, helper),
   });
   cmd.helpOption('-h, --help', 'Show this help');
   for (const sub of cmd.commands) {
@@ -310,7 +381,13 @@ function applyCustomHelp(cmd: Command): void {
 // under `usage`, etc. all surface through bin/qianwen.ts as structured JSON
 // when --format json is in effect.
 function applyExitOverride(cmd: Command): void {
-  cmd.exitOverride();
+  cmd.exitOverride((error: CommanderError) => {
+    const supplement = getCommandErrorSupplement(cmd, error);
+    if (supplement) error.message += `. ${supplement}`;
+
+    // Keep Commander's default exitOverride behavior after enriching the message.
+    if (error.code !== 'commander.executeSubCommandAsync') throw error;
+  });
   cmd.configureOutput({ writeErr: () => {} });
   for (const sub of cmd.commands) {
     applyExitOverride(sub);
@@ -603,7 +680,7 @@ export function createProgram(): Command {
 
   // Override the top-level help
   program.configureHelp({
-    formatHelp: () => formatHelp(program),
+    formatHelp: (_command, helper) => formatHelp(program, helper),
   });
 
   return program;

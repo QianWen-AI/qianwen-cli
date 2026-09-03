@@ -92,7 +92,13 @@ describe('billing summary command', () => {
   it('JSON emits null amount + settled=false for months with no bill record', async () => {
     const withGap: SettleBillSummary = {
       cycles: [
-        { billingCycle: '202601', pretaxAmount: '0', tax: '0', aftertaxAmount: '0', settled: false },
+        {
+          billingCycle: '202601',
+          pretaxAmount: '0',
+          tax: '0',
+          aftertaxAmount: '0',
+          settled: false,
+        },
         { billingCycle: '202602', pretaxAmount: '5', tax: '0', aftertaxAmount: '5', settled: true },
       ],
       totals: { pretaxAmount: '5', tax: '0', aftertaxAmount: '5' },

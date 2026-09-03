@@ -3,6 +3,29 @@
 const PRECISION = 12;
 const FACTOR_BIGINT = 10n ** BigInt(PRECISION);
 
+/** Strictly parsed positive CNY amount used by the recharge flow. */
+export interface ParsedRechargeAmount {
+  cents: bigint;
+  amount: string;
+}
+
+/**
+ * Parse a positive CNY amount without ever routing through IEEE-754 arithmetic.
+ *
+ * @param value Raw CLI amount.
+ * @returns Integer cents and the canonical two-decimal representation.
+ * @throws Error when the value is not a positive decimal with at most two decimals.
+ */
+export function parseRechargeAmount(value: string): ParsedRechargeAmount {
+  if (!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(value)) {
+    throw new Error('Amount must be a positive number with at most two decimal places.');
+  }
+  const [integer, fraction = ''] = value.split('.');
+  const cents = BigInt(integer) * 100n + BigInt(fraction.padEnd(2, '0'));
+  if (cents <= 0n) throw new Error('Amount must be at least 0.01 CNY.');
+  return { cents, amount: `${integer}.${fraction.padEnd(2, '0')}` };
+}
+
 /** Sum decimal-string amounts using BigInt fixed-point arithmetic. */
 export function sumAmountStrings(values: string[]): string {
   if (values.length === 0) return '0';

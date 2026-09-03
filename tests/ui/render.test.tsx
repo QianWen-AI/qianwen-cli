@@ -11,7 +11,7 @@ describe('renderWithInk', () => {
   it('renders an Ink element to stdout and resolves after paint', async () => {
     const writeSpy = vi
       .spyOn(process.stdout, 'write')
-      .mockImplementation(((_chunk: any) => true) as any);
+      .mockImplementation(((_chunk: unknown) => true) as typeof process.stdout.write);
 
     await renderWithInk(<Text>hello-world-render</Text>);
 
@@ -25,29 +25,61 @@ describe('renderWithInk', () => {
   it('resolves even when element renders empty content', async () => {
     const writeSpy = vi
       .spyOn(process.stdout, 'write')
-      .mockImplementation(((_chunk: any) => true) as any);
+      .mockImplementation(((_chunk: unknown) => true) as typeof process.stdout.write);
 
     await renderWithInk(<Text>{''}</Text>);
+    expect(writeSpy).toHaveBeenCalled();
+  });
+
+  it('exits static rendering only after waitUntil settles', async () => {
+    const writeSpy = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation(((_chunk: unknown) => true) as typeof process.stdout.write);
+    let resolveWait: () => void = () => {};
+    const waitUntil = new Promise<void>((resolve) => {
+      resolveWait = resolve;
+    });
+    let finished = false;
+
+    const rendering = renderWithInk(<Text>waiting-render</Text>, { waitUntil }).then(() => {
+      finished = true;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(finished).toBe(false);
+
+    resolveWait();
+    await rendering;
+    expect(finished).toBe(true);
     expect(writeSpy).toHaveBeenCalled();
   });
 });
 
 describe('renderInteractive', () => {
   let writeSpy: ReturnType<typeof vi.spyOn>;
-  let originalIsTTY: boolean | undefined;
+  let originalIsTTY: PropertyDescriptor | undefined;
+  let originalPlatform: PropertyDescriptor | undefined;
+  let originalTermProgram: string | undefined;
 
   beforeEach(() => {
-    writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((_chunk: any) => true) as any);
-    originalIsTTY = process.stdout.isTTY;
-    // Simulate TTY so alt-screen code path is exercised
+    writeSpy = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation(((_chunk: unknown) => true) as typeof process.stdout.write);
+    originalIsTTY = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
+    originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    // Simulate a non-Windows TTY so the existing alt-screen path is exercised.
     Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+    originalTermProgram = process.env.TERM_PROGRAM;
+    process.env.TERM_PROGRAM = 'test-runner';
   });
 
   afterEach(() => {
-    Object.defineProperty(process.stdout, 'isTTY', {
-      value: originalIsTTY,
-      configurable: true,
-    });
+    if (originalIsTTY) Object.defineProperty(process.stdout, 'isTTY', originalIsTTY);
+    else Reflect.deleteProperty(process.stdout, 'isTTY');
+    if (originalPlatform) Object.defineProperty(process, 'platform', originalPlatform);
+    else Reflect.deleteProperty(process, 'platform');
+    if (originalTermProgram === undefined) delete process.env.TERM_PROGRAM;
+    else process.env.TERM_PROGRAM = originalTermProgram;
   });
 
   function AutoExitElement() {
@@ -131,7 +163,7 @@ describe('renderInteractive', () => {
     expect(exitCount).toBe(1);
   });
 
-  it('alt-screen 退出序列后立即补换行，使提示符落在新行', async () => {
+  it('writes a newline immediately after the alt-screen exit sequence', async () => {
     await renderInteractive(<AutoExitElement />);
 
     // EXIT_ALT_SCREEN must be immediately followed by '\n' so the shell prompt
@@ -163,7 +195,7 @@ describe('renderInteractive', () => {
     return <Text>write-probe</Text>;
   }
 
-  it('alt-screen 会话期间含 \\x1b[2J 的 clearTerminal 帧被整帧抑制，回调仍被调用', async () => {
+  it('suppresses an entire clearTerminal frame containing \\x1b[2J while preserving callbacks', async () => {
     const sink = { returned: null as boolean | null, cbCalled: false };
     await renderInteractive(
       <WriteProbeElement payload={'STALE:\x1b[2J\x1b[3J\x1b[H:FRAME'} sink={sink} />,
@@ -181,7 +213,7 @@ describe('renderInteractive', () => {
     expect(sink.cbCalled).toBe(true);
   });
 
-  it('alt-screen 会话期间仅含 \\x1b[3J（无 2J）的 chunk 剥离 3J 后照常写出', async () => {
+  it('strips \\x1b[3J-only chunks during an alt-screen session and writes the remainder', async () => {
     await renderInteractive(<WriteProbeElement payload={'RACE:\x1b[3J\x1b[H:END'} />);
 
     const joined = writeSpy.mock.calls.map((c) => String(c[0])).join('');
@@ -191,7 +223,7 @@ describe('renderInteractive', () => {
     expect(joined).toContain('RACE:\x1b[H:END');
   });
 
-  it('会话结束后 write 恢复原样，2J/3J 均原样通过', async () => {
+  it('restores write after the session so 2J and 3J pass through unchanged', async () => {
     const beforeWrite = process.stdout.write;
     await renderInteractive(<AutoExitElement />);
 
@@ -206,7 +238,7 @@ describe('renderInteractive', () => {
     expect(joined).toContain('AFTER:\x1b[2J\x1b[3J\x1b[H:END');
   });
 
-  it('非 alt-screen 会话（altScreen: false）不安装过滤器，2J/3J 原样写出', async () => {
+  it('leaves 2J and 3J unchanged when altScreen is false', async () => {
     await renderInteractive(<WriteProbeElement payload={'RACE:\x1b[2J\x1b[3J\x1b[H:END'} />, {
       altScreen: false,
     });
@@ -215,5 +247,139 @@ describe('renderInteractive', () => {
     // stdout stream untouched — clearTerminal repaints are desired there.
     const joined = writeSpy.mock.calls.map((c) => String(c[0])).join('');
     expect(joined).toContain('RACE:\x1b[2J\x1b[3J\x1b[H:END');
+  });
+
+  it('suppresses 2J frames but keeps 3J when protectStaticContent is true with altScreen false', async () => {
+    const sink = { returned: null as boolean | null, cbCalled: false };
+    await renderInteractive(
+      <WriteProbeElement payload={'STALE:\x1b[2J\x1b[3J\x1b[H:FRAME'} sink={sink} />,
+      { altScreen: false, protectStaticContent: true },
+    );
+
+    const joined = writeSpy.mock.calls.map((c) => String(c[0])).join('');
+    // The stale clearTerminal frame is suppressed wholesale because it
+    // contains \x1b[2J, protecting main-screen static content.
+    expect(joined).not.toContain('STALE:');
+    expect(joined).not.toContain(':FRAME');
+    expect(joined).not.toContain('\x1b[2J');
+    // ...while the write() contract is honoured for the suppressed caller.
+    expect(sink.returned).toBe(true);
+    expect(sink.cbCalled).toBe(true);
+  });
+
+  it('does not strip 3J when protectStaticContent is true with altScreen false', async () => {
+    await renderInteractive(<WriteProbeElement payload={'RACE:\x1b[3J\x1b[H:END'} />, {
+      altScreen: false,
+      protectStaticContent: true,
+    });
+
+    // Without the alt-screen, \x1b[3J is NOT stripped from chunks that lack
+    // \x1b[2J — the filter only suppresses full clearTerminal frames.
+    const joined = writeSpy.mock.calls.map((c) => String(c[0])).join('');
+    expect(joined).toContain('\x1b[3J');
+    expect(joined).toContain('RACE:\x1b[3J\x1b[H:END');
+  });
+
+  it('restores write after protectStaticContent session', async () => {
+    const beforeWrite = process.stdout.write;
+    await renderInteractive(<AutoExitElement />, {
+      altScreen: false,
+      protectStaticContent: true,
+    });
+
+    // Identity restored: the session filter did not leak a wrapper.
+    expect(process.stdout.write).toBe(beforeWrite);
+  });
+
+  it('appends a requested newline after inline rendering to prevent horizontal joining', async () => {
+    await renderInteractive(<AutoExitElement />, {
+      altScreen: false,
+      trailingNewline: true,
+    });
+
+    const joined = writeSpy.mock.calls.map((call) => String(call[0])).join('');
+    // The trailing newline is present but may be followed by an SGR reset
+    // (\x1b[0m) emitted during Ink teardown, so check for \n before the end.
+    // eslint-disable-next-line no-control-regex
+    const stripped = joined.replace(/\x1b\[0m$/, '');
+    expect(stripped.endsWith('\n')).toBe(true);
+  });
+});
+
+// Windows regression: all hosts retain the v1.5 main-screen full-redraw strategy.
+describe('renderInteractive in Windows environments', () => {
+  let writeSpy: ReturnType<typeof vi.spyOn>;
+  let originalIsTTY: PropertyDescriptor | undefined;
+  let originalPlatform: PropertyDescriptor | undefined;
+  let originalWtSession: string | undefined;
+  let originalTermProgram: string | undefined;
+
+  beforeEach(() => {
+    writeSpy = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation(((_chunk: unknown) => true) as typeof process.stdout.write);
+    originalIsTTY = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+
+    originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    originalWtSession = process.env.WT_SESSION;
+    originalTermProgram = process.env.TERM_PROGRAM;
+    delete process.env.WT_SESSION;
+    process.env.TERM_PROGRAM = 'qoder';
+  });
+
+  afterEach(() => {
+    if (originalIsTTY) Object.defineProperty(process.stdout, 'isTTY', originalIsTTY);
+    else Reflect.deleteProperty(process.stdout, 'isTTY');
+    if (originalPlatform) Object.defineProperty(process, 'platform', originalPlatform);
+    else Reflect.deleteProperty(process, 'platform');
+    if (originalWtSession === undefined) delete process.env.WT_SESSION;
+    else process.env.WT_SESSION = originalWtSession;
+    if (originalTermProgram === undefined) delete process.env.TERM_PROGRAM;
+    else process.env.TERM_PROGRAM = originalTermProgram;
+  });
+
+  function AutoExitElement() {
+    const app = useApp();
+    React.useEffect(() => {
+      const h = setImmediate(() => app.exit());
+      return () => clearImmediate(h);
+    }, [app]);
+    return <Text>conhost-content</Text>;
+  }
+
+  function WriteProbeElement({ payload }: { payload: string }) {
+    const app = useApp();
+    React.useEffect(() => {
+      process.stdout.write(payload);
+      const h = setImmediate(() => app.exit());
+      return () => clearImmediate(h);
+    }, [app, payload]);
+    return <Text>conhost-write-probe</Text>;
+  }
+
+  it('uses the main screen on Qoder for Windows and clears it on exit', async () => {
+    await renderInteractive(<AutoExitElement />);
+
+    const joined = writeSpy.mock.calls.map((c) => String(c[0])).join('');
+    expect(joined).not.toContain('\x1b[?1049h');
+    expect(joined).not.toContain('\x1b[?1049l');
+    expect(joined).toContain('\x1b[2J\x1b[H');
+  });
+
+  it('does not intercept Ink 2J/3J full-redraw frames on the Windows main screen', async () => {
+    await renderInteractive(<WriteProbeElement payload={'RACE:\x1b[3J\x1b[H:END'} />);
+
+    let joined = writeSpy.mock.calls.map((c) => String(c[0])).join('');
+    expect(joined).toContain('RACE:\x1b[3J\x1b[H:END');
+
+    writeSpy.mockClear();
+
+    await renderInteractive(<WriteProbeElement payload={'STALE:\x1b[2J\x1b[H:FRAME'} />);
+
+    joined = writeSpy.mock.calls.map((c) => String(c[0])).join('');
+    expect(joined).toContain('STALE:\x1b[2J\x1b[H:FRAME');
+    expect(joined).toContain('\x1b[2J\x1b[H');
   });
 });

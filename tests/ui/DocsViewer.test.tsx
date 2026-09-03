@@ -24,6 +24,7 @@ vi.mock('ink', async () => {
 
 const ORIGINAL_COLUMNS = process.stdout.columns;
 const ORIGINAL_ROWS = process.stdout.rows;
+const ORIGINAL_PLATFORM = Object.getOwnPropertyDescriptor(process, 'platform');
 
 beforeEach(() => {
   Object.defineProperty(process.stdout, 'columns', { value: 120, configurable: true });
@@ -33,6 +34,7 @@ beforeEach(() => {
 afterEach(() => {
   Object.defineProperty(process.stdout, 'columns', { value: ORIGINAL_COLUMNS, configurable: true });
   Object.defineProperty(process.stdout, 'rows', { value: ORIGINAL_ROWS, configurable: true });
+  if (ORIGINAL_PLATFORM) Object.defineProperty(process, 'platform', ORIGINAL_PLATFORM);
 });
 
 const MOCK_URL = 'https://mock-docs.test.qianwenai.com/developer-guides/getting-started';
@@ -63,10 +65,10 @@ function docsViewerLineCount(altScreen: boolean, vm?: DocContentViewModel): numb
 
 describe('DocsViewer alt-screen scrollback safety', () => {
   // rows is forced to 40 in beforeEach; the default doc is short (a few lines).
-  it('pads to full terminal height when NOT on the alt-screen', () => {
-    // Off the alt-screen (e.g. ConHost) the full-height padding is retained so
-    // the redraw clears residue as before.
-    expect(docsViewerLineCount(false)).toBeGreaterThanOrEqual(38);
+  it('fills the Windows main screen height to enable stable full redraws', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    expect(docsViewerLineCount(false)).toBe(40);
+    expect(docsViewerLineCount(true)).toBeLessThan(20);
   });
 
   it('does NOT pad to full height on the alt-screen (avoids Ink clearTerminal / \\x1b[3J)', () => {
@@ -77,20 +79,23 @@ describe('DocsViewer alt-screen scrollback safety', () => {
     expect(docsViewerLineCount(true)).toBeLessThan(20);
   });
 
-  it('renders fewer rows on the alt-screen than off it for the same document', () => {
+  it('keeps natural height on explicit non-Windows main and alternate screens', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
     const vm = makeContentVm();
-    expect(docsViewerLineCount(false, vm)).toBeGreaterThan(docsViewerLineCount(true, vm));
+    expect(docsViewerLineCount(false, vm)).toBe(docsViewerLineCount(true, vm));
   });
 
   it('keeps height below the terminal for long docs that fill the viewport', () => {
-    // A document taller than the viewport. Off the alt-screen it reaches full
-    // terminal height; on the alt-screen one content row is reserved so the
-    // total height stays < rows, keeping Ink off its clearTerminal (\x1b[3J) path.
+    // Long documents have the same frame height in both screen modes and stay within
+    // termRows - 1, keeping Ink on differential redraws without clearTerminal(\x1b[3J).
     const longVm = makeContentVm({
       renderedLines: Array.from({ length: 80 }, (_, i) => `paragraph line ${i + 1}`),
       content: 'x',
     });
-    expect(docsViewerLineCount(true, longVm)).toBeLessThan(docsViewerLineCount(false, longVm));
+    const altCount = docsViewerLineCount(true, longVm);
+    const normalCount = docsViewerLineCount(false, longVm);
+    expect(altCount).toBe(normalCount);
+    expect(altCount).toBeLessThanOrEqual(39); // termRows - 1
   });
 
   it('极小终端（rows=8）alt-screen 下帧总行数 ≤ termRows - 1', () => {
@@ -118,7 +123,7 @@ describe('DocsViewer 窄终端宽度自适应（任何行不超过终端宽度�
     renderedLines: [
       '[H1] 一个非常非常非常非常非常非常非常非常长的中文文档标题超出四十列宽度',
       '',
-      'https://mock-docs.test.qianwen.com/very/long/path/segment/that/never/fits/in/forty/columns',
+      'https://mock-docs.test.qianwenai.com/very/long/path/segment/that/never/fits/in/forty/columns',
       '[CODE] const veryLongVariableName = await client.request({ product: "sfm_bailian" });',
       '[LIST] 列表项内容也很长很长很长很长很长很长很长很长很长很长很长很长很长',
       '段落[BOLD]加粗片段也非常非常非常非常非常长[/BOLD]结尾继续追加更多中文文字加长',
@@ -151,7 +156,7 @@ describe('DocsViewer 窄终端宽度自适应（任何行不超过终端宽度�
   it('40 列下正文内容仍然可见（截断不丢整行）', () => {
     setTermSize(40, 20);
     const out = stripAnsi(wideFrame());
-    expect(out).toContain('https://mock-docs.test.qianwen.com');
+    expect(out).toContain('https://mock-docs.test.qianwenai.');
     expect(out).toContain('const veryLongVariableName');
     expect(out).toContain('段落');
     expect(out).toContain('列表项');

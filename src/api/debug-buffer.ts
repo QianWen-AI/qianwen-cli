@@ -5,6 +5,7 @@
 
 import { getErrorVerbosity } from '../utils/verbosity.js';
 import { clearSpinnerLine } from '../ui/spinner.js';
+import { redactPaymentData } from '../utils/strings.js';
 
 declare const __NODE_ENV__: 'production' | 'development';
 
@@ -126,6 +127,39 @@ function truncateBody(body: string | null): string | null {
   return body.slice(0, debugBodyLimit) + `... [truncated, total: ${body.length} chars]`;
 }
 
+/**
+ * Convert a possibly JSON body into a payment-safe debug representation.
+ *
+ * @param body Raw HTTP body.
+ * @returns A serialized redacted body, or null when no body exists.
+ */
+function redactDebugBody(body: string | null, context?: unknown): string | null {
+  if (body === null) return null;
+  try {
+    const safe = redactPaymentData({ context, body: JSON.parse(body) }) as { body: unknown };
+    return JSON.stringify(safe.body);
+  } catch {
+    const safe = redactPaymentData({ context, body }) as { body: string };
+    return safe.body;
+  }
+}
+
+/** Parse a debug body for cross-field redaction without retaining raw secrets. */
+function parseDebugBody(body: string | null): unknown {
+  if (body === null) return null;
+  try {
+    return JSON.parse(body);
+  } catch {
+    return body;
+  }
+}
+
+/** Serialize an already-redacted debug value for storage in the buffer. */
+function serializeDebugBody(body: unknown): string | null {
+  if (body === null) return null;
+  return typeof body === 'string' ? body : JSON.stringify(body);
+}
+
 let flushed = false;
 
 // Safety net: flush on process.exit to catch any missed explicit flushes
@@ -149,14 +183,29 @@ export function startRequest(
   context: string = 'api',
 ): number {
   const id = buffer.nextId++;
-  const rawBody = truncateBody(body);
-  buffer.entries.push({
-    id,
+  const safeRequest = redactPaymentData({
     method,
     url,
-    requestHeaders: headers,
-    requestBody: rawBody,
+    headers,
+    body: parseDebugBody(body),
     apiAction: extractApiAction(body),
+    context,
+  }) as {
+    method: string;
+    url: string;
+    headers: Record<string, unknown>;
+    body: unknown;
+    apiAction: string | null;
+    context: string;
+  };
+  const rawBody = truncateBody(serializeDebugBody(safeRequest.body));
+  buffer.entries.push({
+    id,
+    method: safeRequest.method,
+    url: safeRequest.url,
+    requestHeaders: safeRequest.headers,
+    requestBody: rawBody,
+    apiAction: safeRequest.apiAction,
     responseStatus: null,
     responseStatusText: null,
     responseBody: null,
@@ -164,7 +213,7 @@ export function startRequest(
     endTime: null,
     durationMs: null,
     isError: false,
-    context,
+    context: safeRequest.context,
   });
   return id;
 }
@@ -176,6 +225,7 @@ export function endRequest(
   statusText: string | null,
   responseBody: string | null,
   isError: boolean,
+  requestContext?: unknown,
 ): void {
   const entry = buffer.entries.find((e) => e.id === id);
   if (!entry) return;
@@ -183,8 +233,11 @@ export function endRequest(
   entry.endTime = Date.now();
   entry.durationMs = entry.endTime - entry.startTime;
   entry.responseStatus = status;
-  entry.responseStatusText = statusText;
-  entry.responseBody = truncateBody(responseBody);
+  const safeStatus = redactPaymentData({ context: requestContext, statusText }) as {
+    statusText: string | null;
+  };
+  entry.responseStatusText = safeStatus.statusText;
+  entry.responseBody = truncateBody(redactDebugBody(responseBody, requestContext));
   entry.isError = isError;
 }
 
@@ -194,15 +247,26 @@ export function addDiagnostic(
   message: string,
   level: DiagnosticLevel = 'debug',
 ): void {
+  const safe = redactPaymentData({ category, message }) as {
+    category: string;
+    message: string;
+  };
+  const safeCategory = safe.category;
+  const safeMessage = safe.message;
   if (buffer.enabled) {
-    buffer.diagnostics.push({ category, message, level, timestamp: Date.now() });
+    buffer.diagnostics.push({
+      category: safeCategory,
+      message: safeMessage,
+      level,
+      timestamp: Date.now(),
+    });
   } else if (getErrorVerbosity() === 'verbose') {
     clearSpinnerLine();
-    console.error(`[${category}] ${message}`);
+    console.error(`[${safeCategory}] ${safeMessage}`);
   } else if (getErrorVerbosity() === 'graceful' && level === 'warn') {
     // Graceful mode: show a brief user-facing hint for degraded functionality
     clearSpinnerLine();
-    console.error(`Warning: ${category} data may be incomplete.`);
+    console.error(`Warning: ${safeCategory} data may be incomplete.`);
   }
   // graceful+debug and suppress: silently discard
 }
@@ -221,7 +285,8 @@ export function flushDebugReport(): void {
   lines.push('[HTTP Debug Report]');
 
   // Per-request detail blocks
-  for (const entry of buffer.entries) {
+  for (const rawEntry of buffer.entries) {
+    const entry = redactPaymentData(rawEntry) as HttpDebugEntry;
     lines.push('');
     if (entry.apiAction) {
       lines.push(`───────── Request #${entry.id}: ${entry.apiAction} (${entry.context}) ─────────`);

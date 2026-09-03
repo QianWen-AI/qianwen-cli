@@ -42,6 +42,9 @@ export function InteractiveTable({
   const { exit } = useApp();
   const { columns: termCols, rows: termRows } = useTerminalSize();
   const inAltScreen = useContext(AltScreenContext);
+  const useWindowsMainScreen = process.platform === 'win32' && !inAltScreen;
+  const frameWidth = termCols;
+  const innerWidth = Math.max(1, frameWidth - 2);
   const startPage = initialPage ?? 1;
   const [page, setPage] = useState(startPage);
   const hasInitialRows = initialRows != null && initialRows.length > 0;
@@ -195,26 +198,24 @@ export function InteractiveTable({
   // desyncs Ink's logical-line-count frame erasure just like a wrapped row.
   const sectionFooter = truncateByDisplayWidth(
     stableFooterRef.current || currentFooter,
-    Math.max(1, termCols - 2),
+    innerWidth,
   );
 
-  // On the alt-screen, keep total height strictly below terminal rows so Ink
-  // stays on differential redraws instead of its clearTerminal path — that
-  // path emits \x1b[3J which wipes the main screen's scrollback right through
-  // the alt-screen on Terminal.app/iTerm2 (same guard as DocsViewer). Row
-  // wrap is already impossible (all lines are width-capped ≤ termCols), so
-  // the diff erase line accounting stays correct without full repaints.
-  // Off the alt-screen (ConHost main-screen rendering) keep padding to the
-  // full terminal height so Ink full-repaints and never leaves stale rows.
-  // Floor at 1, not 5: on terminals ≤ 5 rows a fixed floor would put minHeight
-  // back at >= termRows and re-trigger clearTerminal on every frame.
-  const safeMinHeight = inAltScreen ? Math.max(1, termRows - 1) : termRows;
+  // Windows main-screen views intentionally fill the terminal so Ink uses its
+  // full repaint path during resize, matching the stable v1.5 behaviour. Other
+  // main-screen callers keep their natural height; alt-screen views stay one
+  // row below Ink's clearTerminal threshold to protect main-screen scrollback.
+  const safeMinHeight = inAltScreen
+    ? Math.max(1, termRows - 1)
+    : useWindowsMainScreen
+      ? termRows
+      : undefined;
 
   return (
-    <Box flexDirection="column" width={termCols} minHeight={safeMinHeight}>
+    <Box flexDirection="column" width={frameWidth} minHeight={safeMinHeight}>
       {/* Title - dynamic render to avoid Static residue on resize */}
       {title && (
-        <Section title={sectionTitle} subtitle={subtitle} footer="" maxWidth={termCols}>
+        <Section title={sectionTitle} subtitle={subtitle} footer="" maxWidth={frameWidth}>
           <Box />
         </Section>
       )}
@@ -236,7 +237,7 @@ export function InteractiveTable({
             footer={footer}
             paddingLeft={0}
             truncate
-            maxTotalWidth={Math.max(1, termCols - 2)}
+            maxTotalWidth={innerWidth}
           />
         </Box>
       )}

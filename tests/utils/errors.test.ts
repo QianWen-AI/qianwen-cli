@@ -13,6 +13,7 @@ import {
 } from '../../src/utils/errors.js';
 import { EXIT_CODES } from '../../src/utils/exit-codes.js';
 import { site } from '../../src/site.js';
+import { redactPaymentError } from '../../src/utils/strings.js';
 
 const s = {
   ...site,
@@ -277,7 +278,7 @@ describe('handleError', () => {
     const thrown = catchHandledError(err, 'table');
 
     // verbose mode: shows raw message + cause chain
-    const output = (consoleErrorSpy.mock.calls[0] as any[])[0];
+    const output = String(consoleErrorSpy.mock.calls[0]?.[0] ?? '');
     expect(output).toContain('Failed to connect');
     expect(output).toContain('Caused by: Root cause');
     expect(thrown.exitCode).toBe(1);
@@ -291,7 +292,9 @@ describe('handleError', () => {
 
     const thrown = catchHandledError(err, 'json');
 
-    const output = JSON.parse((stderrSpy.mock.calls[0] as any[])[0]);
+    const output = JSON.parse(String(stderrSpy.mock.calls[0]?.[0] ?? '')) as {
+      error: { message: string };
+    };
     // verbose mode: message includes raw error + cause chain
     expect(output.error.message).toContain('Failed to connect');
     expect(output.error.message).toContain('Caused by: Root cause');
@@ -309,7 +312,7 @@ describe('handleError', () => {
 
     const thrown = catchHandledError(cause, 'table');
 
-    const output = (consoleErrorSpy.mock.calls[0] as any[])[0];
+    const output = String(consoleErrorSpy.mock.calls[0]?.[0] ?? '');
     const causeLines = output.split('\n  Caused by: ').length - 1;
     expect(causeLines).toBeLessThanOrEqual(5);
     expect(thrown.exitCode).toBe(1);
@@ -407,7 +410,7 @@ describe('handleError with error verbosity', () => {
     );
 
     const thrown = catchHandledError(err, 'table');
-    const output = (consoleErrorSpy.mock.calls[0] as any[])[0];
+    const output = String(consoleErrorSpy.mock.calls[0]?.[0] ?? '');
     // Should NOT contain internal URL or response body
     expect(output).not.toContain('https://secret.internal');
     expect(output).not.toContain('Response:');
@@ -429,7 +432,9 @@ describe('handleError with error verbosity', () => {
     });
 
     const thrown = catchHandledError(err, 'json');
-    const output = JSON.parse((stderrSpy.mock.calls[0] as any[])[0]);
+    const output = JSON.parse(String(stderrSpy.mock.calls[0]?.[0] ?? '')) as {
+      error: { message: string; detail?: string };
+    };
     // graceful JSON does not include detail
     expect(output.error).not.toHaveProperty('detail');
     expect(output.error.message).toBe('API unreachable');
@@ -449,9 +454,71 @@ describe('handleError with error verbosity', () => {
     });
 
     const thrown = catchHandledError(err, 'json');
-    const output = JSON.parse((stderrSpy.mock.calls[0] as any[])[0]);
+    const output = JSON.parse(String(stderrSpy.mock.calls[0]?.[0] ?? '')) as {
+      error: { detail?: string };
+    };
     expect(output.error.detail).toBe('HTTP 500: Internal Server Error');
     expect(thrown.exitCode).toBe(3);
+  });
+
+  it('verbose mode: redacts Nbid from a raw error and cause chain without mutating them', () => {
+    const nbid = 'nbid/value+verbose-1';
+    const orderId = 'order-visible-verbose-1';
+    const paymentUrl = 'https://pay.test.qianwenai.com/checkout/order-visible-verbose-1';
+    const cause = new Error(`Nbid=${nbid}; paymentUrl=${paymentUrl}`);
+    const error = new Error(`Request failed for ${nbid}; order=${orderId}`, { cause });
+    const originalMessage = error.message;
+    const originalCauseMessage = cause.message;
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    process.env[`${envPrefix}_ERROR_VERBOSITY`] = 'verbose';
+    redactPaymentError(error, { Nbid: nbid });
+
+    const thrown = catchHandledError(error, 'table');
+
+    const output = consoleErrorSpy.mock.calls.map(([value]) => String(value)).join('\n');
+    expect(output.includes(nbid)).toBe(false);
+    expect(output.includes(encodeURIComponent(nbid))).toBe(false);
+    expect(output).toContain('[REDACTED]');
+    expect(output).toContain(orderId);
+    expect(output).toContain(paymentUrl);
+    expect(output).toContain('Caused by:');
+    expect(error.message).toBe(originalMessage);
+    expect(error.cause).toBe(cause);
+    expect(cause.message).toBe(originalCauseMessage);
+    expect(thrown.exitCode).toBe(EXIT_CODES.GENERAL_ERROR);
+  });
+
+  it('verbose mode: JSON sink redacts Nbid from CliError message and detail', () => {
+    const nbid = 'nbid-json-sink-2';
+    const orderId = 'order-visible-json-2';
+    const paymentUrl = 'https://pay.test.qianwenai.com/checkout/order-visible-json-2';
+    const error = new CliError({
+      code: 'NETWORK_ERROR',
+      message: `Request failed for ${nbid}; order=${orderId}`,
+      exitCode: EXIT_CODES.NETWORK_ERROR,
+      detail: `Nbid=${nbid}; encoded=${encodeURIComponent(nbid)}; url=${paymentUrl}`,
+    });
+    const originalMessage = error.message;
+    const originalDetail = error.detail;
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    process.env[`${envPrefix}_ERROR_VERBOSITY`] = 'verbose';
+    redactPaymentError(error, { Nbid: nbid });
+
+    const thrown = catchHandledError(error, 'json');
+
+    const serialized = stderrSpy.mock.calls.map(([value]) => String(value)).join('');
+    const output = JSON.parse(serialized) as {
+      error: { code: string; message: string; detail?: string; exit_code: number };
+    };
+    expect(serialized.includes(nbid)).toBe(false);
+    expect(serialized.includes(encodeURIComponent(nbid))).toBe(false);
+    expect(output.error.message).toContain('[REDACTED]');
+    expect(output.error.detail).toContain('[REDACTED]');
+    expect(serialized).toContain(orderId);
+    expect(serialized).toContain(paymentUrl);
+    expect(error.message).toBe(originalMessage);
+    expect(error.detail).toBe(originalDetail);
+    expect(thrown.exitCode).toBe(EXIT_CODES.NETWORK_ERROR);
   });
 });
 
@@ -520,7 +587,7 @@ describe('handleError graceful mode (explicit)', () => {
     );
 
     const thrown = catchHandledError(err, 'table');
-    const output = (consoleErrorSpy.mock.calls[0] as any[])[0];
+    const output = String(consoleErrorSpy.mock.calls[0]?.[0] ?? '');
     expect(output).not.toContain('https://internal.api');
     expect(output).not.toContain('Response:');
     expect(output).toContain('Not authenticated');

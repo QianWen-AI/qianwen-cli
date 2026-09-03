@@ -1,6 +1,7 @@
 node_modules/
 .pnpm-store/
 dist/
+.build-tmp/
 release/
 *.tsbuildinfo
 .DS_Store

@@ -242,9 +242,7 @@ describe('<Table /> cell truncation with maxWidth', () => {
       { key: 'a', header: 'VeryLongHeader', maxWidth: 6 },
       { key: 'b', header: 'B' },
     ];
-    const { lastFrame } = render(
-      <Table columns={c} data={[{ a: 'x', b: 'y' }]} paddingLeft={0} />,
-    );
+    const { lastFrame } = render(<Table columns={c} data={[{ a: 'x', b: 'y' }]} paddingLeft={0} />);
     const header = stripAnsi(lastFrame() ?? '').split('\n')[0] ?? '';
     expect(header).toContain('\u2026');
     expect(header).not.toContain('VeryLongHeader');

@@ -182,9 +182,9 @@ describe('UsageService.getUsageLogs', () => {
     it('propagates upstream errors as plain Error', async () => {
       apiClient.callEnvelopeApi.mockRejectedValue(new Error('GatewayError: upstream timeout'));
 
-      await expect(
-        service.getUsageLogs({ from: '2026-05-22', to: '2026-05-23' }),
-      ).rejects.toThrow(/upstream timeout/);
+      await expect(service.getUsageLogs({ from: '2026-05-22', to: '2026-05-23' })).rejects.toThrow(
+        /upstream timeout/,
+      );
     });
   });
 });

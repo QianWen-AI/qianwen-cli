@@ -23,8 +23,6 @@ const multilineHolder: { callCount: number; contents: string[] } = {
   contents: ['Please check the logs'],
 };
 
-
-
 vi.mock('../../../src/services/index.js', () => ({
   createServices: () => holder.services,
 }));

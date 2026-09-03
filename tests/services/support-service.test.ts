@@ -17,8 +17,8 @@ import type { CallFlatApiOptions } from '../../src/api/api-client.js';
 // http(s) URL = CDN fetch). Other service methods are unaffected.
 const mockConfig = {
   'output.format': 'auto',
-  'api.endpoint': 'https://api.test.qianwen.com',
-  'auth.endpoint': 'https://auth.test.qianwen.com',
+  'api.endpoint': 'https://api.test.qianwenai.com',
+  'auth.endpoint': 'https://auth.test.qianwenai.com',
   'cache.ttl': '0',
   'support.categorySource': '',
 };
@@ -400,7 +400,7 @@ describe('SupportService.getCategoryTree', () => {
   });
 
   it('fetches and normalises CDN payload when source is an http(s) URL', async () => {
-    mockConfig['support.categorySource'] = 'https://cdn.test.qianwen.com/category-tree.json';
+    mockConfig['support.categorySource'] = 'https://cdn.test.qianwenai.com/category-tree.json';
     const flat = vi.fn(async () => ({}));
     const api = makeMockApiClient({ flat });
 
@@ -425,7 +425,7 @@ describe('SupportService.getCategoryTree', () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
     try {
       const out = await new SupportService(api).getCategoryTree();
-      expect(fetchMock).toHaveBeenCalledWith('https://cdn.test.qianwen.com/category-tree.json');
+      expect(fetchMock).toHaveBeenCalledWith('https://cdn.test.qianwenai.com/category-tree.json');
       expect(flat).not.toHaveBeenCalled();
       expect(out).toEqual([
         {
@@ -443,7 +443,7 @@ describe('SupportService.getCategoryTree', () => {
   });
 
   it('throws CliError when CDN fetch fails', async () => {
-    mockConfig['support.categorySource'] = 'https://cdn.test.qianwen.com/category-tree.json';
+    mockConfig['support.categorySource'] = 'https://cdn.test.qianwenai.com/category-tree.json';
     const api = makeMockApiClient({ flat: async () => ({}) });
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () => {

@@ -6,7 +6,7 @@
  *   - Mock the credential layer so resolveCredentials() returns a fake
  *     bearer token (or null) deterministically.
  *   - Stub global fetch via mockFetch() to drive every HTTP path.
- *   - Use the *.test.qianwen.com mock domain across the suite.
+ *   - Use the *.test.qianwenai.com mock domain across the suite.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mockFetch, type MockFetch } from '../helpers/http-mock.js';
@@ -29,9 +29,13 @@ vi.mock('../../src/auth/credentials.js', async (orig) => {
   };
 });
 
-import { createBaseClient } from '../../src/api/base-client.js';
+import {
+  createBaseClient,
+  isResponseParseError,
+  RequestTimeoutError,
+} from '../../src/api/base-client.js';
 
-const URL_OK = 'https://api.test.qianwen.com/data/v2/api.json';
+const URL_OK = 'https://api.test.qianwenai.com/data/v2/api.json';
 
 let active: MockFetch | null = null;
 
@@ -54,7 +58,7 @@ afterEach(() => {
 
 describe('BaseClient.request — request building', () => {
   it('uses POST by default and forwards body verbatim', async () => {
-    active = mockFetch({ 'api.test.qianwen.com': { code: '200' } });
+    active = mockFetch({ 'api.test.qianwenai.com': { code: '200' } });
     const client = createBaseClient();
     await client.request({ url: URL_OK, body: '{"product":"x"}' });
 
@@ -64,7 +68,7 @@ describe('BaseClient.request — request building', () => {
   });
 
   it('attaches a User-Agent header from site.userAgentPrefix', async () => {
-    active = mockFetch({ 'api.test.qianwen.com': { code: '200' } });
+    active = mockFetch({ 'api.test.qianwenai.com': { code: '200' } });
     const client = createBaseClient();
     await client.request({ url: URL_OK });
 
@@ -74,7 +78,7 @@ describe('BaseClient.request — request building', () => {
   });
 
   it('merges caller-supplied headers without dropping User-Agent', async () => {
-    active = mockFetch({ 'api.test.qianwen.com': { code: '200' } });
+    active = mockFetch({ 'api.test.qianwenai.com': { code: '200' } });
     const client = createBaseClient();
     await client.request({
       url: URL_OK,
@@ -86,7 +90,7 @@ describe('BaseClient.request — request building', () => {
   });
 
   it('forwards a custom HTTP method when specified', async () => {
-    active = mockFetch({ 'api.test.qianwen.com': { code: '200' } });
+    active = mockFetch({ 'api.test.qianwenai.com': { code: '200' } });
     const client = createBaseClient();
     await client.request({ url: URL_OK, method: 'PUT' });
     expect(active.calls[0]?.method).toBe('PUT');
@@ -99,14 +103,14 @@ describe('BaseClient.request — request building', () => {
 
 describe('BaseClient.request — authMode', () => {
   it('omits Authorization in the default (none) mode', async () => {
-    active = mockFetch({ 'api.test.qianwen.com': { code: '200' } });
+    active = mockFetch({ 'api.test.qianwenai.com': { code: '200' } });
     const client = createBaseClient();
     await client.request({ url: URL_OK });
     expect(active.calls[0]?.headers.Authorization).toBeUndefined();
   });
 
   it('attaches Bearer token when authMode=required and creds exist', async () => {
-    active = mockFetch({ 'api.test.qianwen.com': { code: '200' } });
+    active = mockFetch({ 'api.test.qianwenai.com': { code: '200' } });
     const client = createBaseClient();
     await client.request({ url: URL_OK, authMode: 'required' });
     expect(active.calls[0]?.headers.Authorization).toBe(
@@ -116,7 +120,7 @@ describe('BaseClient.request — authMode', () => {
 
   it('throws "Not authenticated" when authMode=required and creds are missing', async () => {
     credentialState.value = null;
-    active = mockFetch({ 'api.test.qianwen.com': { code: '200' } });
+    active = mockFetch({ 'api.test.qianwenai.com': { code: '200' } });
     const client = createBaseClient();
     await expect(client.request({ url: URL_OK, authMode: 'required' })).rejects.toThrow(
       /Not authenticated/,
@@ -126,7 +130,7 @@ describe('BaseClient.request — authMode', () => {
   });
 
   it('attaches Bearer when authMode=optional and creds exist', async () => {
-    active = mockFetch({ 'api.test.qianwen.com': { code: '200' } });
+    active = mockFetch({ 'api.test.qianwenai.com': { code: '200' } });
     const client = createBaseClient();
     await client.request({ url: URL_OK, authMode: 'optional' });
     expect(active.calls[0]?.headers.Authorization).toMatch(/^Bearer /);
@@ -134,7 +138,7 @@ describe('BaseClient.request — authMode', () => {
 
   it('omits Authorization silently when authMode=optional and creds are missing', async () => {
     credentialState.value = null;
-    active = mockFetch({ 'api.test.qianwen.com': { code: '200' } });
+    active = mockFetch({ 'api.test.qianwenai.com': { code: '200' } });
     const client = createBaseClient();
     await client.request({ url: URL_OK, authMode: 'optional' });
     expect(active.calls).toHaveLength(1);
@@ -148,12 +152,33 @@ describe('BaseClient.request — authMode', () => {
 
 describe('BaseClient.request — response parsing', () => {
   it('returns the parsed JSON body on a 2xx response', async () => {
-    active = mockFetch({ 'api.test.qianwen.com': { code: '200', data: { ok: true } } });
+    active = mockFetch({ 'api.test.qianwenai.com': { code: '200', data: { ok: true } } });
     const client = createBaseClient();
     const out = await client.request<{ code: string; data: { ok: boolean } }>({
       url: URL_OK,
     });
     expect(out).toEqual({ code: '200', data: { ok: true } });
+  });
+
+  it('preserves the dedicated error marker when a successful HTTP response has invalid JSON', async () => {
+    const previous = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () =>
+      Promise.resolve(
+        new Response('{invalid-json', {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    ) as unknown as typeof fetch;
+    try {
+      const error = await createBaseClient()
+        .request({ url: URL_OK })
+        .catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(Error);
+      expect(isResponseParseError(error)).toBe(true);
+    } finally {
+      globalThis.fetch = previous;
+    }
   });
 });
 
@@ -164,7 +189,7 @@ describe('BaseClient.request — response parsing', () => {
 describe('BaseClient.request — error normalization', () => {
   it('throws a "HTTP <status>:" error on non-2xx responses', async () => {
     active = mockFetch({
-      'api.test.qianwen.com': {
+      'api.test.qianwenai.com': {
         body: { error: 'denied' },
         init: { status: 403, statusText: 'Forbidden' },
       },
@@ -176,7 +201,7 @@ describe('BaseClient.request — error normalization', () => {
   it('truncates large response bodies in the HTTP error message', async () => {
     const big = 'x'.repeat(800);
     active = mockFetch({
-      'api.test.qianwen.com': { body: big, init: { status: 500, statusText: 'Server Error' } },
+      'api.test.qianwenai.com': { body: big, init: { status: 500, statusText: 'Server Error' } },
     });
     const client = createBaseClient();
     let err: Error | undefined;
@@ -220,10 +245,83 @@ describe('BaseClient.request — error normalization', () => {
     ) as unknown as typeof fetch;
     try {
       const client = createBaseClient({ timeout: 50 });
-      await expect(client.request({ url: URL_OK })).rejects.toThrow(/Request timeout after/);
+      const error = await client.request({ url: URL_OK }).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(RequestTimeoutError);
+      expect(error).toMatchObject({ name: 'RequestTimeoutError', timeoutMs: 50 });
+      expect((error as Error).message).toMatch(/Request timeout after/);
     } finally {
       globalThis.fetch = original;
     }
+  });
+
+  it('preserves caller cancellation as AbortError instead of reporting a request timeout', async () => {
+    const previous = globalThis.fetch;
+    globalThis.fetch = vi.fn(
+      async (_url: string | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+        }),
+    ) as unknown as typeof fetch;
+    const controller = new AbortController();
+    const reason = new DOMException('SIGINT', 'AbortError');
+    try {
+      const request = createBaseClient({ timeout: 5_000 }).request({
+        url: URL_OK,
+        signal: controller.signal,
+      });
+      controller.abort(reason);
+      const error = await request.catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error).toMatchObject({ name: 'AbortError', cause: reason });
+      expect(error).not.toBeInstanceOf(RequestTimeoutError);
+      expect((error as Error).message).toContain('SIGINT');
+    } finally {
+      globalThis.fetch = previous;
+    }
+  });
+
+  it('handles a pre-aborted request as caller cancellation without waiting for timeout', async () => {
+    const previous = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      if (init?.signal?.aborted) throw init.signal.reason;
+      throw new Error('expected an aborted signal');
+    }) as unknown as typeof fetch;
+    const controller = new AbortController();
+    const reason = new DOMException('already stopped', 'AbortError');
+    controller.abort(reason);
+    try {
+      const error = await createBaseClient({ timeout: 5_000 })
+        .request({ url: URL_OK, signal: controller.signal })
+        .catch((caught: unknown) => caught);
+      expect(error).toMatchObject({ name: 'AbortError', cause: reason });
+    } finally {
+      globalThis.fetch = previous;
+    }
+  });
+
+  it('redacts only Nbid from errors while preserving order IDs and payment links', async () => {
+    const nbid = 'nbid-sensitive-base-client';
+    const orderId = 'order-visible-base-client';
+    const paymentUrl = 'https://pay.test.qianwenai.com/visible-base-client';
+    active = mockFetch({
+      'api.test.qianwenai.com': {
+        body: { message: `${nbid} ${orderId} ${paymentUrl}` },
+        init: { status: 503, statusText: 'Unavailable' },
+      },
+    });
+
+    const error = await createBaseClient()
+      .request({
+        url: URL_OK,
+        body: JSON.stringify({ Nbid: nbid, ChargeOrderId: orderId, RechargeUrl: paymentUrl }),
+      })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).not.toContain(nbid);
+    expect((error as Error).message).toContain(orderId);
+    expect((error as Error).message).toContain(paymentUrl);
   });
 });
 

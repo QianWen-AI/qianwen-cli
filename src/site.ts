@@ -103,7 +103,7 @@ export const site = {
 
 declare const __VERSION__: string;
 
-/** Brand-prefixed User-Agent for outbound requests, e.g. `qianwen-cli/1.5.0`. */
+/** Brand-prefixed User-Agent for outbound requests, e.g. `qianwen-cli/<version>`. */
 export function sourceUserAgent(): string {
   const version = typeof __VERSION__ !== 'undefined' ? __VERSION__ : '0.0.0-dev';
   return `${site.userAgentPrefix}/${version}`;

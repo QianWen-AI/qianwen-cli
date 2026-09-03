@@ -7,7 +7,19 @@
  */
 
 import chalk from 'chalk';
+import { site } from '../site.js';
 import { didYouMean } from '../utils/strings.js';
+
+/**
+ * Remove one optional CLI executable token from REPL input.
+ *
+ * Users commonly paste a complete one-shot command into the interactive
+ * prompt. Commander receives its executable name separately, so retaining the
+ * pasted prefix would make it look like an unknown top-level command.
+ */
+export function stripOptionalCliPrefix(tokens: readonly string[]): string[] {
+  return tokens[0] === site.cliName ? tokens.slice(1) : [...tokens];
+}
 
 // ── Command tree ──────────────────────────────────────────────────────
 
@@ -56,7 +68,7 @@ export const SUBCOMMANDS: Record<string, string[]> = {
   task: ['get'],
   usage: ['summary', 'free-tier', 'payg', 'breakdown', 'logs'],
   billing: ['limit', 'breakdown', 'summary', 'balance'],
-  'billing balance': ['summary', 'recharge'],
+  'billing balance': ['summary', 'recharge', 'recharge-history'],
   subscription: ['status', 'orders', 'tokenplan'],
   'subscription tokenplan': ['status', 'seats'],
   workspace: ['list', 'limit'],
@@ -179,7 +191,15 @@ export const COMMAND_FLAGS: Record<string, string[]> = {
   'billing summary': ['--from', '--to', '--charge-type', '--format'],
   'billing balance': [],
   'billing balance summary': ['--format'],
-  'billing balance recharge': ['--format'],
+  'billing balance recharge': ['--channel', '--amount', '--format'],
+  'billing balance recharge-history': [
+    '--start-time',
+    '--end-time',
+    '--range',
+    '--page',
+    '--page-size',
+    '--format',
+  ],
   'subscription status': ['--plan', '--format'],
   'subscription orders': ['--from', '--to', '--type', '--page', '--page-size', '--format'],
   'subscription tokenplan': [],
@@ -250,6 +270,8 @@ export const FLAG_VALUES: Record<string, string[]> = {
   '--spec-type': ['pro', 'standard'],
   '--status': ['0', '2xx', '4xx', '5xx'],
   '--group-by': ['model', 'api-key'],
+  '--channel': ['alipay'],
+  '--range': ['1d', '3d', '7d', '30d'],
   '--texture-quality': ['standard', 'detailed'],
   '--response-format': ['url', 'b64'],
 };
@@ -300,10 +322,12 @@ export function fuzzyFilter(candidates: string[], partial: string): string[] {
  */
 export function tabCompleter(line: string): [string[], string] {
   const trimmed = line.trimStart();
-  const tokens = trimmed ? trimmed.split(/\s+/) : [];
+  const tokens = stripOptionalCliPrefix(trimmed ? trimmed.split(/\s+/) : []);
   const endsWithSpace = /\s$/.test(line);
 
-  if (tokens.length === 0) return [TOP_COMMANDS, ''];
+  if (tokens.length === 0 || (tokens.length === 1 && tokens[0] === '')) {
+    return [TOP_COMMANDS, ''];
+  }
 
   if (tokens.length === 1 && !endsWithSpace) {
     return [fuzzyFilter(TOP_COMMANDS, tokens[0]), tokens[0]];
@@ -450,7 +474,7 @@ export function tabCompleter(line: string): [string[], string] {
  */
 export function getGhostSuffix(line: string): string {
   const trimmed = line.trimStart();
-  const tokens = trimmed ? trimmed.split(/\s+/) : [];
+  const tokens = stripOptionalCliPrefix(trimmed ? trimmed.split(/\s+/) : []);
   const endsWithSpace = /\s$/.test(line);
 
   if (tokens.length === 0 || endsWithSpace) return '';

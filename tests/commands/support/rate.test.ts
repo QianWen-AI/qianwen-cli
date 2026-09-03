@@ -455,7 +455,7 @@ describe('support rate — eligibility guard (GetAssessmentCard)', () => {
       supportService: {
         getTicket: async () => makeTicketDetail(),
         getAssessmentCard: async () => {
-          throw Object.assign(new Error('connect ETIMEDOUT mock-api.test.qianwen.com'), {
+          throw Object.assign(new Error('connect ETIMEDOUT mock-api.test.qianwenai.com'), {
             name: 'NetworkError',
             code: 'ETIMEDOUT',
           });
@@ -517,7 +517,7 @@ describe('support rate — error routing', () => {
         getTicket: async () => makeTicketDetail(),
         getAssessmentCard: async () => makeCard(),
         rateTicket: async () => {
-          throw Object.assign(new Error('connect ETIMEDOUT mock-api.test.qianwen.com'), {
+          throw Object.assign(new Error('connect ETIMEDOUT mock-api.test.qianwenai.com'), {
             name: 'NetworkError',
             code: 'ETIMEDOUT',
           });

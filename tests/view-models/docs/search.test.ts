@@ -10,7 +10,7 @@ const makeItem = (overrides: Partial<DocsSearchResponse['items'][number]> = {}) 
   title: 't',
   highlightedTitle: 't',
   subBizType: 'guide',
-  url: 'https://docs.test.qianwen.com/x',
+  url: 'https://docs.test.qianwenai.com/x',
   summary: 's',
   highlightedSummary: 's',
   breadcrumb: [],
@@ -67,8 +67,8 @@ describe('buildDocsSearchViewModel', () => {
       makeResponse({
         totalCount: 2,
         items: [
-          makeItem({ title: '', url: 'https://docs.test.qianwen.com/a' }),
-          makeItem({ title: 'OK', url: 'https://docs.test.qianwen.com/b' }),
+          makeItem({ title: '', url: 'https://docs.test.qianwenai.com/a' }),
+          makeItem({ title: 'OK', url: 'https://docs.test.qianwenai.com/b' }),
         ],
       }),
       { query: 'q', page: 1, pageSize: 10 },
@@ -168,8 +168,8 @@ describe('buildDocsSearchViewModel', () => {
 
 describe('buildDocContentViewModel', () => {
   const make = (overrides: Partial<DocContentResult> = {}): DocContentResult => ({
-    url: 'https://docs.test.qianwen.com/page',
-    resolvedMarkdownUrl: 'https://docs.test.qianwen.com/page.md',
+    url: 'https://docs.test.qianwenai.com/page',
+    resolvedMarkdownUrl: 'https://docs.test.qianwenai.com/page.md',
     content: null,
     error: null,
     anchor: null,

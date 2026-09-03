@@ -364,7 +364,7 @@ describe('transformOrderDetail', () => {
           { Name: 'Token Plan Personal', Quantity: '1', Amount: '50' },
           { Name: 'Add-on Pack', Quantity: 2, Amount: 25 },
         ],
-        InvoiceUrl: 'https://invoice.test.qianwen.com/o-1.pdf',
+        InvoiceUrl: 'https://invoice.test.qianwenai.com/o-1.pdf',
       }),
     ).toEqual({
       orderId: 'o-1',
@@ -376,7 +376,7 @@ describe('transformOrderDetail', () => {
         { name: 'Token Plan Personal', quantity: 1, amount: '50' },
         { name: 'Add-on Pack', quantity: 2, amount: '25' },
       ],
-      invoiceUrl: 'https://invoice.test.qianwen.com/o-1.pdf',
+      invoiceUrl: 'https://invoice.test.qianwenai.com/o-1.pdf',
     });
   });
 

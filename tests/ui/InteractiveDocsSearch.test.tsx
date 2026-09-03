@@ -16,7 +16,7 @@ function makeItem(overrides: Partial<DocsSearchItemViewModel> = {}): DocsSearchI
     title: 'Getting Started',
     highlightedTitle: 'Getting <em>Started</em>',
     subBizType: 'Developer Guide',
-    url: 'https://mock-docs.test.qianwen.com/developer-guides/getting-started',
+    url: 'https://mock-docs.test.qianwenai.com/developer-guides/getting-started',
     summary: 'Learn how to get started with QianWen.',
     highlightedSummary: 'Learn how to get <em>started</em> with QianWen.',
     breadcrumb: ['Developer Guide', 'Getting Started'],
@@ -129,7 +129,7 @@ describe('InteractiveDocsSearch', () => {
       />,
     );
 
-    expect(out).toContain('mock-docs.test.qianwen.com');
+    expect(out).toContain('mock-docs.test.qianwenai.com');
   });
 
   it('should show keyboard shortcuts in footer', () => {
@@ -157,7 +157,7 @@ describe('InteractiveDocsSearch — TUI display specification', () => {
         highlightedTitle: `Doc Title ${i + 1}`,
         summary: `Summary for document ${i + 1}`,
         highlightedSummary: `Summary for document ${i + 1}`,
-        url: `https://mock-docs.test.qianwen.com/doc-${i + 1}`,
+        url: `https://mock-docs.test.qianwenai.com/doc-${i + 1}`,
       }),
     );
   }
@@ -234,8 +234,6 @@ describe('InteractiveDocsSearch — TUI display specification', () => {
       expect(out).not.toContain('Summary for document 2');
       expect(out).not.toContain('Summary for document 3');
     });
-
-    
   });
 
   describe('F3: selected item visual indicator', () => {
@@ -287,7 +285,7 @@ describe('InteractiveDocsSearch — TUI display specification', () => {
 
 describe('InteractiveDocsSearch — narrow terminal width guard', () => {
   const LONG_URL =
-    'https://mock-docs.test.qianwen.com/developer-guides/some/very/deeply/nested/path/that-never-ends/getting-started-with-extremely-long-slugs';
+    'https://mock-docs.test.qianwenai.com/developer-guides/some/very/deeply/nested/path/that-never-ends/getting-started-with-extremely-long-slugs';
   const LONG_TITLE =
     'An Extremely Long Documentation Title That Would Definitely Overflow A Narrow Terminal Window';
   const LONG_SUMMARY =

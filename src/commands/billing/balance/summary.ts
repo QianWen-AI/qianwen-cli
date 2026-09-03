@@ -11,6 +11,7 @@ import { renderBalanceSummaryInk } from '../../../ui/BillingBalanceSummary.js';
 import { renderTextBalanceSummary } from '../../../output/text/billing.js';
 import { handleError } from '../../../utils/errors.js';
 import { createServices } from '../../../services/index.js';
+import { toRechargeApiCliError } from './recharge-errors.js';
 
 export function registerBillingBalanceSummaryCommand(parent: Command): void {
   const summary = parent
@@ -47,7 +48,7 @@ export function balanceSummaryAction(cmd: Command) {
         await renderBalanceSummaryInk(vm);
       }
     } catch (error) {
-      handleError(error, format);
+      handleError(toRechargeApiCliError(error) ?? error, format);
     }
   };
 }

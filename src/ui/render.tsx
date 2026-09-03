@@ -2,7 +2,6 @@ import { PassThrough } from 'stream';
 import React, { useEffect } from 'react';
 import { render, useApp } from 'ink';
 import { isReplMode } from '../utils/runtime-mode.js';
-import { isConHost } from './terminalCompat.js';
 import { CliError } from '../utils/errors.js';
 import { EXIT_CODES } from '../utils/exit-codes.js';
 
@@ -13,11 +12,9 @@ import { EXIT_CODES } from '../utils/exit-codes.js';
 const ENTER_ALT_SCREEN = '\x1b[?1049h';
 const EXIT_ALT_SCREEN = '\x1b[?1049l';
 
-// Clear the visible screen and home the cursor. Used as the ConHost fallback
-// for the clean-exit behaviour the alternate screen buffer provides elsewhere:
-// ConHost cannot enter the alt-screen (doing so closes the window on exit), so
-// on teardown we wipe the rendered TUI and let the next prompt start fresh
-// instead of leaving the last frame stranded on the main screen.
+// Windows full-screen views intentionally use the main screen, matching the
+// stable v1.5 behaviour. Clear the finished frame and home the cursor so the
+// next shell/REPL prompt starts at the top-left instead of below the TUI.
 const CLEAR_SCREEN = '\x1b[2J\x1b[H';
 
 // The scrollback-erase sequence Ink's clearTerminal path emits. On
@@ -45,14 +42,30 @@ export const AltScreenContext = React.createContext<boolean>(false);
  * signalling Ink that rendering is complete. This lets `waitUntilExit()`
  * resolve precisely when the component has finished writing to stdout.
  */
-function AutoExitWrapper({ children }: { children: React.ReactNode }) {
+function AutoExitWrapper({
+  children,
+  waitUntil,
+}: {
+  children: React.ReactNode;
+  waitUntil?: Promise<unknown>;
+}) {
   const app = useApp();
   useEffect(() => {
-    // Schedule exit after the current render is committed to stdout.
-    // Using setImmediate ensures the paint has flushed before we signal done.
-    const handle = setImmediate(() => app.exit());
-    return () => clearImmediate(handle);
-  }, [app]);
+    let active = true;
+    let handle: ReturnType<typeof setImmediate> | undefined;
+    const scheduleExit = () => {
+      if (!active) return;
+      // Schedule exit after the current render is committed to stdout.
+      // Using setImmediate ensures the paint has flushed before we signal done.
+      handle = setImmediate(() => app.exit());
+    };
+    if (waitUntil) void waitUntil.then(scheduleExit, scheduleExit);
+    else scheduleExit();
+    return () => {
+      active = false;
+      if (handle) clearImmediate(handle);
+    };
+  }, [app, waitUntil]);
   return <>{children}</>;
 }
 
@@ -121,7 +134,10 @@ function toInkRenderError(error: unknown): CliError {
  * }
  * ```
  */
-export async function renderWithInk(element: React.ReactElement): Promise<void> {
+export async function renderWithInk(
+  element: React.ReactElement,
+  options?: { waitUntil?: Promise<unknown> },
+): Promise<void> {
   // Use a dummy stdin so Ink never calls setRawMode / pause / resume on the
   // real process.stdin, which would interfere with the REPL's readline state.
   const dummyStdin = new PassThrough();
@@ -137,7 +153,7 @@ export async function renderWithInk(element: React.ReactElement): Promise<void> 
         ctl.unmount?.();
       }}
     >
-      <AutoExitWrapper>{element}</AutoExitWrapper>
+      <AutoExitWrapper waitUntil={options?.waitUntil}>{element}</AutoExitWrapper>
     </InkErrorBoundary>,
     {
       stdout: process.stdout,
@@ -175,6 +191,19 @@ export interface RenderInteractiveOptions {
    * multi-line text editor used by support flows).
    */
   altScreen?: boolean;
+  /** Append a line break after an inline render. Defaults to false. */
+  trailingNewline?: boolean;
+  /**
+   * Protect static content already on the main screen from Ink's
+   * clearTerminal frames. When `true` and the render does NOT use the
+   * alt-screen buffer, the same `\x1b[2J` frame filter that protects
+   * alt-screen sessions is installed so resize-race clears cannot wipe
+   * console.log output (e.g. a QR code) above the Ink frame.
+   *
+   * Has no effect when the alt-screen is active (the filter is always
+   * installed there).
+   */
+  protectStaticContent?: boolean;
 }
 
 /**
@@ -190,7 +219,7 @@ export async function renderInteractive(
   element: React.ReactElement,
   options: RenderInteractiveOptions = {},
 ): Promise<void> {
-  const { altScreen = true } = options;
+  const { altScreen = true, trailingNewline = false, protectStaticContent = false } = options;
 
   // Save existing stdin listeners registered by readline/REPL,
   // then remove them so only Ink receives keystrokes during pagination.
@@ -209,17 +238,14 @@ export async function renderInteractive(
   // terminal contents are restored automatically on exit. Inline editors
   // opt out by passing `altScreen: false` so the surrounding output stays
   // visible above the editor.
-  // Windows ConHost (legacy console host backing PowerShell when neither
-  // Windows Terminal nor a TERM_PROGRAM is in effect) closes its window on
-  // alt-screen exit, which would terminate the REPL after every interactive
-  // command. Detect and skip alt-screen in that environment.
+  // Windows full-screen views stay on the main screen on every host. This is
+  // the stable v1.5 behaviour: Ink can use full-screen repaints without relying
+  // on host-specific alternate-screen teardown. Callers that explicitly opt
+  // out (for example recharge polling) remain inline and are not cleared on
+  // exit.
   const wantsAltScreen = altScreen && Boolean(process.stdout.isTTY);
-  const useAltScreen = wantsAltScreen && !isConHost();
-  // When a full-screen TUI was requested but the alt-screen is unavailable
-  // (ConHost), emulate the alt-screen's clean exit by clearing the screen on
-  // teardown. Callers that explicitly opt out of the alt-screen (altScreen:
-  // false, e.g. inline editors) are excluded so their output stays anchored.
-  const clearOnExit = wantsAltScreen && !useAltScreen;
+  const useAltScreen = wantsAltScreen && process.platform !== 'win32';
+  const useMainScreenFallback = wantsAltScreen && !useAltScreen;
 
   // Ink's resize handler races ahead of React state: on a height shrink it
   // re-renders the stale (taller) frame first, hits its clearTerminal path and
@@ -233,11 +259,18 @@ export async function renderInteractive(
   // ≤1 render cycle until the React-driven diff render replaces it — no
   // flicker, no residue. Ink writes strings; Buffer chunks (which could in
   // theory split the escape sequence across writes) pass through untouched.
-  // The ConHost main-screen fallback intentionally skips the filter — there
-  // clearTerminal repaints are the desired behaviour.
+  // Install the stdout write filter when:
+  // 1. Alt-screen is active (always — strip \x1b[3J AND suppress \x1b[2J frames), OR
+  // 2. The caller declared static content on the main screen that must survive
+  //    Ink's resize-race clearTerminal path (suppress \x1b[2J frames only).
+  // Windows full-screen fallback deliberately stays unfiltered: its termRows
+  // height makes Ink's 2J/3J full repaint the resize-stable rendering path.
+  const installFilter = useAltScreen || (protectStaticContent && !useAltScreen);
   let restoreWrite: (() => void) | null = null;
   if (useAltScreen) {
     process.stdout.write(ENTER_ALT_SCREEN);
+  }
+  if (installFilter) {
     const originalWrite = process.stdout.write;
     const boundWrite = originalWrite.bind(process.stdout);
     const strippingWrite = (
@@ -245,7 +278,10 @@ export async function renderInteractive(
       encodingOrCb?: BufferEncoding | ((err?: Error | null) => void),
       cb?: (err?: Error | null) => void,
     ): boolean => {
-      const data = typeof chunk === 'string' ? chunk.replaceAll(ERASE_SCROLLBACK, '') : chunk;
+      // Alt-screen sessions strip scrollback erasure; explicit static-content
+      // protection only suppresses full clear frames.
+      const data =
+        useAltScreen && typeof chunk === 'string' ? chunk.replaceAll(ERASE_SCROLLBACK, '') : chunk;
       // Drop the whole stale clearTerminal frame (see block comment above).
       // Known edge: Ink's lastOutput gate still records the suppressed frame,
       // so a later fresh render producing a byte-identical string would be
@@ -300,9 +336,16 @@ export async function renderInteractive(
       // Land the shell prompt on a fresh line after the alt-screen restores the
       // main screen (mirrors renderWithInk's trailing newline).
       process.stdout.write('\n');
-    } else if (clearOnExit) {
+    } else if (useMainScreenFallback) {
       process.stdout.write(CLEAR_SCREEN);
+    } else if (trailingNewline) {
+      // Inline Ink leaves the cursor at the end of its last painted row. Move
+      // subsequent output below that frame instead of appending it horizontally.
+      process.stdout.write('\n');
     }
+    // Emit a full SGR reset so the parent shell inherits a clean attribute
+    // state regardless of which rendering path Ink took.
+    process.stdout.write('\x1b[0m');
     // Ensure stdin returns to cooked mode before downstream readline runs.
     // Ink enables raw mode during render and calls setRawMode(false) on
     // unmount, but event-loop ordering can leave stdin still in raw mode by

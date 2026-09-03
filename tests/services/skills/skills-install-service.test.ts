@@ -55,7 +55,7 @@ function makeHub(detail: SkillDetail, calls: HubCalls, downloadSha256?: string):
     getSkillDownload: async () => {
       calls.download += 1;
       return {
-        ossUrl: 'https://oss.test.qianwen.com/pkg.zip',
+        ossUrl: 'https://oss.test.qianwenai.com/pkg.zip',
         expiresAt: '',
         ...(downloadSha256 !== undefined ? { sha256: downloadSha256 } : {}),
       };

@@ -98,7 +98,7 @@ describe('AuthService.getAuthStatus', () => {
       credentials: {
         access_token: 't',
         expires_at: '2020-01-01T00:00:00Z',
-        user: { email: 'u@test.qianwen.com', aliyunId: 'a' },
+        user: { email: 'u@test.qianwenai.com', aliyunId: 'a' },
       },
     };
     credState.isExpired = true;
@@ -116,14 +116,14 @@ describe('AuthService.getAuthStatus', () => {
       credentials: {
         access_token: 't',
         expires_at: '2030-01-01T00:00:00Z',
-        user: { email: 'u@test.qianwen.com', aliyunId: 'a' },
+        user: { email: 'u@test.qianwenai.com', aliyunId: 'a' },
       },
     };
     const remote: AuthStatus = {
       authenticated: true,
       server_verified: true,
       auth_mode: 'device_flow',
-      user: { email: 'u@test.qianwen.com', aliyunId: 'a' },
+      user: { email: 'u@test.qianwenai.com', aliyunId: 'a' },
     };
     const client = makeAuthClient();
     client.getAuthStatus.mockResolvedValue(remote);
@@ -139,7 +139,7 @@ describe('AuthService.getAuthStatus', () => {
       credentials: {
         access_token: 't',
         expires_at: '2030-01-01T00:00:00Z',
-        user: { email: 'me@test.qianwen.com', aliyunId: 'me' },
+        user: { email: 'me@test.qianwenai.com', aliyunId: 'me' },
       },
     };
     const client = makeAuthClient();
@@ -149,7 +149,7 @@ describe('AuthService.getAuthStatus', () => {
     expect(out.server_verified).toBe(false);
     expect(out.warning).toContain('Server unreachable');
     expect(out.warning).toContain('ECONNREFUSED');
-    expect(out.user?.email).toBe('me@test.qianwen.com');
+    expect(out.user?.email).toBe('me@test.qianwenai.com');
   });
 
   it('falls back to JWT-extracted user when local credentials lack one', async () => {
@@ -163,11 +163,11 @@ describe('AuthService.getAuthStatus', () => {
         user: { email: '', aliyunId: '' },
       },
     };
-    credState.jwtUser = { email: 'jwt@test.qianwen.com', aliyunId: 'jwt-user' };
+    credState.jwtUser = { email: 'jwt@test.qianwenai.com', aliyunId: 'jwt-user' };
     const client = makeAuthClient();
     client.getAuthStatus.mockRejectedValue(new Error('boom'));
     const out = await new AuthService(client).getAuthStatus();
-    expect(out.user?.email).toBe('jwt@test.qianwen.com');
+    expect(out.user?.email).toBe('jwt@test.qianwenai.com');
   });
 });
 
@@ -178,7 +178,7 @@ describe('AuthService.getAuthStatus', () => {
 describe('AuthService.loginInit / loginPoll', () => {
   const initShared: DeviceFlowInitResponse = {
     token: 'enc-token',
-    verification_url: 'https://login.test.qianwen.com/device',
+    verification_url: 'https://login.test.qianwenai.com/device',
     expires_in: 600,
     interval: 5,
   };

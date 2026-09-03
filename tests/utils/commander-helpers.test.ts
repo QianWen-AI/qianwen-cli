@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { Command } from 'commander';
-import { getCommandArgs } from '../../src/utils/commander-helpers.js';
+import {
+  addCommandErrorSupplement,
+  getCommandArgs,
+  getCommandErrorSupplement,
+} from '../../src/utils/commander-helpers.js';
 
 // getCommandArgs must read positional arguments from commander's PUBLIC
 // `registeredArguments` array, never the private `_args` field. In a production
@@ -64,5 +68,98 @@ describe('getCommandArgs', () => {
     expect(args).toHaveLength(1);
     // No description was supplied; commander stores '' for the Argument.
     expect(args[0].description).toBe('');
+  });
+});
+
+// applyExitOverride (src/cli.ts) enriches CommanderError messages with the
+// supplement registered for the exact (code, message) pair, so option-hint
+// guidance survives the structured error path. The pairing must be exact:
+// a same-code error with different wording must not pick up a foreign hint.
+describe('command error supplements', () => {
+  it('returns the supplement when both code and message match', () => {
+    const cmd = new Command();
+    addCommandErrorSupplement(cmd, {
+      code: 'commander.optionMissingArgument',
+      message: "error: option '--channel <channel>' argument missing",
+      supplement: 'Available values: alipay',
+    });
+
+    const supplement = getCommandErrorSupplement(cmd, {
+      code: 'commander.optionMissingArgument',
+      message: "error: option '--channel <channel>' argument missing",
+    });
+
+    expect(supplement).toBe('Available values: alipay');
+  });
+
+  it('resolves each of multiple supplements registered on one command', () => {
+    const cmd = new Command();
+    addCommandErrorSupplement(cmd, {
+      code: 'commander.optionMissingArgument',
+      message: "error: option '--channel <channel>' argument missing",
+      supplement: 'Available values: alipay',
+    });
+    addCommandErrorSupplement(cmd, {
+      code: 'commander.optionMissingArgument',
+      message: "error: option '--amount <amount>' argument missing",
+      supplement: 'Enter a positive CNY amount with at most two decimal places.',
+    });
+
+    expect(
+      getCommandErrorSupplement(cmd, {
+        code: 'commander.optionMissingArgument',
+        message: "error: option '--amount <amount>' argument missing",
+      }),
+    ).toBe('Enter a positive CNY amount with at most two decimal places.');
+    expect(
+      getCommandErrorSupplement(cmd, {
+        code: 'commander.optionMissingArgument',
+        message: "error: option '--channel <channel>' argument missing",
+      }),
+    ).toBe('Available values: alipay');
+  });
+
+  it('requires an exact message match, not just the error code', () => {
+    const cmd = new Command();
+    addCommandErrorSupplement(cmd, {
+      code: 'commander.optionMissingArgument',
+      message: "error: option '--channel <channel>' argument missing",
+      supplement: 'Available values: alipay',
+    });
+
+    const supplement = getCommandErrorSupplement(cmd, {
+      code: 'commander.optionMissingArgument',
+      message: "error: option '--format <fmt>' argument missing",
+    });
+
+    expect(supplement).toBeUndefined();
+  });
+
+  it('returns undefined for a command without registered supplements', () => {
+    const cmd = new Command();
+
+    expect(
+      getCommandErrorSupplement(cmd, {
+        code: 'commander.optionMissingArgument',
+        message: "error: option '--channel <channel>' argument missing",
+      }),
+    ).toBeUndefined();
+  });
+
+  it('keeps supplements isolated per command instance', () => {
+    const registered = new Command();
+    const other = new Command();
+    addCommandErrorSupplement(registered, {
+      code: 'commander.missingArgument',
+      message: 'error: missing required argument',
+      supplement: 'Provide the ticket id.',
+    });
+
+    expect(
+      getCommandErrorSupplement(other, {
+        code: 'commander.missingArgument',
+        message: 'error: missing required argument',
+      }),
+    ).toBeUndefined();
   });
 });
