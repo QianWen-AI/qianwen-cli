@@ -117,8 +117,20 @@ describe('buildSubscriptionStatusViewModel', () => {
     const vm = buildSubscriptionStatusViewModel(
       makeStatus({
         recentOrders: [
-          { orderId: 'ord-001', orderType: 'purchase', orderTime: '2026-04-15T10:00:00Z', amount: '199.00', status: 'PAID' },
-          { orderId: 'ord-002', orderType: 'renew', orderTime: '2026-04-20T08:30:00Z', amount: '99.00', status: 'UNPAID' },
+          {
+            orderId: 'ord-001',
+            orderType: 'purchase',
+            orderTime: '2026-04-15T10:00:00Z',
+            amount: '199.00',
+            status: 'PAID',
+          },
+          {
+            orderId: 'ord-002',
+            orderType: 'renew',
+            orderTime: '2026-04-20T08:30:00Z',
+            amount: '99.00',
+            status: 'UNPAID',
+          },
         ],
       }),
       [],

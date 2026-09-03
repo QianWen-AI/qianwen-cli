@@ -16,9 +16,7 @@ import { render } from 'ink-testing-library';
 import stripAnsi from 'strip-ansi';
 
 // ── Mock ink: capture useInput callback + provide stub useApp ───────────
-let capturedInputHandler:
-  | ((input: string, key: Record<string, boolean>) => void)
-  | null = null;
+let capturedInputHandler: ((input: string, key: Record<string, boolean>) => void) | null = null;
 const exitMock = vi.fn();
 
 vi.mock('ink', async () => {
@@ -64,18 +62,14 @@ describe('<TextArea /> rendering', () => {
   });
 
   it('renders line numbers starting at 1', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     const out = stripAnsi(lastFrame() ?? '');
     expect(out).toContain('1');
     unmount();
   });
 
   it('shows Submit and Cancel buttons', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     const out = stripAnsi(lastFrame() ?? '');
     expect(out).toContain('Submit');
     expect(out).toContain('Cancel');
@@ -83,9 +77,7 @@ describe('<TextArea /> rendering', () => {
   });
 
   it('shows the editor footer hint by default', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     const out = stripAnsi(lastFrame() ?? '');
     expect(out).toContain('Tab Switch focus');
     unmount();
@@ -94,9 +86,7 @@ describe('<TextArea /> rendering', () => {
 
 describe('<TextArea /> text input', () => {
   it('typing characters updates the rendered content', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     pressKey('H', {});
     pressKey('i', {});
     const out = stripAnsi(lastFrame() ?? '');
@@ -105,9 +95,7 @@ describe('<TextArea /> text input', () => {
   });
 
   it('Enter creates a new line', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     pressKey('A', {});
     pressKey('', { return: true });
     pressKey('B', {});
@@ -121,9 +109,7 @@ describe('<TextArea /> text input', () => {
   });
 
   it('Backspace removes a character', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     pressKey('A', {});
     pressKey('B', {});
     pressKey('', { backspace: true });
@@ -134,9 +120,7 @@ describe('<TextArea /> text input', () => {
   });
 
   it('Backspace at the start of line 2 merges with line 1', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     pressKey('X', {});
     pressKey('', { return: true });
     pressKey('Y', {});
@@ -153,9 +137,7 @@ describe('<TextArea /> text input', () => {
 
 describe('<TextArea /> arrow navigation', () => {
   it('left arrow moves the cursor left', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     pressKey('A', {});
     pressKey('B', {});
     pressKey('', { leftArrow: true });
@@ -166,9 +148,7 @@ describe('<TextArea /> arrow navigation', () => {
   });
 
   it('right arrow moves cursor right and wraps to next line', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     pressKey('A', {});
     pressKey('', { return: true });
     pressKey('B', {});
@@ -186,9 +166,7 @@ describe('<TextArea /> arrow navigation', () => {
   });
 
   it('up arrow moves cursor to previous line', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     pressKey('L', {});
     pressKey('o', {});
     pressKey('n', {});
@@ -206,9 +184,7 @@ describe('<TextArea /> arrow navigation', () => {
   });
 
   it('down arrow moves cursor to next line', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     pressKey('A', {});
     pressKey('', { return: true });
     pressKey('B', {});
@@ -222,9 +198,7 @@ describe('<TextArea /> arrow navigation', () => {
   });
 
   it('left arrow at start of line wraps to end of previous line', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     pressKey('X', {});
     pressKey('', { return: true });
     // Cursor at start of line 2, pressing left wraps to end of line 1
@@ -239,9 +213,7 @@ describe('<TextArea /> arrow navigation', () => {
 
 describe('<TextArea /> focus and buttons', () => {
   it('Tab switches focus to buttons and shows button footer', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     pressKey('', { tab: true });
     const out = stripAnsi(lastFrame() ?? '');
     expect(out).toContain('Select');
@@ -250,9 +222,7 @@ describe('<TextArea /> focus and buttons', () => {
   });
 
   it('left/right arrows switch between Submit and Cancel buttons', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     pressKey('', { tab: true });
     // Initially Submit is selected (has ▸)
     let out = stripAnsi(lastFrame() ?? '');
@@ -266,9 +236,7 @@ describe('<TextArea /> focus and buttons', () => {
 
   it('Enter on Submit button calls onSubmit with text content', () => {
     const onSubmit = vi.fn();
-    const { unmount } = render(
-      <TextArea onSubmit={onSubmit} onCancel={vi.fn()} />,
-    );
+    const { unmount } = render(<TextArea onSubmit={onSubmit} onCancel={vi.fn()} />);
     pressKey('H', {});
     pressKey('e', {});
     pressKey('l', {});
@@ -282,9 +250,7 @@ describe('<TextArea /> focus and buttons', () => {
 
   it('Enter on Cancel button calls onCancel', () => {
     const onCancel = vi.fn();
-    const { unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={onCancel} />,
-    );
+    const { unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={onCancel} />);
     pressKey('', { tab: true });
     pressKey('', { rightArrow: true });
     pressKey('', { return: true });
@@ -294,9 +260,7 @@ describe('<TextArea /> focus and buttons', () => {
   });
 
   it('Tab back to editor restores editor footer', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     pressKey('', { tab: true });
     pressKey('', { tab: true });
     const out = stripAnsi(lastFrame() ?? '');
@@ -308,9 +272,7 @@ describe('<TextArea /> focus and buttons', () => {
 describe('<TextArea /> cancellation', () => {
   it('Esc triggers onCancel', () => {
     const onCancel = vi.fn();
-    const { unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={onCancel} />,
-    );
+    const { unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={onCancel} />);
     pressKey('', { escape: true });
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(exitMock).toHaveBeenCalled();
@@ -319,9 +281,7 @@ describe('<TextArea /> cancellation', () => {
 
   it('Ctrl+C triggers onCancel', () => {
     const onCancel = vi.fn();
-    const { unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={onCancel} />,
-    );
+    const { unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={onCancel} />);
     pressKey('c', { ctrl: true });
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(exitMock).toHaveBeenCalled();
@@ -355,9 +315,7 @@ describe('<TextArea /> cursor caret glyph (BUG-6)', () => {
   });
 
   it('renders a visible caret glyph at the end of the typed line', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     pressKey('H', {});
     pressKey('i', {});
     const out = stripAnsi(lastFrame() ?? '');
@@ -367,9 +325,7 @@ describe('<TextArea /> cursor caret glyph (BUG-6)', () => {
   });
 
   it('renders a visible caret glyph when the cursor is mid-line', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     pressKey('A', {});
     pressKey('B', {});
     pressKey('C', {});
@@ -387,9 +343,7 @@ describe('<TextArea /> cursor caret glyph (BUG-6)', () => {
   });
 
   it('does NOT render the editor caret glyph while focus is on the buttons (negative control)', () => {
-    const { lastFrame, unmount } = render(
-      <TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />,
-    );
+    const { lastFrame, unmount } = render(<TextArea onSubmit={vi.fn()} onCancel={vi.fn()} />);
     pressKey('a', {});
     // Tab moves focus to the buttons; the editor caret must not persist.
     pressKey('', { tab: true });

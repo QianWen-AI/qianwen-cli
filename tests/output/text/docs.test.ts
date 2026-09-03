@@ -41,7 +41,7 @@ function makeItem(overrides: Partial<DocsSearchItem> = {}): DocsSearchItem {
     title: 'Model releases',
     highlightedTitle: 'Model releases — <em>qwen3</em>',
     subBizType: 'Changelog',
-    url: 'https://docs.test.qianwen.com/changelog/models',
+    url: 'https://docs.test.qianwenai.com/changelog/models',
     summary: 'qwen3.7-max is now available',
     highlightedSummary: '<em>qwen3</em>.7-max is now available',
     breadcrumb: ['Changelog', 'Model releases'],
@@ -63,7 +63,7 @@ describe('renderTextDocsSearch — happy path', () => {
             title: 'Quick Start',
             highlightedTitle: 'Quick Start',
             subBizType: 'Developer Guide',
-            url: 'https://docs.test.qianwen.com/developer-guides/getting-started',
+            url: 'https://docs.test.qianwenai.com/developer-guides/getting-started',
             summary: 'Get started in minutes',
             highlightedSummary: 'Get started in minutes',
             breadcrumb: ['Developer Guide', 'Quick Start'],
@@ -82,7 +82,7 @@ describe('renderTextDocsSearch — happy path', () => {
     expect(out).toContain('Model releases');
     expect(out).toContain('Quick Start');
     // URLs appear so the user can copy/paste
-    expect(out).toContain('https://docs.test.qianwen.com/changelog/models');
+    expect(out).toContain('https://docs.test.qianwenai.com/changelog/models');
   });
 
   it('strips <em> highlight tags in the rendered text body', () => {
@@ -134,7 +134,7 @@ describe('renderTextDocsSearch — degradation', () => {
     // Localized fallback copy from the ViewModel's degraded path
     expect(out.toLowerCase()).toMatch(/aligned|对齐中/);
     // The row must NOT silently render an empty title
-    expect(out).not.toContain('https://docs.test.qianwen.com/changelog/models');
+    expect(out).not.toContain('https://docs.test.qianwenai.com/changelog/models');
   });
 
   it('surfaces the page-level diagnostics tag when ≥50% rows are degraded', () => {

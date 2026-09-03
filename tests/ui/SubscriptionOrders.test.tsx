@@ -75,7 +75,14 @@ describe('SubscriptionOrdersInk', () => {
   it('marks status with (!) suffix when row has detailError', () => {
     const out = frame(
       makeVm({
-        rows: [makeRow({ status: 'PAID', statusLabel: 'Paid', statusColor: 'green', detailError: 'fetch failed' })],
+        rows: [
+          makeRow({
+            status: 'PAID',
+            statusLabel: 'Paid',
+            statusColor: 'green',
+            detailError: 'fetch failed',
+          }),
+        ],
       }),
     );
     expect(out).toContain('Paid (!)');

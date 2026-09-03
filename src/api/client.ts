@@ -85,8 +85,7 @@ declare const __NODE_ENV__: string;
 
 /**
  * Resolve the effective api endpoint. In non-production builds the
- * QIANWEN_API_ENDPOINT env var overrides the configured value (used by the
- * E2E test harness to point the CLI at a local mock server).
+ * QIANWEN_API_ENDPOINT env var overrides the configured value for local testing.
  */
 function resolveApiEndpoint(): string {
   const configured = (getEffectiveConfig()['api.endpoint'] as string).replace(/\/+$/, '');

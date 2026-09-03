@@ -60,7 +60,7 @@ const sample: DocsSearchResponse = {
       title: 'Quickstart',
       highlightedTitle: 'Quickstart',
       subBizType: 'doc',
-      url: 'https://docs.test.qianwen.com/quickstart',
+      url: 'https://docs.test.qianwenai.com/quickstart',
       summary: 'Get started with Qwen.',
       highlightedSummary: 'Get started with Qwen.',
       breadcrumb: ['Docs', 'Quickstart'],
@@ -69,8 +69,8 @@ const sample: DocsSearchResponse = {
 };
 
 const sampleContent: DocContentResult = {
-  url: 'https://docs.test.qianwen.com/quickstart',
-  resolvedMarkdownUrl: 'https://docs.test.qianwen.com/quickstart.md',
+  url: 'https://docs.test.qianwenai.com/quickstart',
+  resolvedMarkdownUrl: 'https://docs.test.qianwenai.com/quickstart.md',
   content: '# Quickstart\n\nHello.',
   error: null,
   anchor: null,

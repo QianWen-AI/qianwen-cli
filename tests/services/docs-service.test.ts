@@ -56,7 +56,7 @@ describe('normalizeSearchAllResponse', () => {
             title: 'Hello',
             content: 'lorem ipsum',
             subBizType: 'doc',
-            url: 'https://docs.test.qianwen.com/a',
+            url: 'https://docs.test.qianwenai.com/a',
             nodesInfo: JSON.stringify([{ nodeName: 'Guides' }, { nodeName: 'Quickstart' }]),
           },
         ],
@@ -71,7 +71,7 @@ describe('normalizeSearchAllResponse', () => {
       title: 'Hello',
       highlightedTitle: 'Hello',
       subBizType: 'doc',
-      url: 'https://docs.test.qianwen.com/a',
+      url: 'https://docs.test.qianwenai.com/a',
       summary: 'lorem ipsum',
       highlightedSummary: 'lorem ipsum',
       breadcrumb: ['Guides', 'Quickstart'],
@@ -90,7 +90,7 @@ describe('normalizeSearchAllResponse', () => {
             summary: 'legacy summary',
             highlightedSummary: '<em>legacy</em>',
             breadcrumb: ['A', 'B'],
-            url: 'https://docs.test.qianwen.com/legacy',
+            url: 'https://docs.test.qianwenai.com/legacy',
           },
         ],
       },
@@ -139,14 +139,14 @@ describe('DocsService.searchDocs', () => {
         return {
           TotalCount: 1,
           PageNo: 2,
-          Info: [{ title: 'r', url: 'https://docs.test.qianwen.com/r', content: 'body' }],
+          Info: [{ title: 'r', url: 'https://docs.test.qianwenai.com/r', content: 'body' }],
         };
       },
     });
     const svc = new DocsService(api);
     const out = await svc.searchDocs({ query: '  qwen  ', limit: 5, page: 2 });
     expect(out.totalCount).toBe(1);
-    expect(out.items[0]?.url).toBe('https://docs.test.qianwen.com/r');
+    expect(out.items[0]?.url).toBe('https://docs.test.qianwenai.com/r');
   });
 
   it('clamps limit/page to documented ranges', async () => {
@@ -201,29 +201,29 @@ describe('DocsService.fetchDocContent', () => {
     originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(async (input: string | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
-      expect(url).toBe('https://docs.test.qianwen.com/a.md');
+      expect(url).toBe('https://docs.test.qianwenai.com/a.md');
       return new Response('# Hello', { status: 200 });
     }) as unknown as typeof fetch;
 
     const svc = new DocsService(makeMockApiClient());
-    const out = await svc.fetchDocContent('https://docs.test.qianwen.com/a');
+    const out = await svc.fetchDocContent('https://docs.test.qianwenai.com/a');
     expect(out.content).toBe('# Hello');
     expect(out.error).toBeNull();
     expect(out.anchor).toBeNull();
-    expect(out.resolvedMarkdownUrl).toBe('https://docs.test.qianwen.com/a.md');
+    expect(out.resolvedMarkdownUrl).toBe('https://docs.test.qianwenai.com/a.md');
   });
 
   it('preserves an existing .md suffix and extracts the anchor fragment', async () => {
     originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(async (input: string | URL) => {
       expect(typeof input === 'string' ? input : input.toString()).toBe(
-        'https://docs.test.qianwen.com/b.md',
+        'https://docs.test.qianwenai.com/b.md',
       );
       return new Response('body', { status: 200 });
     }) as unknown as typeof fetch;
 
     const svc = new DocsService(makeMockApiClient());
-    const out = await svc.fetchDocContent('https://docs.test.qianwen.com/b.md#section-1');
+    const out = await svc.fetchDocContent('https://docs.test.qianwenai.com/b.md#section-1');
     expect(out.anchor).toBe('section-1');
   });
 
@@ -234,7 +234,7 @@ describe('DocsService.fetchDocContent', () => {
     ) as unknown as typeof fetch;
 
     const svc = new DocsService(makeMockApiClient());
-    const out = await svc.fetchDocContent('https://docs.test.qianwen.com/missing');
+    const out = await svc.fetchDocContent('https://docs.test.qianwenai.com/missing');
     expect(out.content).toBeNull();
     expect(out.error).toBe('HTTP 404');
   });
@@ -248,7 +248,7 @@ describe('DocsService.fetchDocContent', () => {
     }) as unknown as typeof fetch;
 
     const svc = new DocsService(makeMockApiClient());
-    const out = await svc.fetchDocContent('https://docs.test.qianwen.com/timeout');
+    const out = await svc.fetchDocContent('https://docs.test.qianwenai.com/timeout');
     expect(out.error).toBe('Request timed out');
   });
 
@@ -258,7 +258,7 @@ describe('DocsService.fetchDocContent', () => {
       throw new Error('ECONNREFUSED');
     }) as unknown as typeof fetch;
     const svc = new DocsService(makeMockApiClient());
-    const out = await svc.fetchDocContent('https://docs.test.qianwen.com/net-fail');
+    const out = await svc.fetchDocContent('https://docs.test.qianwenai.com/net-fail');
     expect(out.error).toBe('ECONNREFUSED');
   });
 });
@@ -486,13 +486,15 @@ describe('DocsService.buildDocsUrl', () => {
   });
 
   it('去除与 docsBaseUrl 路径后缀重复的 docs/ 前缀', () => {
-    expect(service.buildDocsUrl('/docs/developer-guides/text-generation/qwen-mt'))
-      .toBe('https://platform.qianwenai.com/docs/developer-guides/text-generation/qwen-mt');
+    expect(service.buildDocsUrl('/docs/developer-guides/text-generation/qwen-mt')).toBe(
+      'https://platform.qianwenai.com/docs/developer-guides/text-generation/qwen-mt',
+    );
   });
 
   it('不重复的路径保持不变', () => {
-    expect(service.buildDocsUrl('developer-guides/text-generation/qwen-mt'))
-      .toBe('https://platform.qianwenai.com/docs/developer-guides/text-generation/qwen-mt');
+    expect(service.buildDocsUrl('developer-guides/text-generation/qwen-mt')).toBe(
+      'https://platform.qianwenai.com/docs/developer-guides/text-generation/qwen-mt',
+    );
   });
 });
 
@@ -688,7 +690,8 @@ function makeIndex(): DocsIndexEntry[] {
     },
     {
       path: 'developer-guides/getting-started/quick-start',
-      fullUrl: 'https://platform.qianwenai.com/docs/developer-guides/getting-started/quick-start.md',
+      fullUrl:
+        'https://platform.qianwenai.com/docs/developer-guides/getting-started/quick-start.md',
       title: 'Quick Start',
       description: 'Get started with QianWen CLI',
       section: 'Getting Started',

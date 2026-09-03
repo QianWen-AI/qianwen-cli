@@ -42,7 +42,8 @@ vi.mock('../../../src/ui/spinner.js', () => ({
 
 const { modelsListAction } = await import('../../../src/commands/models/list.js');
 
-const originalIsTTY = process.stdout.isTTY;
+const originalStdinIsTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+const originalStdoutIsTTY = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
 
 beforeEach(() => {
   holder.client = makeMockApiClient();
@@ -52,17 +53,22 @@ beforeEach(() => {
     // eslint-disable-next-line no-console
     console.log(JSON.stringify(data, null, 2));
   });
-  // Force non-TTY so InteractiveTable path is skipped
-  Object.defineProperty(process.stdout, 'isTTY', { value: false, writable: true });
+  // Force non-TTY so InteractiveTable path is skipped.
+  Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+  Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });
 });
 
 afterEach(() => {
-  Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, writable: true });
+  if (originalStdinIsTTY) Object.defineProperty(process.stdin, 'isTTY', originalStdinIsTTY);
+  else Reflect.deleteProperty(process.stdin, 'isTTY');
+  if (originalStdoutIsTTY) Object.defineProperty(process.stdout, 'isTTY', originalStdoutIsTTY);
+  else Reflect.deleteProperty(process.stdout, 'isTTY');
 });
 
 /** Force the interactive (TTY) path so the auto-detected format is `table`. */
 function forceTTY() {
-  Object.defineProperty(process.stdout, 'isTTY', { value: true, writable: true });
+  Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+  Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
 }
 
 function setupCmd(program: any) {

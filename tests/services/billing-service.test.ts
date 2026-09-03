@@ -192,7 +192,7 @@ describe('BillingService.getUsageLimit', () => {
           LimitAmount: '500',
           Currency: 'CNY',
           AlertThreshold: '400',
-          Receivers: ['admin@test.qianwen.com'],
+          Receivers: ['admin@test.qianwenai.com'],
         };
       },
     });
@@ -327,7 +327,13 @@ describe('BillingService.getPaygSummary', () => {
     const svc = new BillingService(api, stubBillingAdapter, makeMockCachedFetcher());
     vi.spyOn(svc, 'getSettleBillSummary').mockResolvedValue({
       cycles: [
-        { billingCycle: '202606', pretaxAmount: '2', tax: '0', aftertaxAmount: 'N/A', settled: true },
+        {
+          billingCycle: '202606',
+          pretaxAmount: '2',
+          tax: '0',
+          aftertaxAmount: 'N/A',
+          settled: true,
+        },
       ],
       totals: { pretaxAmount: '2', tax: '0', aftertaxAmount: 'N/A' },
       currency: 'CNY',
@@ -520,9 +526,7 @@ describe('BillingService.getConsumeBreakdown', () => {
   it('month granularity uses single API call with YYYYMM format', async () => {
     const api = makeMockApiClient({
       flat: async () => ({
-        GroupByTotal: [
-          { Key: 'qwen-plus', Name: 'qwen-plus', Amount: '50.00' },
-        ],
+        GroupByTotal: [{ Key: 'qwen-plus', Name: 'qwen-plus', Amount: '50.00' }],
       }),
     });
     const svc = new BillingService(api, stubBillingAdapter, makeMockCachedFetcher());
@@ -545,9 +549,7 @@ describe('BillingService.getConsumeBreakdown', () => {
   it('day granularity splits into monthly sub-ranges with single call per range (>30 days)', async () => {
     const api = makeMockApiClient({
       flat: async () => ({
-        GroupByTotal: [
-          { Key: 'qwen-max', Name: 'qwen-max', Amount: '10.00' },
-        ],
+        GroupByTotal: [{ Key: 'qwen-max', Name: 'qwen-max', Amount: '10.00' }],
       }),
     });
     const svc = new BillingService(api, stubBillingAdapter, makeMockCachedFetcher());
@@ -568,9 +570,7 @@ describe('BillingService.getConsumeBreakdown', () => {
   it('day granularity uses single call when span ≤ 30 days even across months', async () => {
     const api = makeMockApiClient({
       flat: async () => ({
-        GroupByTotal: [
-          { Key: 'qwen-max', Name: 'qwen-max', Amount: '10.00' },
-        ],
+        GroupByTotal: [{ Key: 'qwen-max', Name: 'qwen-max', Amount: '10.00' }],
       }),
     });
     const svc = new BillingService(api, stubBillingAdapter, makeMockCachedFetcher());

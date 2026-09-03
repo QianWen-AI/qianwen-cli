@@ -115,8 +115,10 @@ export async function modelsListAction(options: ModelsListOptions): Promise<void
       return;
     }
 
-    // Interactive mode: TTY + table format (--page sets initial page)
-    const isInteractive = !!(process.stdout.isTTY && format !== 'text');
+    // Interactive mode requires a bidirectional TTY because InteractiveTable
+    // reads real keyboard input. A stdout-only pseudo-terminal must use the
+    // static path instead of mounting Ink against a non-interactive stdin.
+    const isInteractive = !!(process.stdin.isTTY && process.stdout.isTTY && format !== 'text');
 
     if (isInteractive) {
       const { allModelsWithQuota } = await withSpinner(

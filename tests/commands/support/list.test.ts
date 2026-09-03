@@ -157,14 +157,7 @@ describe('support list command', () => {
     holder.services = makeMockServices({
       supportService: { listTickets: async () => sample },
     });
-    const r = await runCommand(build, [
-      'support',
-      'list',
-      '--page-size',
-      '50',
-      '--format',
-      'json',
-    ]);
+    const r = await runCommand(build, ['support', 'list', '--page-size', '50', '--format', 'json']);
     expect(r.exitCode).toBeGreaterThan(0);
     expect(r.stderr).toContain('positive integer between 1 and 10');
   });
@@ -189,14 +182,7 @@ describe('support list command', () => {
     holder.services = makeMockServices({
       supportService: { listTickets: async () => sample },
     });
-    const r = await runCommand(build, [
-      'support',
-      'list',
-      '--page-size',
-      '0',
-      '--format',
-      'json',
-    ]);
+    const r = await runCommand(build, ['support', 'list', '--page-size', '0', '--format', 'json']);
     expect(r.exitCode).toBeGreaterThan(0);
     expect(r.stderr).toContain('positive integer between 1 and 10');
   });

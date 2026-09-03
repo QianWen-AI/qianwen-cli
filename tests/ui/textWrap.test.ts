@@ -38,13 +38,13 @@ describe('visibleWidth', () => {
   });
 
   it('counts CJK characters as width 2', () => {
-    // '中文' = 2 characters, each width 2 → total display width 4
-    expect(visibleWidth('中文')).toBe(4);
+    // Two CJK characters, each width 2, have a total display width of 4.
+    expect(visibleWidth('\u4e2d\u6587')).toBe(4);
   });
 
   it('handles mixed CJK and ASCII', () => {
-    // 'Hello世界' = 5 ASCII + 2 CJK(×2) = 5 + 4 = 9
-    expect(visibleWidth('Hello世界')).toBe(9);
+    // Five ASCII characters plus two CJK characters have a display width of 9.
+    expect(visibleWidth('Hello\u4e16\u754c')).toBe(9);
   });
 
   it('counts fullwidth forms as width 2', () => {
@@ -86,9 +86,9 @@ describe('visibleWidth', () => {
   });
 
   it('counts middle dot (U+00B7) as width 1 (xterm.js primary target)', () => {
-    expect(visibleWidth('·')).toBe(1);
-    // "Role" = 4, " " = 1, "·" = 1, " " = 1, "Name" = 4, total = 11
-    expect(visibleWidth('Role · Name')).toBe(11);
+    expect(visibleWidth('\u00b7')).toBe(1);
+    // Four letters, a space, a middle dot, a space, and four letters total 11 columns.
+    expect(visibleWidth('Role \u00b7 Name')).toBe(11);
   });
 
   it('counts keycap sequences as width 1 (xterm.js renders text-style)', () => {
@@ -102,8 +102,8 @@ describe('visibleWidth', () => {
   });
 
   it('handles mixed content with emoji correctly', () => {
-    // "abc" (3) + "❌" (2) + "💻" (2) + "中" (2) = 9
-    expect(visibleWidth('abc❌💻中')).toBe(9);
+    // Three ASCII columns, two emoji pairs, and one CJK character total 9 columns.
+    expect(visibleWidth('abc❌💻\u4e2d')).toBe(9);
   });
 });
 
@@ -118,7 +118,9 @@ describe('truncateByDisplayWidth', () => {
 
   it('truncates CJK strings by display width, not by code-unit length', () => {
     // 6 CJK chars = 12 columns; budget 8 leaves room for 3 chars + ellipsis (1).
-    expect(truncateByDisplayWidth('一二三四五六', 8)).toBe('一二三…');
+    expect(truncateByDisplayWidth('\u4e00\u4e8c\u4e09\u56db\u4e94\u516d', 8)).toBe(
+      '\u4e00\u4e8c\u4e09…',
+    );
   });
 
   it('preserves emoji surrogate pairs intact when truncating', () => {
@@ -131,6 +133,19 @@ describe('truncateByDisplayWidth', () => {
 
   it('returns the input untouched when maxWidth is non-positive', () => {
     expect(truncateByDisplayWidth('abc', 0)).toBe('abc');
+  });
+
+  it('preserves ANSI SGR sequences as zero-width atoms and resets styles after truncation', () => {
+    const output = truncateByDisplayWidth('\x1b[31mabcdefgh\x1b[0m', 6);
+    expect(output).toBe('\x1b[31mabcde…\x1b[0m');
+    expect(visibleWidth(output)).toBe(6);
+  });
+
+  it('does not truncate inside consecutive ANSI style sequences', () => {
+    const output = truncateByDisplayWidth('\x1b[1m\x1b[32m\u4e2d\u6587abcd\x1b[0m', 6);
+    expect(output).toBe('\x1b[1m\x1b[32m\u4e2d\u6587a…\x1b[0m');
+    expect(stripAnsi(output)).toBe('\u4e2d\u6587a…');
+    expect(visibleWidth(output)).toBe(6);
   });
 });
 
@@ -178,13 +193,14 @@ describe('wrapText', () => {
 
   it('wraps Chinese text by breaking at character boundaries', () => {
     // 6 CJK chars × 2 = 12 display cols, maxWidth=8 → must break
-    const result = wrapText('这是一段中文描述', 8);
-    // '这是一段' = 8 cols, '中文描述' = 8 cols
-    expect(result).toEqual(['这是一段', '中文描述']);
+    const result = wrapText('\u8fd9\u662f\u4e00\u6bb5\u4e2d\u6587\u63cf\u8ff0', 8);
+    // Each group of four CJK characters occupies 8 columns.
+    expect(result).toEqual(['\u8fd9\u662f\u4e00\u6bb5', '\u4e2d\u6587\u63cf\u8ff0']);
   });
 
   it('wraps long Chinese text that exceeds line width', () => {
-    const text = 'qianwen-cjk-test 是千问AI平台测试用例数据，仅供验证 CJK 排版，无实际业务含义';
+    const text =
+      'qianwen-cjk-test \u662f\u5343\u95eeAI\u5e73\u53f0\u6d4b\u8bd5\u7528\u4f8b\u6570\u636e\uff0c\u4ec5\u4f9b\u9a8c\u8bc1 CJK \u6392\u7248\uff0c\u65e0\u5b9e\u9645\u4e1a\u52a1\u542b\u4e49';
     const result = wrapText(text, 20);
     // Every line must fit within 20 display columns
     for (const line of result) {
@@ -193,24 +209,24 @@ describe('wrapText', () => {
   });
 
   it('handles mixed CJK and English text', () => {
-    // 'Hello' (5) + '世界' (4) = 9 cols
-    const result = wrapText('Hello 世界 Test', 10);
-    expect(result).toEqual(['Hello 世界', 'Test']);
+    // Five ASCII columns plus two CJK characters occupy 9 columns.
+    const result = wrapText('Hello \u4e16\u754c Test', 10);
+    expect(result).toEqual(['Hello \u4e16\u754c', 'Test']);
   });
 
   it('CJK force-break never splits a character', () => {
     // 5 CJK chars = 10 cols, maxWidth=6 → must break at char boundary (4+2)
-    const result = wrapText('一二三四五', 6);
-    expect(result).toEqual(['一二三', '四五']);
+    const result = wrapText('\u4e00\u4e8c\u4e09\u56db\u4e94', 6);
+    expect(result).toEqual(['\u4e00\u4e8c\u4e09', '\u56db\u4e94']);
     // Verify each line's display width
     expect(visibleWidth(result[0]!)).toBe(6);
     expect(visibleWidth(result[1]!)).toBe(4);
   });
 
   it('wraps Chinese text with spaces at word boundaries first', () => {
-    const result = wrapText('你好 世界 测试', 6);
-    // '你好' (4 cols), then '世界' (4 cols) — can't fit on one line
-    expect(result).toEqual(['你好', '世界', '测试']);
+    const result = wrapText('\u4f60\u597d \u4e16\u754c \u6d4b\u8bd5', 6);
+    // Two CJK words of width 4 cannot fit on one line at this width.
+    expect(result).toEqual(['\u4f60\u597d', '\u4e16\u754c', '\u6d4b\u8bd5']);
   });
 });
 
@@ -243,21 +259,21 @@ describe('padEndVisible', () => {
   });
 
   it('pads CJK text to the correct display width', () => {
-    // '中文' = 4 display cols, pad to 8 → need 4 spaces
-    expect(padEndVisible('中文', 8)).toBe('中文    ');
+    // Two CJK characters occupy 4 columns, so padding to 8 needs four spaces.
+    expect(padEndVisible('\u4e2d\u6587', 8)).toBe('\u4e2d\u6587    ');
   });
 
   it('does not add padding when already at target width', () => {
-    expect(padEndVisible('中文', 4)).toBe('中文');
+    expect(padEndVisible('\u4e2d\u6587', 4)).toBe('\u4e2d\u6587');
   });
 
   it('does not truncate when exceeding target width', () => {
-    expect(padEndVisible('中文测试', 4)).toBe('中文测试');
+    expect(padEndVisible('\u4e2d\u6587\u6d4b\u8bd5', 4)).toBe('\u4e2d\u6587\u6d4b\u8bd5');
   });
 
   it('handles mixed CJK and ASCII', () => {
-    // 'Hello世界' = 5 + 4 = 9 display cols, pad to 12 → 3 spaces
-    expect(padEndVisible('Hello世界', 12)).toBe('Hello世界   ');
+    // Five ASCII columns plus two CJK characters occupy 9 columns.
+    expect(padEndVisible('Hello\u4e16\u754c', 12)).toBe('Hello\u4e16\u754c   ');
   });
 });
 
@@ -267,14 +283,14 @@ describe('padStartVisible', () => {
   });
 
   it('left-pads CJK text to correct display width', () => {
-    // '中文' = 4 display cols, pad to 8 → 4 spaces
-    expect(padStartVisible('中文', 8)).toBe('    中文');
+    // Two CJK characters occupy 4 columns, so padding to 8 needs four spaces.
+    expect(padStartVisible('\u4e2d\u6587', 8)).toBe('    \u4e2d\u6587');
   });
 });
 
 describe('isCJKCodePoint', () => {
   it('identifies CJK Unified Ideographs', () => {
-    expect(isCJKCodePoint(0x4e00)).toBe(true); // 一
+    expect(isCJKCodePoint(0x4e00)).toBe(true); // First CJK Unified Ideograph
     expect(isCJKCodePoint(0x9fff)).toBe(true); // CJK Unified
   });
 

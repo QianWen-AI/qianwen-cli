@@ -2,6 +2,14 @@ import { Command } from 'commander';
 
 // ── Commander internal property helpers — centralized for upgrade safety ──────
 
+interface CommandErrorSupplement {
+  code: string;
+  message: string;
+  supplement: string;
+}
+
+const commandErrorSupplements = new WeakMap<Command, CommandErrorSupplement[]>();
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Commander internal access
 type AnyCommand = any;
 
@@ -55,4 +63,20 @@ export function getLongDescription(cmd: Command): string {
 
 export function addExamples(cmd: Command, examples: string[]): void {
   (cmd as AnyCommand)._examples = examples;
+}
+
+export function addCommandErrorSupplement(cmd: Command, supplement: CommandErrorSupplement): void {
+  const supplements = commandErrorSupplements.get(cmd) ?? [];
+  supplements.push(supplement);
+  commandErrorSupplements.set(cmd, supplements);
+}
+
+export function getCommandErrorSupplement(
+  cmd: Command,
+  error: { code?: string; message?: string },
+): string | undefined {
+  return commandErrorSupplements
+    .get(cmd)
+    ?.find((candidate) => candidate.code === error.code && candidate.message === error.message)
+    ?.supplement;
 }

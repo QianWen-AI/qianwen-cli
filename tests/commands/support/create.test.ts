@@ -139,14 +139,24 @@ describe('support create command', () => {
     holder.services = makeMockServices({
       supportService: {
         getCategoryTree: async () => [
-          { id: 'miaowu', name: '\u79D2\u609F', helpUrl: 'https://miaowu.test.qianwenai.com', children: [] },
+          {
+            id: 'miaowu',
+            name: '\u79D2\u609F',
+            helpUrl: 'https://miaowu.test.qianwenai.com',
+            children: [],
+          },
         ],
       },
     });
     renderWithInkSpy.mockImplementationOnce(async (el: any) => {
       const props = el.props;
       if (props.onSelect) {
-        const sel: CategorySelection = { id: 'miaowu', name: '\u79D2\u609F', path: '\u79D2\u609F', helpUrl: 'https://miaowu.test.qianwenai.com' };
+        const sel: CategorySelection = {
+          id: 'miaowu',
+          name: '\u79D2\u609F',
+          path: '\u79D2\u609F',
+          helpUrl: 'https://miaowu.test.qianwenai.com',
+        };
         props.onSelect(sel);
       }
     });
@@ -162,14 +172,24 @@ describe('support create command', () => {
     holder.services = makeMockServices({
       supportService: {
         getCategoryTree: async () => [
-          { id: 'miaowu', name: '\u79D2\u609F', helpUrl: 'https://miaowu.test.qianwenai.com', children: [] },
+          {
+            id: 'miaowu',
+            name: '\u79D2\u609F',
+            helpUrl: 'https://miaowu.test.qianwenai.com',
+            children: [],
+          },
         ],
       },
     });
     renderWithInkSpy.mockImplementationOnce(async (el: any) => {
       const props = el.props;
       if (props.onSelect) {
-        const sel: CategorySelection = { id: 'miaowu', name: '\u79D2\u609F', path: '\u79D2\u609F', helpUrl: 'https://miaowu.test.qianwenai.com' };
+        const sel: CategorySelection = {
+          id: 'miaowu',
+          name: '\u79D2\u609F',
+          path: '\u79D2\u609F',
+          helpUrl: 'https://miaowu.test.qianwenai.com',
+        };
         props.onSelect(sel);
       }
     });
@@ -186,14 +206,24 @@ describe('support create command', () => {
     holder.services = makeMockServices({
       supportService: {
         getCategoryTree: async () => [
-          { id: '582262', name: '\u6A21\u578B\u670D\u52A1', helpUrl: 'https://help.test.qianwenai.com', children: [] },
+          {
+            id: '582262',
+            name: '\u6A21\u578B\u670D\u52A1',
+            helpUrl: 'https://help.test.qianwenai.com',
+            children: [],
+          },
         ],
       },
     });
     renderWithInkSpy.mockImplementationOnce(async (el: any) => {
       const props = el.props;
       if (props.onSelect) {
-        const sel: CategorySelection = { id: '582262', name: '\u6A21\u578B\u670D\u52A1', path: '\u6A21\u578B\u670D\u52A1', helpUrl: 'https://help.test.qianwenai.com' };
+        const sel: CategorySelection = {
+          id: '582262',
+          name: '\u6A21\u578B\u670D\u52A1',
+          path: '\u6A21\u578B\u670D\u52A1',
+          helpUrl: 'https://help.test.qianwenai.com',
+        };
         props.onSelect(sel);
       }
     });
@@ -219,7 +249,12 @@ const SAMPLE_TREE = [
     name: '\u5E94\u7528',
     children: [
       { id: 'miaowu', name: '\u79D2\u609F', helpUrl: 'https://meoo.com', children: [] },
-      { id: 'wanxiang', name: '\u4E07\u76F8', helpUrl: 'https://tongyi.aliyun.com/wan', children: [] },
+      {
+        id: 'wanxiang',
+        name: '\u4E07\u76F8',
+        helpUrl: 'https://tongyi.aliyun.com/wan',
+        children: [],
+      },
     ],
   },
 ];
@@ -231,11 +266,20 @@ describe('--list-categories', () => {
     holder.services = makeMockServices({
       supportService: { getCategoryTree: async () => SAMPLE_TREE },
     });
-    const r = await runCommand(build, ['support', 'create', '--list-categories', '--format', 'json']);
+    const r = await runCommand(build, [
+      'support',
+      'create',
+      '--list-categories',
+      '--format',
+      'json',
+    ]);
     const payload = JSON.parse(r.stdout);
     expect(Array.isArray(payload)).toBe(true);
     expect(payload).toHaveLength(4);
-    expect(payload[0]).toEqual({ id: '582262', category: '\u6A21\u578B > \u8D26\u5355\u8BA1\u8D39' });
+    expect(payload[0]).toEqual({
+      id: '582262',
+      category: '\u6A21\u578B > \u8D26\u5355\u8BA1\u8D39',
+    });
     expect(payload[2]).toEqual({ id: 'miaowu', category: '应用 > 秒悟' });
     expect(r.exitCode).toBeUndefined();
   });
@@ -244,7 +288,13 @@ describe('--list-categories', () => {
     holder.services = makeMockServices({
       supportService: { getCategoryTree: async () => SAMPLE_TREE },
     });
-    const r = await runCommand(build, ['support', 'create', '--list-categories', '--format', 'text']);
+    const r = await runCommand(build, [
+      'support',
+      'create',
+      '--list-categories',
+      '--format',
+      'text',
+    ]);
     expect(r.stdout).toContain('ID');
     expect(r.stdout).toContain('Category');
     expect(r.stdout).toContain('582262');
@@ -257,7 +307,13 @@ describe('--list-categories', () => {
     holder.services = makeMockServices({
       supportService: { getCategoryTree: async () => SAMPLE_TREE },
     });
-    const r = await runCommand(build, ['support', 'create', '--list-categories', '--format', 'json']);
+    const r = await runCommand(build, [
+      'support',
+      'create',
+      '--list-categories',
+      '--format',
+      'json',
+    ]);
     expect(r.exitCode).toBeUndefined();
     const payload = JSON.parse(r.stdout);
     expect(payload).toHaveLength(4);
@@ -268,11 +324,15 @@ describe('--list-categories', () => {
       supportService: { getCategoryTree: async () => SAMPLE_TREE },
     });
     const r = await runCommand(build, [
-      'support', 'create',
+      'support',
+      'create',
       '--list-categories',
-      '--category-id', '582262',
-      '--description', 'some text',
-      '--format', 'json',
+      '--category-id',
+      '582262',
+      '--description',
+      'some text',
+      '--format',
+      'json',
     ]);
     const payload = JSON.parse(r.stdout);
     expect(Array.isArray(payload)).toBe(true);
@@ -292,10 +352,14 @@ describe('\u975E\u4EA4\u4E92\u521B\u5EFA (--category-id + --description)', () =>
       },
     });
     const r = await runCommand(build, [
-      'support', 'create',
-      '--category-id', '582262',
-      '--description', '\u6A21\u578B\u8C03\u7528\u8D85\u65F6',
-      '--format', 'text',
+      'support',
+      'create',
+      '--category-id',
+      '582262',
+      '--description',
+      '\u6A21\u578B\u8C03\u7528\u8D85\u65F6',
+      '--format',
+      'text',
     ]);
     expect(r.stdout).toContain('TICKET-20001');
     expect(r.exitCode).toBeUndefined();
@@ -309,10 +373,14 @@ describe('\u975E\u4EA4\u4E92\u521B\u5EFA (--category-id + --description)', () =>
       },
     });
     const r = await runCommand(build, [
-      'support', 'create',
-      '--category-id', '582263',
-      '--description', '\u53D1\u7968\u95EE\u9898',
-      '--format', 'json',
+      'support',
+      'create',
+      '--category-id',
+      '582263',
+      '--description',
+      '\u53D1\u7968\u95EE\u9898',
+      '--format',
+      'json',
     ]);
     const payload = JSON.parse(r.stdout);
     expect(payload).toEqual({ id: 'TICKET-30001', status: 'created', categoryId: '582263' });
@@ -332,10 +400,14 @@ describe('\u975E\u4EA4\u4E92\u521B\u5EFA (--category-id + --description)', () =>
       },
     });
     const r = await runCommand(build, [
-      'support', 'create',
-      '--category-id', '582262',
-      '--description', longDesc,
-      '--format', 'text',
+      'support',
+      'create',
+      '--category-id',
+      '582262',
+      '--description',
+      longDesc,
+      '--format',
+      'text',
     ]);
     expect(r.stderr).toContain('truncated');
     expect(r.stdout).toContain('TICKET-40001');
@@ -348,9 +420,12 @@ describe('\u975E\u4EA4\u4E92\u521B\u5EFA (--category-id + --description)', () =>
       supportService: { getCategoryTree: async () => SAMPLE_TREE },
     });
     const r = await runCommand(build, [
-      'support', 'create',
-      '--category-id', '582262',
-      '--format', 'json',
+      'support',
+      'create',
+      '--category-id',
+      '582262',
+      '--format',
+      'json',
     ]);
     expect(r.exitCode).toBe(1);
     const payload = JSON.parse(r.stderr);
@@ -363,9 +438,12 @@ describe('\u975E\u4EA4\u4E92\u521B\u5EFA (--category-id + --description)', () =>
       supportService: { getCategoryTree: async () => SAMPLE_TREE },
     });
     const r = await runCommand(build, [
-      'support', 'create',
-      '--description', '\u67D0\u4E2A\u95EE\u9898',
-      '--format', 'json',
+      'support',
+      'create',
+      '--description',
+      '\u67D0\u4E2A\u95EE\u9898',
+      '--format',
+      'json',
     ]);
     expect(r.exitCode).toBe(1);
     const payload = JSON.parse(r.stderr);
@@ -378,10 +456,14 @@ describe('\u975E\u4EA4\u4E92\u521B\u5EFA (--category-id + --description)', () =>
       supportService: { getCategoryTree: async () => SAMPLE_TREE },
     });
     const r = await runCommand(build, [
-      'support', 'create',
-      '--category-id', '999999',
-      '--description', '\u67D0\u4E2A\u95EE\u9898',
-      '--format', 'json',
+      'support',
+      'create',
+      '--category-id',
+      '999999',
+      '--description',
+      '\u67D0\u4E2A\u95EE\u9898',
+      '--format',
+      'json',
     ]);
     expect(r.exitCode).toBe(1);
     const payload = JSON.parse(r.stderr);
@@ -401,10 +483,14 @@ describe('\u975E\u4EA4\u4E92\u521B\u5EFA (--category-id + --description)', () =>
       },
     });
     const r = await runCommand(build, [
-      'support', 'create',
-      '--category-id', 'miaowu',
-      '--description', '\u67D0\u4E2A\u95EE\u9898',
-      '--format', 'json',
+      'support',
+      'create',
+      '--category-id',
+      'miaowu',
+      '--description',
+      '\u67D0\u4E2A\u95EE\u9898',
+      '--format',
+      'json',
     ]);
     const payload = JSON.parse(r.stdout);
     expect(payload).toEqual({ redirect: true, name: '\u79D2\u609F', url: 'https://meoo.com' });
@@ -421,10 +507,14 @@ describe('\u975E\u4EA4\u4E92\u521B\u5EFA (--category-id + --description)', () =>
       },
     });
     const r = await runCommand(build, [
-      'support', 'create',
-      '--category-id', '582262',
-      '--description', '\u6A21\u578B\u8C03\u7528\u8D85\u65F6',
-      '--format', 'json',
+      'support',
+      'create',
+      '--category-id',
+      '582262',
+      '--description',
+      '\u6A21\u578B\u8C03\u7528\u8D85\u65F6',
+      '--format',
+      'json',
     ]);
     expect(r.exitCode).toBeUndefined();
     const payload = JSON.parse(r.stdout);
@@ -441,17 +531,25 @@ describe('--accept-language', () => {
     holder.services = makeMockServices({
       supportService: {
         getCategoryTree: async () => SAMPLE_TREE,
-        createTicket: async (params: { categoryId: string; description: string; acceptLanguage?: string }) => {
+        createTicket: async (params: {
+          categoryId: string;
+          description: string;
+          acceptLanguage?: string;
+        }) => {
           captured = params;
           return { vid: 'TICKET-60001' };
         },
       },
     });
     const r = await runCommand(build, [
-      'support', 'create',
-      '--category-id', '582262',
-      '--description', '\u6A21\u578B\u8C03\u7528\u8D85\u65F6',
-      '--format', 'json',
+      'support',
+      'create',
+      '--category-id',
+      '582262',
+      '--description',
+      '\u6A21\u578B\u8C03\u7528\u8D85\u65F6',
+      '--format',
+      'json',
     ]);
     expect(r.exitCode).toBeUndefined();
     expect(captured!.acceptLanguage).toBe('zh_CN');
@@ -462,18 +560,27 @@ describe('--accept-language', () => {
     holder.services = makeMockServices({
       supportService: {
         getCategoryTree: async () => SAMPLE_TREE,
-        createTicket: async (params: { categoryId: string; description: string; acceptLanguage?: string }) => {
+        createTicket: async (params: {
+          categoryId: string;
+          description: string;
+          acceptLanguage?: string;
+        }) => {
           captured = params;
           return { vid: 'TICKET-60002' };
         },
       },
     });
     const r = await runCommand(build, [
-      'support', 'create',
-      '--category-id', '582262',
-      '--description', 'Model call timeout',
-      '--accept-language', 'en_US',
-      '--format', 'json',
+      'support',
+      'create',
+      '--category-id',
+      '582262',
+      '--description',
+      'Model call timeout',
+      '--accept-language',
+      'en_US',
+      '--format',
+      'json',
     ]);
     expect(r.exitCode).toBeUndefined();
     expect(captured!.acceptLanguage).toBe('en_US');
@@ -491,11 +598,16 @@ describe('--accept-language', () => {
       },
     });
     const r = await runCommand(build, [
-      'support', 'create',
-      '--category-id', '582262',
-      '--description', '\u67D0\u4E2A\u95EE\u9898',
-      '--accept-language', 'fr_FR',
-      '--format', 'json',
+      'support',
+      'create',
+      '--category-id',
+      '582262',
+      '--description',
+      '\u67D0\u4E2A\u95EE\u9898',
+      '--accept-language',
+      'fr_FR',
+      '--format',
+      'json',
     ]);
     expect(r.exitCode).toBe(1);
     const payload = JSON.parse(r.stderr);

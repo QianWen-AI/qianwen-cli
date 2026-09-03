@@ -18,7 +18,8 @@
 
 import { spawnSync } from 'child_process';
 import { statSync, readdirSync, readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
-import { join, relative } from 'path';
+import { createRequire } from 'module';
+import { dirname, join, relative, resolve } from 'path';
 
 // ── CLI argument parsing ──────────────────────────────────────────────────────
 
@@ -132,10 +133,26 @@ const env: NodeJS.ProcessEnv = {
 };
 
 console.log('  Building...');
-const result = spawnSync('pnpm', ['exec', 'tsup'], {
+// Resolve tsup's declared CLI entry so we bypass platform-specific shell shims
+// without binding the build to tsup's internal directory layout.
+const esmRequire = createRequire(import.meta.url);
+const tsupPackagePath = esmRequire.resolve('tsup/package.json');
+const tsupPackage = JSON.parse(readFileSync(tsupPackagePath, 'utf-8')) as {
+  bin?: string | Record<string, string>;
+};
+const tsupBinEntry = typeof tsupPackage.bin === 'string' ? tsupPackage.bin : tsupPackage.bin?.tsup;
+if (!tsupBinEntry) {
+  console.error('\n  Build failed: tsup does not declare a "tsup" binary.');
+  process.exit(1);
+}
+const tsupBin = resolve(dirname(tsupPackagePath), tsupBinEntry);
+if (!existsSync(tsupBin)) {
+  console.error(`\n  Build failed: tsup's declared binary does not exist: ${tsupBinEntry}`);
+  process.exit(1);
+}
+const result = spawnSync(process.execPath, [tsupBin], {
   env,
   stdio: 'inherit',
-  shell: false,
 });
 
 if (result.status !== 0) {
@@ -260,6 +277,9 @@ if (isProd && obfuscator === 'terser') {
         toplevel: true, // Mangle top-level variable names
         properties: {
           regex: /^_/, // Only mangle underscore-prefixed properties (safe)
+          // Commander is external and therefore still reads/writes this exact
+          // private property name in production builds.
+          reserved: ['_hidden'],
         },
       },
       // ── Output format ──────────────────────────────────────────────────────

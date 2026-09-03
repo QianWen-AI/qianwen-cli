@@ -1,5 +1,40 @@
 import { describe, it, expect } from 'vitest';
-import { sumAmountStrings, sumCostsExact, toDecimalString } from '../../src/utils/amount.js';
+import {
+  parseRechargeAmount,
+  sumAmountStrings,
+  sumCostsExact,
+  toDecimalString,
+} from '../../src/utils/amount.js';
+
+describe('parseRechargeAmount', () => {
+  it.each([
+    ['0.01', 1n, '0.01'],
+    ['1', 100n, '1.00'],
+    ['1.2', 120n, '1.20'],
+    ['500.00', 50_000n, '500.00'],
+    ['9007199254740991.99', 900_719_925_474_099_199n, '9007199254740991.99'],
+  ])('parses %s exactly', (input, cents, amount) => {
+    expect(parseRechargeAmount(input)).toEqual({ cents, amount });
+  });
+
+  it.each([
+    '',
+    '0',
+    '0.00',
+    '-1',
+    '01.00',
+    '.5',
+    '1.',
+    '0.001',
+    '1.234',
+    '1e2',
+    'NaN',
+    'Infinity',
+    ' 1.00',
+  ])('rejects invalid recharge amount %j', (input) => {
+    expect(() => parseRechargeAmount(input)).toThrow();
+  });
+});
 
 describe('sumAmountStrings', () => {
   it('returns "0" for empty input', () => {

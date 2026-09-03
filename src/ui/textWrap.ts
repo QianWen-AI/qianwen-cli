@@ -174,13 +174,44 @@ export function truncateByDisplayWidth(
   const budget = Math.max(0, maxWidth - ellipsisWidth);
   let acc = '';
   let used = 0;
-  for (const { segment: ch } of segmenter.segment(str)) {
-    const w = visibleWidth(ch);
-    if (used + w > budget) break;
-    acc += ch;
-    used += w;
+  let sourceIndex = 0;
+  let hasSgr = false;
+  let truncated = false;
+
+  const appendVisibleText = (text: string): boolean => {
+    for (const { segment: ch } of segmenter.segment(text)) {
+      const w = visibleWidth(ch);
+      if (used + w > budget) return false;
+      acc += ch;
+      used += w;
+    }
+    return true;
+  };
+
+  // ANSI control sequences have zero display width and must remain atomic.
+  // Iterating the raw string by grapheme would treat the bytes inside a CSI
+  // sequence as visible characters and could truncate halfway through it.
+  const ansiRegex = new RegExp(ANSI_REGEX.source, 'g');
+  for (const match of str.matchAll(ansiRegex)) {
+    const matchIndex = match.index ?? sourceIndex;
+    if (!appendVisibleText(str.slice(sourceIndex, matchIndex))) {
+      truncated = true;
+      break;
+    }
+
+    const sequence = match[0];
+    acc += sequence;
+    hasSgr ||= sequence.endsWith('m');
+    sourceIndex = matchIndex + sequence.length;
   }
-  return acc + ellipsis;
+
+  if (!truncated) {
+    truncated = !appendVisibleText(str.slice(sourceIndex));
+  }
+
+  // A truncated styled string may lose its original closing SGR sequence.
+  // Reset explicitly so the following table divider and cells cannot inherit it.
+  return acc + ellipsis + (hasSgr ? '\x1b[0m' : '');
 }
 
 /**

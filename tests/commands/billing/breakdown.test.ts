@@ -222,7 +222,14 @@ describe('billing breakdown command', () => {
         billingService: { getConsumeBreakdown: spy },
       });
 
-      const r = await runCommand(build, ['billing', 'breakdown', '--top', '21', '--format', 'json']);
+      const r = await runCommand(build, [
+        'billing',
+        'breakdown',
+        '--top',
+        '21',
+        '--format',
+        'json',
+      ]);
       expect(r.exitCode).toBe(4);
       expect(r.stderr).toContain('must be between 1 and 20');
       expect(spy).not.toHaveBeenCalled();
@@ -246,7 +253,14 @@ describe('billing breakdown command', () => {
         billingService: { getConsumeBreakdown: spy },
       });
 
-      const r = await runCommand(build, ['billing', 'breakdown', '--top', '20', '--format', 'json']);
+      const r = await runCommand(build, [
+        'billing',
+        'breakdown',
+        '--top',
+        '20',
+        '--format',
+        'json',
+      ]);
       expect(r.exitCode).toBeUndefined();
       expect(spy).toHaveBeenCalled();
       expect(spy.mock.calls[0][0].top).toBe(20);

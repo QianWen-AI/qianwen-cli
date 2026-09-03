@@ -2,10 +2,10 @@
 # QianWen CLI Installer
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/QianWen-AI/qianwen-cli/main/install.sh | sh
-#   sh install.sh --version v1.5.0
+#   sh install.sh --version v1.6.0
 #
 # Arguments:
-#   --version, -v      - version to install (e.g. v1.5.0, default: v1.5.0)
+#   --version, -v      - version to install (e.g. v1.6.0, default: v1.6.0)
 #   --help, -h         - show help message
 #
 # Behavior:
@@ -17,7 +17,7 @@ set -e
 
 # ─── Default Version ────────────────────────────────────────────────────────
 # Update this value when releasing a new version.
-VERSION="v1.5.0"
+VERSION="v1.6.0"
 
 # ─── Brand Colors ────────────────────────────────────────────────────────────
 # Generate real ESC character for POSIX sh compatibility
@@ -116,7 +116,7 @@ parse_args() {
           VERSION="$2"
           shift 2
         else
-          fatal "--version requires a value (e.g. --version v1.5.0)"
+          fatal "--version requires a value (e.g. --version v1.6.0)"
         fi
         ;;
       --help|-h)

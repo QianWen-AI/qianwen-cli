@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useContext } from 'react';
+import React, { useContext, useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Section } from './Section.js';
 import { colors } from './theme.js';
@@ -148,21 +148,17 @@ function MarkdownLine({
 export function DocsViewer({ vm, url, onBack, onQuit }: DocsViewerProps) {
   const { columns, rows } = useTerminalSize();
   const inAltScreen = useContext(AltScreenContext);
+  const useWindowsMainScreen = process.platform === 'win32' && !inAltScreen;
   // Width budget for content lines: Section paddingLeft (2) + content Box
   // paddingLeft (2). Recomputed on resize via useTerminalSize so every logical
   // line stays <= terminal columns and never physically wraps.
   const contentWidth = Math.max(1, columns - 4);
-  // On the alt-screen, keep the total rendered height strictly below `rows`.
-  // Ink switches to its clearTerminal path when output height >= rows (see
-  // ink: `outputHeight >= stdout.rows`), and that path emits \x1b[2J\x1b[3J\x1b[H
-  // — the \x1b[3J wipes terminal scrollback on Terminal.app/iTerm2. Reserving one
-  // row keeps Ink on plain line-redraws, so the scrollback (the user's command
-  // history) survives. On tiny terminals the floor compresses to 1 (not 5):
-  // a fixed floor would push chrome + content back to >= rows and re-trigger
-  // clearTerminal on every frame. Off the alt-screen the floor of 5 stays.
-  const viewHeight = inAltScreen
-    ? Math.max(1, rows - FIXED_CHROME_LINES - 1)
-    : Math.max(5, rows - FIXED_CHROME_LINES);
+  // Windows full-screen views use a full-height main-screen frame so resize
+  // redraws take Ink's stable full-repaint path. Every other path stays below
+  // the clearTerminal threshold to preserve non-Windows scrollback.
+  const viewHeight = useWindowsMainScreen
+    ? Math.max(5, rows - FIXED_CHROME_LINES)
+    : Math.max(1, rows - FIXED_CHROME_LINES - 1);
 
   const lines = useMemo<string[]>(() => {
     if (vm.renderedLines && vm.renderedLines.length > 0) return vm.renderedLines;
@@ -256,15 +252,11 @@ export function DocsViewer({ vm, url, onBack, onQuit }: DocsViewerProps) {
   const position = totalLines === 0 ? '[0/0]' : `[${clampedScrollOffset + 1}/${totalLines}]`;
   const footer = `\u2191\u2193 scroll  PgUp/Dn page  g/G top/end  o open  b back  q quit ${position}`;
 
-  // Padding lives outside Section as a direct child of the root Box. Each
-  // padding row uses a single space so Yoga measures height = 1.
+  // Windows main-screen views pad to the viewport so stale rows are removed by
+  // the next full repaint. Other paths remain naturally sized.
   const contentLines = Math.min(visible.length, viewHeight);
   const totalRendered = FIXED_CHROME_LINES + contentLines;
-  // On the alt-screen the buffer switch guarantees a clean exit, so we must NOT
-  // pad to full height: that pushes Ink into its clearTerminal path, whose
-  // \x1b[3J wipes the terminal scrollback on Terminal.app/iTerm2. Off the
-  // alt-screen (e.g. ConHost) keep the padding so the redraw clears residue.
-  const padLines = inAltScreen ? 0 : Math.max(0, rows - totalRendered);
+  const padLines = useWindowsMainScreen ? Math.max(0, rows - totalRendered) : 0;
 
   return (
     <Box flexDirection="column">

@@ -617,14 +617,8 @@ describe('<InteractiveTable /> viewport windowing (row-level scroll)', () => {
   });
 });
 
-describe('<InteractiveTable /> 帧高策略（主屏垫高 vs alt-screen 预留 1 行）', () => {
-  // 主屏（无 AltScreenContext，即 false，ConHost 场景）：minHeight = termRows 让
-  // 输出高度 ≥ 终端行数，Ink 每帧走 clearTerminal 全重绘，避免差分擦除在
-  // resize/换行失配时留下旧帧残留。
-  // alt-screen 下则相反：clearTerminal 发出的 \x1b[3J 会在 Terminal.app/iTerm2
-  // 上穿透 alt-screen 清掉主屏 scrollback，因此必须预留 1 行（termRows - 1）
-  // 让 Ink 保持差分重绘路径（与 DocsViewer 同一防护）。
-  it('默认（非 alt-screen）内容不足一屏时帧被垫高到终端行数', () => {
+describe('<InteractiveTable /> frame-height policy', () => {
+  it('uses natural height for short content outside alt-screen mode', () => {
     setTermRows(30);
     const out = frame(
       <InteractiveTable
@@ -641,10 +635,10 @@ describe('<InteractiveTable /> 帧高策略（主屏垫高 vs alt-screen 预留 
     expect(out).toContain('row-01');
     expect(out).toContain('row-03');
 
-    // Frame is padded up to the terminal height so Ink always full-repaints.
-    expect(totalLines).toBeGreaterThanOrEqual(30);
-    // The padding is trailing blank lines below the short content.
-    expect(trailingBlankLineCount(out)).toBeGreaterThan(10);
+    // Main-screen output must not be padded to the terminal height; otherwise
+    // the following shell/REPL prompt appears after a large blank area.
+    expect(totalLines).toBeLessThan(29);
+    expect(trailingBlankLineCount(out)).toBe(0);
   });
 
   it('alt-screen 下帧高严格低于终端行数（termRows - 1，避开 3J 清屏路径）', () => {
@@ -710,9 +704,31 @@ describe('<InteractiveTable /> 帧高策略（主屏垫高 vs alt-screen 预留 
   });
 });
 
-describe('<InteractiveTable /> 窄终端宽度自适应（任何行不超过终端宽度）', () => {
+describe('<InteractiveTable /> narrow-terminal width adaptation on the legacy ConHost main screen', () => {
   // 行显示宽度超过终端宽度会发生物理 wrap，物理行数 > 逻辑行数导致 Ink
-  // 擦除错位、旧帧残留。列宽收缩 + 标题/状态栏截断必须保证每行 ≤ termCols。
+  // This causes erasure misalignment and stale frames. The Windows main screen restores v1.5 full-width frames.
+  let originalPlatform: PropertyDescriptor | undefined;
+  let originalTermProgram: string | undefined;
+  let originalWtSession: string | undefined;
+
+  beforeEach(() => {
+    originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    originalTermProgram = process.env.TERM_PROGRAM;
+    originalWtSession = process.env.WT_SESSION;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    delete process.env.TERM_PROGRAM;
+    delete process.env.WT_SESSION;
+  });
+
+  afterEach(() => {
+    if (originalPlatform) Object.defineProperty(process, 'platform', originalPlatform);
+    else Reflect.deleteProperty(process, 'platform');
+    if (originalTermProgram === undefined) delete process.env.TERM_PROGRAM;
+    else process.env.TERM_PROGRAM = originalTermProgram;
+    if (originalWtSession === undefined) delete process.env.WT_SESSION;
+    else process.env.WT_SESSION = originalWtSession;
+  });
+
   const wideRows = [
     {
       id: 'row-with-an-extremely-long-identifier-that-never-fits',
@@ -721,7 +737,7 @@ describe('<InteractiveTable /> 窄终端宽度自适应（任何行不超过终�
     { id: 'short', val: 'ok' },
   ];
 
-  it('40 列窄终端下每行显示宽度均 ≤ 40（含标题/表头/数据行/状态栏）', () => {
+  it('uses the safe width and full height on a 40-column legacy ConHost main screen', () => {
     setTermRows(20);
     setTermCols(40);
     const out = frame(
@@ -740,11 +756,14 @@ describe('<InteractiveTable /> 窄终端宽度自适应（任何行不超过终�
       // visibleWidth strips ANSI and counts CJK as 2 columns.
       expect(visibleWidth(line)).toBeLessThanOrEqual(40);
     }
+    expect(Math.max(...out.split('\n').map((line) => visibleWidth(line)))).toBe(39);
+    expect(out.split('\n').length).toBe(20);
     // Overwide cells are truncated with an ellipsis, not wrapped.
     expect(out).toContain('…');
   });
 
-  it('窄终端下窄列内容保持完整（只收缩超宽列）', () => {
+  it('keeps full width and narrow-column content intact on non-Windows terminals', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
     setTermRows(20);
     setTermCols(40);
     const out = frame(
@@ -759,6 +778,7 @@ describe('<InteractiveTable /> 窄终端宽度自适应（任何行不超过终�
     // The short row survives untouched while the wide column absorbs shrinking.
     expect(out).toContain('short');
     expect(out).toContain('ok');
+    expect(Math.max(...out.split('\n').map((line) => visibleWidth(line)))).toBe(39);
   });
 
   it('状态栏超长时被截断而非换行', () => {

@@ -57,7 +57,7 @@ function makeService(zip: Buffer): SkillsInstallService {
   const hub = {
     getSkillDetail: async () => makeDetail(),
     getSkillDownload: async () => ({
-      ossUrl: 'https://oss.test.qianwen.com/pkg.zip',
+      ossUrl: 'https://oss.test.qianwenai.com/pkg.zip',
       expiresAt: '',
       // Matching hash so the integrity gate passes and the metadata-write
       // failure path under test is actually reached.

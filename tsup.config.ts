@@ -31,7 +31,7 @@ const base = {
   format: ['esm'] as Format[],
   target: 'node18' as const,
   shims: true,
-  external: ['react', 'ink', 'chalk', 'commander'],
+  external: ['react', 'ink', 'chalk', 'commander', 'qrcode-generator'],
   // Proxy variant only: undici is inlined as CJS and calls require() on node
   // builtins at module evaluation; esbuild's ESM require shim rejects that
   // ("Dynamic require of 'assert' is not supported"), so provide a real

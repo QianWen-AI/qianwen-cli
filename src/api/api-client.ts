@@ -13,6 +13,7 @@ import {
 } from './request-adapter.js';
 import { buildEnvelopePayload, isSuccessRet, parseRetError } from './adapters/gateway-adapter.js';
 import type { RawApiEnvelope } from '../types/api-envelope.js';
+import { redactPaymentError } from '../utils/strings.js';
 
 // ────────────────────────────────────────────────────────────────────
 // Public types
@@ -20,12 +21,38 @@ import type { RawApiEnvelope } from '../types/api-envelope.js';
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 
+/**
+ * Associate request/response billing identity with a protocol error so the
+ * final diagnostic sink can redact a detached copy without mutating the Error.
+ *
+ * @param error Error raised while unwrapping a gateway response.
+ * @param requestBody Serialized request body containing the known identity.
+ * @param responseBody Decoded response that may repeat the identity.
+ * @returns The unchanged error instance with registered redaction context.
+ */
+function registerProtocolErrorContext(
+  error: unknown,
+  requestBody: string,
+  responseBody: unknown,
+): unknown {
+  if (!(error instanceof Error)) return error;
+  let requestContext: unknown = requestBody;
+  try {
+    requestContext = JSON.parse(requestBody);
+  } catch {
+    // The serialized request is still useful to the free-text sanitizer.
+  }
+  return redactPaymentError(error, { request: requestContext, response: responseBody });
+}
+
 export interface CallFlatApiOptions {
   product: string;
   action: string;
   params?: Record<string, unknown>;
   /** Attach a Bearer token when logged in, omit silently otherwise. */
   authOptional?: boolean;
+  /** Cancel this request without serializing the signal into API params. */
+  signal?: AbortSignal;
 }
 
 export interface CallEnvelopeApiOptions {
@@ -80,9 +107,14 @@ export function createApiClient(opts?: CreateApiClientOptions): ApiClient {
         body: adapted.body,
         authMode: adapted.authMode,
         context: 'api',
+        signal: input.signal,
       });
-      const { data } = unwrapResponse<T>('A', raw);
-      return data;
+      try {
+        const { data } = unwrapResponse<T>('A', raw);
+        return data;
+      } catch (error) {
+        throw registerProtocolErrorContext(error, adapted.body, raw);
+      }
     },
 
     async callEnvelopeApi<T>(input: CallEnvelopeApiOptions): Promise<T> {

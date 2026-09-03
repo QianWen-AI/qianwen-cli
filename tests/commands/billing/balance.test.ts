@@ -5,6 +5,9 @@ import type { ServiceContainer } from '../../../src/services/index.js';
 import { transformBalanceSummary } from '../../../src/api/adapters/billing-adapter.js';
 import type { GetFundAccountAvailableAmountResponse } from '../../../src/types/balance.js';
 import { renderInkForTest, clearRenderedFrames } from '../../helpers/ink-render-mock.js';
+import { EXIT_CODES } from '../../../src/utils/exit-codes.js';
+import { BillingService } from '../../../src/services/billing-service.js';
+import { makeMockApiClient, makeMockCachedFetcher } from '../../helpers/service-mocks.js';
 
 const holder: { services: ServiceContainer } = { services: makeMockServices() };
 
@@ -115,13 +118,7 @@ describe('billing balance summary', () => {
     holder.services = makeMockServices({
       billingService: { getAvailableBalance: spy },
     });
-    const r = await runCommand(buildSummary, [
-      'billing',
-      'balance',
-      'summary',
-      '--format',
-      'json',
-    ]);
+    const r = await runCommand(buildSummary, ['billing', 'balance', 'summary', '--format', 'json']);
     expect(r.exitCode).toBeUndefined();
     expect(JSON.parse(r.stdout)).toEqual({
       availableAmount: '2614.13',
@@ -133,13 +130,7 @@ describe('billing balance summary', () => {
     holder.services = makeMockServices({
       billingService: { getAvailableBalance: async () => balanceData },
     });
-    const r = await runCommand(buildSummary, [
-      'billing',
-      'balance',
-      'summary',
-      '--format',
-      'text',
-    ]);
+    const r = await runCommand(buildSummary, ['billing', 'balance', 'summary', '--format', 'text']);
     expect(r.exitCode).toBeUndefined();
     expect(r.stdout).toContain('AVAILABLE AMOUNT');
     expect(r.stdout).toContain('2614.13');
@@ -159,6 +150,53 @@ describe('billing balance summary', () => {
     ]);
     expect(r.exitCode).toBeUndefined();
     expect(renderWithInkSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces a recharge-stage API failure with the safe message and hides the raw detail', async () => {
+    const apiClient = makeMockApiClient({
+      flat: async (options) => {
+        expect(options).toMatchObject({
+          product: 'BssOpenAPI-V3',
+          action: 'GetFundAccountAvailableAmount',
+          params: {},
+        });
+        throw new Error('HTTP 500: RAW_GATEWAY_DETAIL trace=abc123');
+      },
+    });
+    const billingService = new BillingService(
+      apiClient,
+      { toNormalizedItem: () => null },
+      makeMockCachedFetcher(),
+    );
+    holder.services = makeMockServices({
+      billingService: {
+        getAvailableBalance: () => billingService.getAvailableBalance(),
+      },
+    });
+    const r = await runCommand(buildSummary, ['billing', 'balance', 'summary', '--format', 'json']);
+    expect(r.exitCode).toBe(EXIT_CODES.SERVER_ERROR);
+    const payload = JSON.parse(r.stderr);
+    expect(payload.error.message).toBe(
+      'Unable to load the available balance. Please try again later.',
+    );
+    expect(r.stderr).not.toContain('RAW_GATEWAY_DETAIL');
+  });
+
+  it('keeps the global error handling for failures without recharge context', async () => {
+    holder.services = makeMockServices({
+      billingService: {
+        getAvailableBalance: vi.fn(async () => {
+          throw new Error('HTTP 500: RAW_GATEWAY_DETAIL trace=abc123');
+        }),
+      },
+    });
+    const r = await runCommand(buildSummary, ['billing', 'balance', 'summary', '--format', 'json']);
+    // Without a recharge stage marker the wrapper must stay out of the way:
+    // classification (SERVER_ERROR) and the global verbose message survive.
+    expect(r.exitCode).toBe(EXIT_CODES.SERVER_ERROR);
+    const payload = JSON.parse(r.stderr);
+    expect(payload.error.code).toBe('SERVER_ERROR');
+    expect(payload.error.message).toContain('HTTP 500');
   });
 });
 

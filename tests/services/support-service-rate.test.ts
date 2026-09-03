@@ -312,7 +312,7 @@ describe('SupportService.rateTicket — error propagation', () => {
 
   it('propagates network/timeout errors thrown by callFlatApi', async () => {
     apiClient.callFlatApi.mockRejectedValue(
-      Object.assign(new Error('connect ETIMEDOUT mock-api.test.qianwen.com'), {
+      Object.assign(new Error('connect ETIMEDOUT mock-api.test.qianwenai.com'), {
         name: 'NetworkError',
         code: 'ETIMEDOUT',
       }),
@@ -557,7 +557,7 @@ describe('SupportService.getAssessmentCard — protocol contract', () => {
 
   it('propagates network/business errors thrown by callFlatApi', async () => {
     apiClient.callFlatApi.mockRejectedValue(
-      Object.assign(new Error('connect ETIMEDOUT mock-api.test.qianwen.com'), {
+      Object.assign(new Error('connect ETIMEDOUT mock-api.test.qianwenai.com'), {
         name: 'NetworkError',
         code: 'ETIMEDOUT',
       }),

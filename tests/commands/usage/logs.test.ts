@@ -39,9 +39,7 @@ vi.mock('../../../src/ui/render.js', () => ({
   renderWithInkSync: renderWithInkSpy,
 }));
 
-const { usageLogsAction, collectRepeatable } = await import(
-  '../../../src/commands/usage/logs.js'
-);
+const { usageLogsAction, collectRepeatable } = await import('../../../src/commands/usage/logs.js');
 
 beforeEach(() => {
   holder.client = makeMockApiClient();
@@ -165,16 +163,26 @@ describe('usage logs command', () => {
       });
 
       const r = await runCommand(buildLogs, [
-        'usage', 'logs',
-        '--from', '2026-05-22',
-        '--to', '2026-05-23',
-        '--model', 'qwen3.6-plus',
-        '--status', 'CLIENT_ERROR',
-        '--status', 'SERVER_ERROR',
-        '--request-id', 'abc-123',
-        '--page', '3',
-        '--page-size', '50',
-        '--format', 'json',
+        'usage',
+        'logs',
+        '--from',
+        '2026-05-22',
+        '--to',
+        '2026-05-23',
+        '--model',
+        'qwen3.6-plus',
+        '--status',
+        'CLIENT_ERROR',
+        '--status',
+        'SERVER_ERROR',
+        '--request-id',
+        'abc-123',
+        '--page',
+        '3',
+        '--page-size',
+        '50',
+        '--format',
+        'json',
       ]);
 
       expect(r.exitCode).toBeUndefined();
@@ -202,7 +210,14 @@ describe('usage logs command', () => {
         },
       });
 
-      const r = await runCommand(buildLogs, ['usage', 'logs', '--period', '24h', '--format', 'json']);
+      const r = await runCommand(buildLogs, [
+        'usage',
+        'logs',
+        '--period',
+        '24h',
+        '--format',
+        'json',
+      ]);
       expect(r.exitCode).toBeUndefined();
       expect(typeof captured.from).toBe('string');
       expect(typeof captured.to).toBe('string');
@@ -276,20 +291,28 @@ describe('usage logs command', () => {
 
     it('--from/--to spanning exactly 14 days → passes validation', async () => {
       const r = await runCommand(buildLogs, [
-        'usage', 'logs',
-        '--from', '2026-06-01',
-        '--to', '2026-06-15',
-        '--format', 'json',
+        'usage',
+        'logs',
+        '--from',
+        '2026-06-01',
+        '--to',
+        '2026-06-15',
+        '--format',
+        'json',
       ]);
       expect(r.exitCode).toBeUndefined();
     });
 
     it('--from/--to spanning more than 14 days → exits with error', async () => {
       const r = await runCommand(buildLogs, [
-        'usage', 'logs',
-        '--from', '2026-06-01',
-        '--to', '2026-06-16',
-        '--format', 'json',
+        'usage',
+        'logs',
+        '--from',
+        '2026-06-01',
+        '--to',
+        '2026-06-16',
+        '--format',
+        'json',
       ]);
       expect(r.exitCode).toBe(4);
       expect(r.stderr).toContain('Time range cannot be longer than 14 days.');
@@ -297,18 +320,24 @@ describe('usage logs command', () => {
 
     it('--period 14d → passes validation', async () => {
       const r = await runCommand(buildLogs, [
-        'usage', 'logs',
-        '--period', '14d',
-        '--format', 'json',
+        'usage',
+        'logs',
+        '--period',
+        '14d',
+        '--format',
+        'json',
       ]);
       expect(r.exitCode).toBeUndefined();
     });
 
     it('--period 15d → exits with error', async () => {
       const r = await runCommand(buildLogs, [
-        'usage', 'logs',
-        '--period', '15d',
-        '--format', 'json',
+        'usage',
+        'logs',
+        '--period',
+        '15d',
+        '--format',
+        'json',
       ]);
       expect(r.exitCode).toBe(4);
       expect(r.stderr).toContain('Time range cannot be longer than 14 days.');

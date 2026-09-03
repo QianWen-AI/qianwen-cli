@@ -80,7 +80,6 @@ vi.mock('child_process', () => ({
 
 const { registerLoginCommand } = await import('../../../src/commands/auth/login.js');
 
-
 beforeEach(() => {
   holder.client = makeMockApiClient();
   credResolveStub.mockReset();
@@ -194,7 +193,7 @@ describe('auth login command', () => {
     it('not authenticated → emits device_code event', async () => {
       credResolveStub.mockReturnValue(null);
       deviceFlowInitOnlyStub.mockResolvedValue({
-        verification_url: 'https://mock-auth.test.qianwen.com/device?code=ABC',
+        verification_url: 'https://mock-auth.test.qianwenai.com/device?code=ABC',
         expires_in: 600,
         device_code: 'd-1',
         user_code: 'ABC-123',
@@ -205,7 +204,7 @@ describe('auth login command', () => {
       expect(r.exitCode).toBeUndefined();
       const payload = JSON.parse(r.stdout);
       expect(payload.events[0].event).toBe('device_code');
-      expect(payload.events[0].verification_url).toContain('mock-auth.test.qianwen.com');
+      expect(payload.events[0].verification_url).toContain('mock-auth.test.qianwenai.com');
       expect(payload.events[0].expires_in).toBe(600);
       // Backward-compatible numeric unit field carries the same value as expires_in.
       expect(payload.events[0].expires_in_seconds).toBe(600);
@@ -215,7 +214,7 @@ describe('auth login command', () => {
     it('not authenticated → device_code event carries next_step pointing at --complete', async () => {
       credResolveStub.mockReturnValue(null);
       deviceFlowInitOnlyStub.mockResolvedValue({
-        verification_url: 'https://mock-auth.test.qianwen.com/device?code=NEXT',
+        verification_url: 'https://mock-auth.test.qianwenai.com/device?code=NEXT',
         expires_in: 300,
         device_code: 'd-next',
         user_code: 'NXT-001',
@@ -235,7 +234,7 @@ describe('auth login command', () => {
     it('not authenticated → device_code event carries numeric expires_in_seconds equal to expires_in', async () => {
       credResolveStub.mockReturnValue(null);
       deviceFlowInitOnlyStub.mockResolvedValue({
-        verification_url: 'https://mock-auth.test.qianwen.com/device?code=EXP',
+        verification_url: 'https://mock-auth.test.qianwenai.com/device?code=EXP',
         expires_in: 450,
         device_code: 'd-exp',
         user_code: 'EXP-001',
@@ -257,7 +256,7 @@ describe('auth login command', () => {
     it('not authenticated → writes a human-readable --complete guidance to stderr', async () => {
       credResolveStub.mockReturnValue(null);
       deviceFlowInitOnlyStub.mockResolvedValue({
-        verification_url: 'https://mock-auth.test.qianwen.com/device?code=GUIDE',
+        verification_url: 'https://mock-auth.test.qianwenai.com/device?code=GUIDE',
         expires_in: 300,
         device_code: 'd-guide',
         user_code: 'GDE-001',
@@ -430,10 +429,10 @@ describe('auth login command', () => {
       credResolveStub.mockReturnValue(null);
       deviceFlowStub.mockImplementation(async (callbacks: any) => {
         callbacks.onCodeReceived({
-          verificationUrl: 'https://mock-auth.test.qianwen.com/d',
+          verificationUrl: 'https://mock-auth.test.qianwenai.com/d',
           expiresIn: 600,
         });
-        callbacks.onSuccess({ aliyunId: 'flow-user', email: 'f@mock-auth.test.qianwen.com' });
+        callbacks.onSuccess({ aliyunId: 'flow-user', email: 'f@mock-auth.test.qianwenai.com' });
         return true;
       });
 
@@ -454,10 +453,10 @@ describe('auth login command', () => {
       credResolveStub.mockReturnValue(null);
       deviceFlowStub.mockImplementation(async (callbacks: any) => {
         callbacks.onCodeReceived({
-          verificationUrl: 'https://mock-auth.test.qianwen.com/device?code=ABC',
+          verificationUrl: 'https://mock-auth.test.qianwenai.com/device?code=ABC',
           expiresIn: 600,
         });
-        callbacks.onSuccess({ aliyunId: 'shape-user', email: 's@mock-auth.test.qianwen.com' });
+        callbacks.onSuccess({ aliyunId: 'shape-user', email: 's@mock-auth.test.qianwenai.com' });
         return true;
       });
 
@@ -477,7 +476,7 @@ describe('auth login command', () => {
       expect(firstLine).not.toMatch(/\n\s+"/);
       const first = JSON.parse(firstLine);
       expect(first.event).toBe('device_code');
-      expect(first.verification_url).toBe('https://mock-auth.test.qianwen.com/device?code=ABC');
+      expect(first.verification_url).toBe('https://mock-auth.test.qianwenai.com/device?code=ABC');
       expect(first.expires_in).toBe(600);
     });
 
@@ -485,10 +484,10 @@ describe('auth login command', () => {
       credResolveStub.mockReturnValue(null);
       deviceFlowStub.mockImplementation(async (callbacks: any) => {
         callbacks.onCodeReceived({
-          verificationUrl: 'https://mock-auth.test.qianwen.com/device?code=UNIT',
+          verificationUrl: 'https://mock-auth.test.qianwenai.com/device?code=UNIT',
           expiresIn: 720,
         });
-        callbacks.onSuccess({ aliyunId: 'unit-user', email: 'u@mock-auth.test.qianwen.com' });
+        callbacks.onSuccess({ aliyunId: 'unit-user', email: 'u@mock-auth.test.qianwenai.com' });
         return true;
       });
 
@@ -512,10 +511,10 @@ describe('auth login command', () => {
       credResolveStub.mockReturnValue(null);
       deviceFlowStub.mockImplementation(async (callbacks: any) => {
         callbacks.onCodeReceived({
-          verificationUrl: 'https://mock-auth.test.qianwen.com/device',
+          verificationUrl: 'https://mock-auth.test.qianwenai.com/device',
           expiresIn: 600,
         });
-        callbacks.onSuccess({ aliyunId: 'ok-user', email: 'ok@mock-auth.test.qianwen.com' });
+        callbacks.onSuccess({ aliyunId: 'ok-user', email: 'ok@mock-auth.test.qianwenai.com' });
         return true;
       });
 
@@ -574,11 +573,11 @@ describe('auth login command', () => {
       credResolveStub.mockReturnValue(null);
       deviceFlowStub.mockImplementation(async (callbacks: any) => {
         callbacks.onCodeReceived({
-          verificationUrl: 'https://mock-auth.test.qianwen.com/device',
+          verificationUrl: 'https://mock-auth.test.qianwenai.com/device',
           expiresIn: 600,
         });
         callbacks.onPolling();
-        callbacks.onSuccess({ aliyunId: 'pure-user', email: 'pure@mock-auth.test.qianwen.com' });
+        callbacks.onSuccess({ aliyunId: 'pure-user', email: 'pure@mock-auth.test.qianwenai.com' });
         return true;
       });
 
@@ -609,7 +608,7 @@ describe('auth login command', () => {
       let writesAfterCodeReceived = 0;
       deviceFlowStub.mockImplementation(async (callbacks: any) => {
         callbacks.onCodeReceived({
-          verificationUrl: 'https://mock-auth.test.qianwen.com/device?code=ORDER',
+          verificationUrl: 'https://mock-auth.test.qianwenai.com/device?code=ORDER',
           expiresIn: 600,
         });
         // Snapshot how many stdout writes exist immediately after the
@@ -618,7 +617,7 @@ describe('auth login command', () => {
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
         callbacks.onSuccess({
           aliyunId: 'order-user',
-          email: 'order@mock-auth.test.qianwen.com',
+          email: 'order@mock-auth.test.qianwenai.com',
         });
         return true;
       });
@@ -649,7 +648,7 @@ describe('auth login command', () => {
 
     it('TTY: onCodeReceived auto-opens the browser at the verification URL', async () => {
       credResolveStub.mockReturnValue(null);
-      const verificationUrl = 'https://mock-auth.test.qianwen.com/device?code=OPEN-BROWSER';
+      const verificationUrl = 'https://mock-auth.test.qianwenai.com/device?code=OPEN-BROWSER';
       deviceFlowStub.mockImplementation(async (callbacks: any) => {
         callbacks.onCodeReceived({
           verificationUrl,
@@ -657,7 +656,7 @@ describe('auth login command', () => {
         });
         callbacks.onSuccess({
           aliyunId: 'browser-user',
-          email: 'browser@mock-auth.test.qianwen.com',
+          email: 'browser@mock-auth.test.qianwenai.com',
         });
         return true;
       });
@@ -678,7 +677,7 @@ describe('auth login command', () => {
 
     it('TTY: writes an "Opening browser" advisory to stderr while stdout stays pure NDJSON', async () => {
       credResolveStub.mockReturnValue(null);
-      const verificationUrl = 'https://mock-auth.test.qianwen.com/device?code=ADVISORY';
+      const verificationUrl = 'https://mock-auth.test.qianwenai.com/device?code=ADVISORY';
       deviceFlowStub.mockImplementation(async (callbacks: any) => {
         callbacks.onCodeReceived({
           verificationUrl,
@@ -686,7 +685,7 @@ describe('auth login command', () => {
         });
         callbacks.onSuccess({
           aliyunId: 'advisory-user',
-          email: 'advisory@mock-auth.test.qianwen.com',
+          email: 'advisory@mock-auth.test.qianwenai.com',
         });
         return true;
       });
@@ -714,7 +713,7 @@ describe('auth login command', () => {
 
     it('TTY auto-open: device_code line still carries verification_url / expires_in / expires_in_seconds', async () => {
       credResolveStub.mockReturnValue(null);
-      const verificationUrl = 'https://mock-auth.test.qianwen.com/device?code=REGRESS';
+      const verificationUrl = 'https://mock-auth.test.qianwenai.com/device?code=REGRESS';
       deviceFlowStub.mockImplementation(async (callbacks: any) => {
         callbacks.onCodeReceived({
           verificationUrl,
@@ -722,7 +721,7 @@ describe('auth login command', () => {
         });
         callbacks.onSuccess({
           aliyunId: 'regress-user',
-          email: 'regress@mock-auth.test.qianwen.com',
+          email: 'regress@mock-auth.test.qianwenai.com',
         });
         return true;
       });
@@ -752,7 +751,7 @@ describe('auth login command', () => {
         credentials: {
           access_token: 'tok-revoked',
           expires_at: '2099-12-31T00:00:00Z',
-          user: { aliyunId: 'user-revoked', email: 'rev@mock-auth.test.qianwen.com' },
+          user: { aliyunId: 'user-revoked', email: 'rev@mock-auth.test.qianwenai.com' },
         },
       });
       tokenExpiredStub.mockReturnValue(false);
@@ -763,12 +762,12 @@ describe('auth login command', () => {
       });
       deviceFlowStub.mockImplementation(async (callbacks: any) => {
         callbacks.onCodeReceived({
-          verificationUrl: 'https://mock-auth.test.qianwen.com/device',
+          verificationUrl: 'https://mock-auth.test.qianwenai.com/device',
           expiresIn: 600,
         });
         callbacks.onSuccess({
           aliyunId: 'user-reauth',
-          email: 'reauth@mock-auth.test.qianwen.com',
+          email: 'reauth@mock-auth.test.qianwenai.com',
         });
         return true;
       });
@@ -794,7 +793,7 @@ describe('auth login command', () => {
         credentials: {
           access_token: 'tok-net',
           expires_at: '2099-12-31T00:00:00Z',
-          user: { aliyunId: 'user-net', email: 'net@mock-auth.test.qianwen.com' },
+          user: { aliyunId: 'user-net', email: 'net@mock-auth.test.qianwenai.com' },
         },
       });
       tokenExpiredStub.mockReturnValue(false);
@@ -807,12 +806,12 @@ describe('auth login command', () => {
       });
       deviceFlowStub.mockImplementation(async (callbacks: any) => {
         callbacks.onCodeReceived({
-          verificationUrl: 'https://mock-auth.test.qianwen.com/device',
+          verificationUrl: 'https://mock-auth.test.qianwenai.com/device',
           expiresIn: 600,
         });
         callbacks.onSuccess({
           aliyunId: 'user-net-ok',
-          email: 'net-ok@mock-auth.test.qianwen.com',
+          email: 'net-ok@mock-auth.test.qianwenai.com',
         });
         return true;
       });
@@ -838,7 +837,7 @@ describe('auth login command', () => {
         credentials: {
           access_token: 'tok-valid',
           expires_at: '2099-12-31T00:00:00Z',
-          user: { aliyunId: 'user-valid', email: 'valid@mock-auth.test.qianwen.com' },
+          user: { aliyunId: 'user-valid', email: 'valid@mock-auth.test.qianwenai.com' },
         },
       });
       tokenExpiredStub.mockReturnValue(false);
@@ -847,7 +846,7 @@ describe('auth login command', () => {
           ({
             authenticated: true,
             server_verified: true,
-            user: { aliyunId: 'user-valid', email: 'valid@mock-auth.test.qianwen.com' },
+            user: { aliyunId: 'user-valid', email: 'valid@mock-auth.test.qianwenai.com' },
           }) as any,
       });
 
@@ -875,12 +874,12 @@ describe('auth login command', () => {
       });
       deviceFlowStub.mockImplementation(async (callbacks: any) => {
         callbacks.onCodeReceived({
-          verificationUrl: 'https://mock-auth.test.qianwen.com/device',
+          verificationUrl: 'https://mock-auth.test.qianwenai.com/device',
           expiresIn: 600,
         });
         callbacks.onSuccess({
           aliyunId: 'fresh-user',
-          email: 'fresh@mock-auth.test.qianwen.com',
+          email: 'fresh@mock-auth.test.qianwenai.com',
         });
         return true;
       });
@@ -915,7 +914,7 @@ describe('auth login command', () => {
       });
       credResolveStub.mockReturnValue(null);
       deviceFlowInitOnlyStub.mockResolvedValue({
-        verification_url: 'https://mock-auth.test.qianwen.com/device?code=NONTTY',
+        verification_url: 'https://mock-auth.test.qianwenai.com/device?code=NONTTY',
         expires_in: 300,
         device_code: 'd-nontty',
         user_code: 'NTT-001',
@@ -948,7 +947,7 @@ describe('auth login command', () => {
       });
       credResolveStub.mockReturnValue(null);
       deviceFlowInitOnlyStub.mockResolvedValue({
-        verification_url: 'https://mock-auth.test.qianwen.com/device?code=NODUP',
+        verification_url: 'https://mock-auth.test.qianwenai.com/device?code=NODUP',
         expires_in: 300,
         device_code: 'd-nodup',
         user_code: 'NDP-001',
@@ -981,7 +980,7 @@ describe('auth login command', () => {
       });
       credResolveStub.mockReturnValue(null);
       deviceFlowInitOnlyStub.mockResolvedValue({
-        verification_url: 'https://mock-auth.test.qianwen.com/device',
+        verification_url: 'https://mock-auth.test.qianwenai.com/device',
         expires_in: 600,
         device_code: 'd-x',
         user_code: 'X-001',
@@ -1010,12 +1009,12 @@ describe('auth login command', () => {
       tokenExpiredStub.mockReturnValue(true);
       deviceFlowStub.mockImplementation(async (callbacks: any) => {
         callbacks.onCodeReceived({
-          verificationUrl: 'https://mock-auth.test.qianwen.com/device',
+          verificationUrl: 'https://mock-auth.test.qianwenai.com/device',
           expiresIn: 600,
         });
         callbacks.onSuccess({
           aliyunId: 'refreshed-user',
-          email: 'r@mock-auth.test.qianwen.com',
+          email: 'r@mock-auth.test.qianwenai.com',
         });
         return true;
       });
@@ -1040,11 +1039,11 @@ describe('auth login command', () => {
       credResolveStub.mockReturnValue(null);
       deviceFlowStub.mockImplementation(async (callbacks: any) => {
         callbacks.onCodeReceived({
-          verificationUrl: 'https://mock-auth.test.qianwen.com/device?code=TEXT',
+          verificationUrl: 'https://mock-auth.test.qianwenai.com/device?code=TEXT',
           expiresIn: 600,
         });
         callbacks.onPolling();
-        callbacks.onSuccess({ aliyunId: 'text-user', email: 't@mock-auth.test.qianwen.com' });
+        callbacks.onSuccess({ aliyunId: 'text-user', email: 't@mock-auth.test.qianwenai.com' });
         return true;
       });
 
@@ -1057,7 +1056,7 @@ describe('auth login command', () => {
       credResolveStub.mockReturnValue(null);
       deviceFlowStub.mockImplementation(async (callbacks: any) => {
         callbacks.onCodeReceived({
-          verificationUrl: 'https://mock-auth.test.qianwen.com/device',
+          verificationUrl: 'https://mock-auth.test.qianwenai.com/device',
           expiresIn: 600,
         });
         callbacks.onSuccess({ aliyunId: '', email: '' });
@@ -1098,7 +1097,7 @@ describe('auth login command', () => {
       deviceFlowCompleteStub.mockImplementation(async (callbacks: any) => {
         callbacks.onSuccess({
           aliyunId: 'complete-tty-user',
-          email: 'ctu@mock-auth.test.qianwen.com',
+          email: 'ctu@mock-auth.test.qianwenai.com',
         });
         return true;
       });
@@ -1158,7 +1157,7 @@ describe('auth login command', () => {
         },
       });
       deviceFlowInitOnlyStub.mockResolvedValue({
-        verification_url: 'https://mock-auth.test.qianwen.com/device?code=FALLBACK',
+        verification_url: 'https://mock-auth.test.qianwenai.com/device?code=FALLBACK',
         expires_in: 600,
         device_code: 'd-fallback',
         user_code: 'FB-001',

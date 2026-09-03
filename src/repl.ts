@@ -5,7 +5,13 @@ import { resolveCredentials } from './auth/credentials.js';
 import { getEffectiveConfig } from './config/manager.js';
 import { VERSION } from './index.js';
 import { flushDebugReport, clearDebugBuffer } from './api/debug-buffer.js';
-import { SUBCOMMANDS, tabCompleter, getGhostSuffix, unknownCommandMsg } from './repl/completer.js';
+import {
+  SUBCOMMANDS,
+  tabCompleter,
+  getGhostSuffix,
+  stripOptionalCliPrefix,
+  unknownCommandMsg,
+} from './repl/completer.js';
 import {
   surfaceCommanderError,
   shouldSwallowReplError,
@@ -18,6 +24,7 @@ import { site } from './site.js';
 import { theme, colors } from './ui/theme.js';
 import { CliError, getErrorVerbosity } from './utils/errors.js';
 import { classifyHttpError } from './utils/api-errors.js';
+import { interruptActiveCommand } from './utils/command-interrupt.js';
 
 // Brand color for prompt — resolved from site config at runtime
 const brand = chalk.hex(site.uiTheme.brand);
@@ -163,6 +170,12 @@ export async function startRepl(): Promise<void> {
   let ctrlCTimer: NodeJS.Timeout | null = null;
 
   rl.on('SIGINT', () => {
+    if (executingCommand && interruptActiveCommand()) {
+      if (ctrlCTimer) clearTimeout(ctrlCTimer);
+      ctrlCTimer = null;
+      ctrlCCount = 0;
+      return;
+    }
     if (ctrlCCount === 0) {
       ctrlCCount = 1;
       console.log('\n  Press Ctrl+C again to exit.');
@@ -175,6 +188,7 @@ export async function startRepl(): Promise<void> {
       if (ctrlCTimer) clearTimeout(ctrlCTimer);
       console.log('');
       clearActivePromptInterface();
+      process.stdout.write('\x1b[0m');
       realExit(0);
     }
   });
@@ -187,6 +201,7 @@ export async function startRepl(): Promise<void> {
     if (executingCommand) return;
     replClosed = true;
     clearActivePromptInterface();
+    process.stdout.write('\x1b[0m');
     realExit(0);
   });
 
@@ -201,8 +216,21 @@ export async function startRepl(): Promise<void> {
       return;
     }
 
+    // Accept both native REPL syntax (`billing ...`) and a complete command
+    // pasted from a shell (`qianwen billing ...`). Commander receives the
+    // executable name separately below, so remove exactly one matching token.
+    const args = stripOptionalCliPrefix(parseArgs(input));
+
+    // A prefix without a command is equivalent to an empty REPL input.
+    if (args.length === 0) {
+      rl.prompt();
+      return;
+    }
+
+    const singleCommand = args.length === 1 ? args[0].toLowerCase() : '';
+
     // Clear screen
-    if (['clear', 'cls'].includes(input.toLowerCase())) {
+    if (['clear', 'cls'].includes(singleCommand)) {
       process.stdout.write('\x1b[2J\x1b[H');
       rl.setPrompt(getPrompt());
       rl.prompt();
@@ -210,7 +238,7 @@ export async function startRepl(): Promise<void> {
     }
 
     // Exit commands
-    if (['exit', 'quit', 'q'].includes(input.toLowerCase())) {
+    if (['exit', 'quit', 'q'].includes(singleCommand)) {
       console.log('  Goodbye!');
       replClosed = true;
       rl.close();
@@ -221,9 +249,6 @@ export async function startRepl(): Promise<void> {
     try {
       // Create a fresh program for each command to avoid state leakage
       const program = createProgram();
-
-      // Split input into argv-style tokens (handle quoted strings)
-      const args = parseArgs(input);
 
       // Handle "help" as a special REPL command
       // "help" → show top-level help
@@ -340,7 +365,7 @@ export async function startRepl(): Promise<void> {
         } else if (err.code === 'commander.version') {
           // Version was displayed, that's fine
         } else if (err.code === 'commander.unknownCommand') {
-          console.log(unknownCommandMsg(input));
+          console.log(unknownCommandMsg(args.join(' ')));
         } else if (shouldSwallowReplError(err)) {
           // HandledError: the command already printed its output; continue.
         } else if (err.exitCode !== undefined && err.exitCode !== 0) {
@@ -403,6 +428,8 @@ export async function startRepl(): Promise<void> {
   rl.prompt();
 }
 
+const IS_WINDOWS = process.platform === 'win32';
+
 /**
  * Wrap ANSI escape sequences with readline-safe markers (\x01..\x02)
  * so that readline correctly computes the visible prompt width.
@@ -413,6 +440,12 @@ function wrapAnsiForReadline(str: string): string {
 }
 
 function getPrompt(): string {
+  if (IS_WINDOWS) {
+    // conhost renders \x01/\x02 as visible cells (breaks readline width → backspace overlap);
+    // ▸ lacks a glyph in default Windows fonts. Use plain ASCII prompt, no readline markers.
+    return brand(site.replPrompt.replace('▸', '>'));
+  }
+  // macOS/Linux: keep original behavior byte-for-byte.
   return wrapAnsiForReadline(brand(site.replPrompt));
 }
 

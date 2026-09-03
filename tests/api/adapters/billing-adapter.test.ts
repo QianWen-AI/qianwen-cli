@@ -414,7 +414,7 @@ describe('transformUsageLimit', () => {
         LimitAmount: '888.50',
         Currency: 'USD',
         AlertThreshold: '80',
-        Receivers: ['ops@test.qianwen.com', 'oncall@test.qianwen.com'],
+        Receivers: ['ops@test.qianwenai.com', 'oncall@test.qianwenai.com'],
       }),
     ).toEqual({
       status: 'active',

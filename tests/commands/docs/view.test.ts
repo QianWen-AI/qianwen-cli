@@ -68,7 +68,7 @@ function buildView(program: import('commander').Command) {
 }
 
 const PRICING_PATH = 'developer-guides/getting-started/pricing';
-const PRICING_URL = `https://mock-docs.test.qianwen.com/${PRICING_PATH}`;
+const PRICING_URL = `https://mock-docs.test.qianwenai.com/${PRICING_PATH}`;
 const PRICING_MD = `${PRICING_URL}.md`;
 const PRICING_BODY = '# Pricing\n\nPay-as-you-go pricing for API usage.';
 
@@ -290,28 +290,29 @@ describe('docs view command', () => {
       return [
         {
           path: 'developer-guides/getting-started/pricing',
-          fullUrl: 'https://mock-docs.test.qianwen.com/developer-guides/getting-started/pricing.md',
+          fullUrl:
+            'https://mock-docs.test.qianwenai.com/developer-guides/getting-started/pricing.md',
           title: 'Pricing',
           description: 'Pay-as-you-go pricing for API usage',
           section: 'Getting Started',
         },
         {
           path: 'token-plan/overview',
-          fullUrl: 'https://mock-docs.test.qianwen.com/token-plan/overview.md',
+          fullUrl: 'https://mock-docs.test.qianwenai.com/token-plan/overview.md',
           title: 'Token Plan Overview',
           description: 'Token Plan subscription overview',
           section: 'Token Plan',
         },
         {
           path: 'subscription/overview',
-          fullUrl: 'https://mock-docs.test.qianwen.com/subscription/overview.md',
+          fullUrl: 'https://mock-docs.test.qianwenai.com/subscription/overview.md',
           title: 'Subscription Overview',
           description: 'Subscription overview',
           section: 'Subscription',
         },
         {
           path: 'resources/faq-billing',
-          fullUrl: 'https://mock-docs.test.qianwen.com/resources/faq-billing.md',
+          fullUrl: 'https://mock-docs.test.qianwenai.com/resources/faq-billing.md',
           title: 'Billing FAQ',
           description: 'Payments and costs Q&A',
           section: 'Resources',

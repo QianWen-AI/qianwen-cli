@@ -145,7 +145,9 @@ describe('buildUsageLogsViewModel', () => {
     });
 
     it('preserves string error codes', () => {
-      const vm = buildUsageLogsViewModel(makeResponse([makeItem({ errorCode: 'Throttling.User' })]));
+      const vm = buildUsageLogsViewModel(
+        makeResponse([makeItem({ errorCode: 'Throttling.User' })]),
+      );
       expect(vm.items[0].errorCode).toBe('Throttling.User');
     });
   });

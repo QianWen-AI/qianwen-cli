@@ -21,7 +21,7 @@ const API_ACTION_DESCRIBE_FQ = 'DescribeFqInstance';
 const REQUEST_TIMEOUT_MS = 30_000;
 
 /** Resolve the CDN model-mapping URL. In dev builds, QIANWEN_CDN_ENDPOINT
- *  env var overrides the hardcoded CDN URL (for E2E / local testing). */
+ *  env var overrides the hardcoded CDN URL for local testing. */
 const CDN_MODEL_MAPPING_URL =
   typeof __NODE_ENV__ === 'undefined' || __NODE_ENV__ !== 'production'
     ? process.env.QIANWEN_CDN_ENDPOINT || site.features.cdnBaseUrl

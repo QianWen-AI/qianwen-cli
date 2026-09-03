@@ -7,10 +7,33 @@ import {
   fuzzyFilter,
   tabCompleter,
   getGhostSuffix,
+  stripOptionalCliPrefix,
   unknownCommandMsg,
 } from '../../src/repl/completer.js';
+import { stripAnsi } from '../../src/ui/textWrap.js';
 
-const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, '');
+describe('stripOptionalCliPrefix', () => {
+  it('removes only the first exact qianwen token', () => {
+    expect(stripOptionalCliPrefix(['qianwen', 'billing', 'balance'])).toEqual([
+      'billing',
+      'balance',
+    ]);
+    expect(stripOptionalCliPrefix(['qianwen', 'qianwen', 'billing'])).toEqual([
+      'qianwen',
+      'billing',
+    ]);
+  });
+
+  it('preserves approximate prefixes, case variants, and qianwen inside arguments', () => {
+    expect(stripOptionalCliPrefix(['qianwen-cli', 'billing'])).toEqual(['qianwen-cli', 'billing']);
+    expect(stripOptionalCliPrefix(['QianWen', 'billing'])).toEqual(['QianWen', 'billing']);
+    expect(stripOptionalCliPrefix(['models', 'search', 'qianwen'])).toEqual([
+      'models',
+      'search',
+      'qianwen',
+    ]);
+  });
+});
 
 describe('fuzzyFilter', () => {
   it('returns all candidates for empty query', () => {
@@ -77,6 +100,16 @@ describe('tabCompleter', () => {
     const [completions, partial] = tabCompleter('models in');
     expect(completions).toEqual(['info']);
     expect(partial).toBe('in');
+  });
+
+  it('returns the same completions for a full qianwen prefix and a bare REPL command', () => {
+    expect(tabCompleter('qianwen billing balance re')).toEqual(tabCompleter('billing balance re'));
+    expect(tabCompleter('qianwen billing balance recharge --channel ')).toEqual([['alipay'], '']);
+    expect(tabCompleter('qianwen billing balance recharge ')[0]).not.toContain('--method');
+    expect(tabCompleter('qianwen billing balance recharge-history --range ')).toEqual([
+      ['1d', '3d', '7d', '30d'],
+      '',
+    ]);
   });
 
   it('subcommand + space → suggests available flags', () => {
@@ -346,6 +379,11 @@ describe('getGhostSuffix', () => {
 
   it('completes a flag value for 1-level command (doctor --format ta → ble)', () => {
     expect(getGhostSuffix('doctor --format ta')).toBe('ble');
+  });
+
+  it('returns the same ghost text for a full qianwen prefix and a bare command', () => {
+    expect(getGhostSuffix('qianwen billing balance re')).toBe(getGhostSuffix('billing balance re'));
+    expect(getGhostSuffix('qianwen billing balance recharge --channel ali')).toBe('pay');
   });
 });
 

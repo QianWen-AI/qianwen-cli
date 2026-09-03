@@ -291,27 +291,29 @@ export function InteractiveDocsSearch({
   }
   const footer = stableFooterRef.current || currentFooter;
 
-  // On the alt-screen, keep the total rendered height strictly below termRows:
-  // hitting the full height flips Ink into its full-repaint path which emits
-  // \x1b[3J and wipes main-screen scrollback (same guard as InteractiveTable /
-  // DocsViewer). Off the alt-screen pad to the full terminal height so Ink
-  // full-repaints and never leaves stale rows. Floor at 1, not 5: on terminals
-  // ≤ 5 rows a fixed floor would put minHeight back at >= termRows and
-  // re-trigger clearTerminal on every frame.
-  const safeMinHeight = inAltScreen ? Math.max(1, termRows - 1) : termRows;
+  const useWindowsMainScreen = process.platform === 'win32' && !inAltScreen;
+  // Windows main-screen views intentionally fill the terminal so Ink uses its
+  // full repaint path during resize. Other main-screen callers keep their
+  // natural height; alt-screen views stay below the clearTerminal threshold.
+  const safeMinHeight = inAltScreen
+    ? Math.max(1, termRows - 1)
+    : useWindowsMainScreen
+      ? termRows
+      : undefined;
+  const frameWidth = termCols;
   // Width budget for result rows: Section paddingLeft (2) + list Box
   // paddingLeft (2). Recomputed on resize via useTerminalSize so every logical
   // line stays <= terminal columns and never physically wraps.
-  const contentWidth = Math.max(1, termCols - 4);
+  const contentWidth = Math.max(1, frameWidth - 4);
 
   if (vm.isEmpty) {
     return (
-      <Box flexDirection="column" width={termCols} minHeight={safeMinHeight}>
+      <Box flexDirection="column" width={frameWidth} minHeight={safeMinHeight}>
         <Section
           title="Documentation Search"
           subtitle={subtitle}
           footer={footer}
-          maxWidth={termCols}
+          maxWidth={frameWidth}
         >
           <Box paddingLeft={2}>
             <Text color={colors.muted} wrap="truncate-end">
@@ -324,8 +326,13 @@ export function InteractiveDocsSearch({
   }
 
   return (
-    <Box flexDirection="column" width={termCols} minHeight={safeMinHeight}>
-      <Section title="Documentation Search" subtitle={subtitle} footer={footer} maxWidth={termCols}>
+    <Box flexDirection="column" width={frameWidth} minHeight={safeMinHeight}>
+      <Section
+        title="Documentation Search"
+        subtitle={subtitle}
+        footer={footer}
+        maxWidth={frameWidth}
+      >
         {loading && vm.items.length === 0 ? (
           <Box paddingLeft={2}>
             <Text color={colors.muted} wrap="truncate-end">

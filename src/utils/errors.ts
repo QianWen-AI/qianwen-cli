@@ -4,6 +4,7 @@ import { loginCommand } from './runtime-mode.js';
 import { resetGlobalCache } from './cache.js';
 import { classifyHttpError } from './api-errors.js';
 import { clearSpinnerLine } from '../ui/spinner.js';
+import { redactPaymentData } from './strings.js';
 import { theme } from '../ui/theme.js';
 
 // Re-export from leaf module (avoids circular deps with debug-buffer.ts)
@@ -56,11 +57,11 @@ export class CliError extends Error {
     return {
       error: {
         code: this.code,
-        message: this.message,
+        message: redactErrorText(this.message, this),
         ...(this.model ? { model: this.model } : {}),
-        ...(this.hint ? { hint: this.hint } : {}),
+        ...(this.hint ? { hint: redactErrorText(this.hint, this) } : {}),
         exit_code: this.exitCode,
-        ...(this.detail ? { detail: this.detail } : {}),
+        ...(this.detail ? { detail: redactErrorText(this.detail, this) } : {}),
       },
     };
   }
@@ -154,15 +155,27 @@ function formatErrorCauseChain(err: unknown): string {
   let depth = 0;
   while (current && depth < 5) {
     if (current instanceof Error) {
-      parts.push(`  Caused by: ${current.message}`);
+      parts.push(`  Caused by: ${redactErrorText(current.message, err)}`);
       current = current.cause;
     } else {
-      parts.push(`  Caused by: ${String(current)}`);
+      parts.push(`  Caused by: ${redactErrorText(String(current), err)}`);
       break;
     }
     depth++;
   }
   return parts.join('\n');
+}
+
+/**
+ * Redact payment data at the last boundary before user-visible error output.
+ *
+ * @param value Error text that may contain payment identifiers.
+ * @param context Whole error/context used to discover unlabeled repeated values.
+ * @returns Payment-safe error text.
+ */
+function redactErrorText(value: string, context?: unknown): string {
+  const safe = redactPaymentData({ context, value }) as { value: string };
+  return safe.value;
 }
 
 // Global error handler for commands.
@@ -199,13 +212,14 @@ export function handleError(error: unknown, format: 'json' | 'table' | 'text'): 
   ) {
     const e = error as Error & { exitCode: number; code?: string };
     const code = typeof e.code === 'string' ? e.code : 'ERROR';
+    const safeMessage = redactErrorText(e.message, e);
     if (format === 'json') {
       process.stderr.write(
-        JSON.stringify({ error: { code, message: e.message, exit_code: e.exitCode } }, null, 2) +
+        JSON.stringify({ error: { code, message: safeMessage, exit_code: e.exitCode } }, null, 2) +
           '\n',
       );
     } else {
-      console.error(errorLine(e.message));
+      console.error(errorLine(safeMessage));
     }
     resetGlobalCache();
     throw new HandledError(e.exitCode);
@@ -220,15 +234,20 @@ export function handleError(error: unknown, format: 'json' | 'table' | 'text'): 
       if (format === 'json') {
         process.stderr.write(JSON.stringify(cliError.toJSON(), null, 2) + '\n');
       } else {
+        const safeMessage = redactErrorText(cliError.message, cliError);
+        const safeDetail = cliError.detail ? redactErrorText(cliError.detail, cliError) : undefined;
         const output = cliError.detail
-          ? `${errorLine(cliError.message)}\n${process.stderr.isTTY ? theme.dim(cliError.detail) : cliError.detail}`
-          : errorLine(cliError.message);
+          ? `${errorLine(safeMessage)}\n${process.stderr.isTTY ? theme.dim(safeDetail ?? '') : safeDetail}`
+          : errorLine(safeMessage);
         console.error(output);
-        if (cliError.hint) console.error(hintLine(cliError.hint));
+        if (cliError.hint) console.error(hintLine(redactErrorText(cliError.hint, cliError)));
       }
     } else {
       // Non-CliError: preserve legacy verbose output with cause chain
-      const message = error instanceof Error ? error.message : String(error);
+      const message = redactErrorText(
+        error instanceof Error ? error.message : String(error),
+        error,
+      );
       const causeChain = error instanceof Error ? formatErrorCauseChain(error) : '';
       const fullMessage = causeChain ? `${message}\n${causeChain}` : message;
       if (format === 'json') {
@@ -254,9 +273,9 @@ export function handleError(error: unknown, format: 'json' | 'table' | 'text'): 
         {
           error: {
             code: cliError.code,
-            message: cliError.message,
+            message: redactErrorText(cliError.message, { error, cliError }),
             ...(cliError.model ? { model: cliError.model } : {}),
-            ...(cliError.hint ? { hint: cliError.hint } : {}),
+            ...(cliError.hint ? { hint: redactErrorText(cliError.hint, { error, cliError }) } : {}),
             exit_code: cliError.exitCode,
           },
         },
@@ -265,8 +284,10 @@ export function handleError(error: unknown, format: 'json' | 'table' | 'text'): 
       ) + '\n',
     );
   } else {
-    console.error(errorLine(cliError.message));
-    if (cliError.hint) console.error(hintLine(cliError.hint));
+    console.error(errorLine(redactErrorText(cliError.message, { error, cliError })));
+    if (cliError.hint) {
+      console.error(hintLine(redactErrorText(cliError.hint, { error, cliError })));
+    }
   }
   resetGlobalCache();
   throw new HandledError(cliError.exitCode);

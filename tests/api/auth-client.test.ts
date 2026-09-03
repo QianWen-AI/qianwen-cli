@@ -31,7 +31,7 @@ vi.mock('../../src/auth/credentials.js', async (orig) => {
       credentials: {
         access_token: 'mock-token-for-auth-test',
         expires_at: new Date(Date.now() + 86_400_000).toISOString(),
-        user: { email: 'user@test.qianwen.com', aliyunId: 'auth-uid' },
+        user: { email: 'user@test.qianwenai.com', aliyunId: 'auth-uid' },
       },
     })),
     isTokenExpired: vi.fn(() => false),
@@ -46,8 +46,8 @@ vi.mock('../../src/config/manager.js', async (orig) => {
   return {
     ...actual,
     getEffectiveConfig: vi.fn(() => ({
-      'api.endpoint': 'https://mock-api.test.qianwen.com',
-      'auth.endpoint': 'https://mock-auth.test.qianwen.com',
+      'api.endpoint': 'https://mock-api.test.qianwenai.com',
+      'auth.endpoint': 'https://mock-auth.test.qianwenai.com',
     })),
   };
 });
@@ -71,7 +71,7 @@ describe('AuthClient.authorizeDeviceFlow — normal flow', () => {
         Success: true,
         Data: {
           Token: 'encrypt-token-abc',
-          VerificationUrl: 'https://mock-auth.test.qianwen.com/device?code=ABCDEF',
+          VerificationUrl: 'https://mock-auth.test.qianwenai.com/device?code=ABCDEF',
           ExpiresIn: 600,
           Interval: 5,
         },
@@ -80,7 +80,7 @@ describe('AuthClient.authorizeDeviceFlow — normal flow', () => {
     const { createAuthClient } = await import('../../src/api/auth-client.js');
     const client = createAuthClient();
     const result = await client.authorizeDeviceFlow();
-    expect(result.verification_url).toContain('mock-auth.test.qianwen.com');
+    expect(result.verification_url).toContain('mock-auth.test.qianwenai.com');
     expect(result.token).toBe('encrypt-token-abc');
     expect(result.expires_in).toBe(600);
   });
@@ -94,7 +94,7 @@ describe('AuthClient.authorizeDeviceFlow — normal flow', () => {
           Credentials: {
             AccessToken: 'new-token-xyz',
             ExpireTime: '2026-12-31T23:59:59Z',
-            User: { Email: 'u@test.qianwen.com', AliyunId: 'uid-new' },
+            User: { Email: 'u@test.qianwenai.com', AliyunId: 'uid-new' },
           },
         },
       }),
@@ -165,7 +165,7 @@ describe('AuthClient.authorizePKCE — init', () => {
           Success: true,
           Data: {
             Token: 'encrypt-token-pkce',
-            VerificationUrl: 'https://mock-auth.test.qianwen.com/oauth/authorize?code=PKCE01',
+            VerificationUrl: 'https://mock-auth.test.qianwenai.com/oauth/authorize?code=PKCE01',
             ExpiresIn: 600,
             Interval: 5,
           },
@@ -185,7 +185,7 @@ describe('AuthClient.authorizePKCE — init', () => {
     expect(verifier).toMatch(/^[A-Za-z0-9\-._~]+$/);
 
     // Authorization URL is returned to the caller as-is.
-    expect(result.verification_url).toContain('mock-auth.test.qianwen.com');
+    expect(result.verification_url).toContain('mock-auth.test.qianwenai.com');
     expect(result.token).toBe('encrypt-token-pkce');
 
     // Server only ever sees the challenge — never the raw verifier.
@@ -210,7 +210,7 @@ describe('AuthClient.authorizePKCE — poll', () => {
           Credentials: {
             AccessToken: 'pkce-access-token',
             ExpireTime: '2026-12-31T23:59:59Z',
-            User: { Email: 'pkce-user@test.qianwen.com', AliyunId: 'pkce-uid' },
+            User: { Email: 'pkce-user@test.qianwenai.com', AliyunId: 'pkce-uid' },
           },
         },
       }),
@@ -315,7 +315,7 @@ describe('AuthClient.getAuthStatus — call target (regression guard)', () => {
     const { createAuthClient } = await import('../../src/api/auth-client.js');
     await createAuthClient().getAuthStatus();
     const url = new URL(activeMock.lastRequest(ACCOUNT_REST_FRAGMENT)!.url);
-    expect(url.host).toBe('mock-api.test.qianwen.com');
+    expect(url.host).toBe('mock-api.test.qianwenai.com');
     expect(url.pathname).toBe('/api/account/info.json');
   });
 });
@@ -324,7 +324,7 @@ describe('AuthClient.getAuthStatus — three-state contract', () => {
   it('returns server_verified=true and server-sourced user on a 2xx response', async () => {
     activeMock = mockFetch({
       [ACCOUNT_REST_FRAGMENT]: () => ({
-        data: { aliyunId: 'server-uid', email: 'server@test.qianwen.com' },
+        data: { aliyunId: 'server-uid', email: 'server@test.qianwenai.com' },
       }),
     });
     const { createAuthClient } = await import('../../src/api/auth-client.js');
@@ -419,7 +419,7 @@ describe('AuthClient.getAuthStatus — user fallback chain', () => {
       },
     } as never);
     vi.mocked(credMod.tryExtractUserFromToken).mockReturnValueOnce({
-      email: 'jwt@test.qianwen.com',
+      email: 'jwt@test.qianwenai.com',
       aliyunId: 'jwt-uid',
     });
 
@@ -510,7 +510,7 @@ describe('AuthClient.checkVersion', () => {
         code: '200',
         data: {
           latest_version: '1.2.0',
-          download_url: 'https://mock-api.test.qianwen.com/download',
+          download_url: 'https://mock-api.test.qianwenai.com/download',
         },
       }),
     });
@@ -570,7 +570,7 @@ const initPascalPayload = {
   Success: true,
   Data: {
     Token: 'encrypt-token-rest',
-    VerificationUrl: 'https://mock-auth.test.qianwen.com/device?code=REST01',
+    VerificationUrl: 'https://mock-auth.test.qianwenai.com/device?code=REST01',
     ExpiresIn: 600,
     Interval: 5,
   },
@@ -583,7 +583,7 @@ const pollCompletePascalPayload = {
     Credentials: {
       AccessToken: 'access-token-rest',
       ExpireTime: '2026-12-31T23:59:59Z',
-      User: { AliyunId: 'uid-rest', Email: 'rest-user@test.qianwen.com' },
+      User: { AliyunId: 'uid-rest', Email: 'rest-user@test.qianwenai.com' },
     },
   },
 };
@@ -597,8 +597,8 @@ describe('AuthClient.authorizeDeviceFlow — REST URL construction', () => {
     await createAuthClient().authorizeDeviceFlow();
     const req = activeMock.lastRequest('cli/device/code');
     expect(req).toBeDefined();
-    expect(req!.url.startsWith('https://mock-auth.test.qianwen.com/')).toBe(true);
-    expect(req!.url).not.toContain('mock-api.test.qianwen.com');
+    expect(req!.url.startsWith('https://mock-auth.test.qianwenai.com/')).toBe(true);
+    expect(req!.url).not.toContain('mock-api.test.qianwenai.com');
   });
 
   it('uses the /cli/device/code path', async () => {
@@ -671,7 +671,7 @@ describe('AuthClient.pollDeviceFlow — REST URL construction', () => {
     await client.pollDeviceFlow('encrypt-tk', 1, pollVerifier);
     const req = activeMock.lastRequest('cli/device/token')!;
     const parsed = new URL(req.url);
-    expect(parsed.host).toBe('mock-auth.test.qianwen.com');
+    expect(parsed.host).toBe('mock-auth.test.qianwenai.com');
     expect(parsed.pathname).toBe('/cli/device/token');
   });
 
@@ -721,7 +721,7 @@ describe('AuthClient — PascalCase response normalization', () => {
     const { createAuthClient } = await import('../../src/api/auth-client.js');
     const result: DeviceFlowInitResponse = await createAuthClient().authorizeDeviceFlow();
     expect(result.token).toBe('encrypt-token-rest');
-    expect(result.verification_url).toBe('https://mock-auth.test.qianwen.com/device?code=REST01');
+    expect(result.verification_url).toBe('https://mock-auth.test.qianwenai.com/device?code=REST01');
     expect(result.expires_in).toBe(600);
     expect(result.interval).toBe(5);
   });
@@ -737,7 +737,7 @@ describe('AuthClient — PascalCase response normalization', () => {
     expect(result.credentials?.access_token).toBe('access-token-rest');
     expect(result.credentials?.expires_at).toBe('2026-12-31T23:59:59Z');
     expect(result.credentials?.user.aliyunId).toBe('uid-rest');
-    expect(result.credentials?.user.email).toBe('rest-user@test.qianwen.com');
+    expect(result.credentials?.user.email).toBe('rest-user@test.qianwenai.com');
   });
 
   it('returns authorization_pending status when poll responds with pending', async () => {

@@ -452,7 +452,7 @@ ${fnName}() {
     billing)
       if (( CURRENT == 3 )); then
         local -a subs
-        subs=('limit:Show billing limit' 'breakdown:Cost breakdown' 'summary:Billing summary')
+        subs=('limit:Show billing limit' 'breakdown:Cost breakdown' 'summary:Billing summary' 'balance:Account balance and recharge')
         _describe -t commands 'billing subcommand' subs
       else
         case "\${words[3]}" in
@@ -478,6 +478,25 @@ ${fnName}() {
               '--charge-type[Charge type]:type:(all postpaid prepaid)' \\
               '--format[Output format]:format:(table json text)' \\
               '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+          balance)
+            if (( CURRENT == 4 )); then
+              local -a bsubs
+              bsubs=('summary:Available balance' 'recharge:Create recharge order' 'recharge-history:Recharge history')
+              _describe -t commands 'balance subcommand' bsubs
+            else
+              case "\${words[4]}" in
+                summary)
+                  _arguments '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]'
+                  ;;
+                recharge)
+                  _arguments '--channel[Payment channel]:channel:(alipay)' '--amount[CNY amount]:amount:()' '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]'
+                  ;;
+                recharge-history)
+                  _arguments '--range[Shanghai day range]:range:(1d 3d 7d 30d)' '--start-time[Start time]:time:()' '--end-time[End time]:time:()' '--page[Page number]:n:()' '--page-size[Page size]:n:()' '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]'
+                  ;;
+              esac
+            fi
             ;;
         esac
       fi
@@ -685,6 +704,10 @@ function generateBashCompletion(): string {
       COMPREPLY=( $(compgen -W "en zh" -- "$cur") ); return 0 ;;
     --status)
       COMPREPLY=( $(compgen -W "0 2xx 4xx 5xx" -- "$cur") ); return 0 ;;
+    --channel)
+      COMPREPLY=( $(compgen -W "alipay" -- "$cur") ); return 0 ;;
+    --range)
+      COMPREPLY=( $(compgen -W "1d 3d 7d 30d" -- "$cur") ); return 0 ;;
   esac
 
 
@@ -752,10 +775,18 @@ function generateBashCompletion(): string {
       version)
         COMPREPLY=( $(compgen -W "--check -h --help" -- "$cur") ); return 0 ;;
       billing)
+        local sub3="\${COMP_WORDS[3]}"
         case "$sub" in
           limit)     COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
           breakdown) COMPREPLY=( $(compgen -W "--group-by --granularity --from --to --period --charge-type --top --format -h --help" -- "$cur") ); return 0 ;;
           summary)   COMPREPLY=( $(compgen -W "--from --to --charge-type --format -h --help" -- "$cur") ); return 0 ;;
+          balance)
+            case "$sub3" in
+              summary) COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
+              recharge) COMPREPLY=( $(compgen -W "--channel --amount --format -h --help" -- "$cur") ); return 0 ;;
+              recharge-history) COMPREPLY=( $(compgen -W "--range --start-time --end-time --page --page-size --format -h --help" -- "$cur") ); return 0 ;;
+              *) COMPREPLY=( $(compgen -W "summary recharge recharge-history -h --help" -- "$cur") ); return 0 ;;
+            esac ;;
         esac ;;
       subscription)
         local sub3="\${COMP_WORDS[3]}"
@@ -805,7 +836,7 @@ function generateBashCompletion(): string {
       music)      COMPREPLY=( $(compgen -W "generate" -- "$cur") ); return 0 ;;
       task)       COMPREPLY=( $(compgen -W "get" -- "$cur") ); return 0 ;;
       usage)      COMPREPLY=( $(compgen -W "summary breakdown free-tier payg logs" -- "$cur") ); return 0 ;;
-      billing)    COMPREPLY=( $(compgen -W "limit breakdown summary" -- "$cur") ); return 0 ;;
+      billing)    COMPREPLY=( $(compgen -W "limit breakdown summary balance" -- "$cur") ); return 0 ;;
       subscription) COMPREPLY=( $(compgen -W "status orders tokenplan" -- "$cur") ); return 0 ;;
       workspace)  COMPREPLY=( $(compgen -W "list limit" -- "$cur") ); return 0 ;;
       support)    COMPREPLY=( $(compgen -W "list view create reply close rate" -- "$cur") ); return 0 ;;
@@ -866,6 +897,22 @@ end
 function ${helperPrefix}_seen_sub
   set -l cmd (commandline -opc)
   contains -- $argv[1] $cmd and contains -- $argv[2] $cmd
+end
+
+function ${helperPrefix}_seen_path
+  set -l tokens (commandline -opc)
+  if test (count $tokens) -gt 0; and test "$tokens[1]" = "${cli}"
+    set -e tokens[1]
+  end
+  if test (count $tokens) -lt (count $argv)
+    return 1
+  end
+  for index in (seq (count $argv))
+    if test "$tokens[$index]" != "$argv[$index]"
+      return 1
+    end
+  end
+  return 0
 end
 
 # ── Top-level commands ────────────────────────────────────────────────────────
@@ -1071,10 +1118,24 @@ complete -c ${cli} -n '__fish_seen_subcommand_from version' -l check -d 'Check f
 
 
 # ── billing subcommands ──────────────────────────────────────────────────────
-complete -c ${cli} -n '__fish_seen_subcommand_from billing; and not __fish_seen_subcommand_from limit breakdown summary' -f
-complete -c ${cli} -n '__fish_seen_subcommand_from billing; and not __fish_seen_subcommand_from limit breakdown summary' -a limit     -d 'Show billing limit'
-complete -c ${cli} -n '__fish_seen_subcommand_from billing; and not __fish_seen_subcommand_from limit breakdown summary' -a breakdown -d 'Cost breakdown'
-complete -c ${cli} -n '__fish_seen_subcommand_from billing; and not __fish_seen_subcommand_from limit breakdown summary' -a summary   -d 'Billing summary'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing; and not __fish_seen_subcommand_from limit breakdown summary balance' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from billing; and not __fish_seen_subcommand_from limit breakdown summary balance' -a limit     -d 'Show billing limit'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing; and not __fish_seen_subcommand_from limit breakdown summary balance' -a breakdown -d 'Cost breakdown'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing; and not __fish_seen_subcommand_from limit breakdown summary balance' -a summary   -d 'Billing summary'
+complete -c ${cli} -n '__fish_seen_subcommand_from billing; and not __fish_seen_subcommand_from limit breakdown summary balance' -a balance   -d 'Account balance and recharge'
+
+complete -c ${cli} -n '${helperPrefix}_seen_path billing balance; and not ${helperPrefix}_seen_path billing balance summary; and not ${helperPrefix}_seen_path billing balance recharge; and not ${helperPrefix}_seen_path billing balance recharge-history' -a summary -d 'Available balance'
+complete -c ${cli} -n '${helperPrefix}_seen_path billing balance; and not ${helperPrefix}_seen_path billing balance summary; and not ${helperPrefix}_seen_path billing balance recharge; and not ${helperPrefix}_seen_path billing balance recharge-history' -a recharge -d 'Create recharge order'
+complete -c ${cli} -n '${helperPrefix}_seen_path billing balance; and not ${helperPrefix}_seen_path billing balance summary; and not ${helperPrefix}_seen_path billing balance recharge; and not ${helperPrefix}_seen_path billing balance recharge-history' -a recharge-history -d 'Recharge history'
+complete -c ${cli} -n '${helperPrefix}_seen_path billing balance recharge' -l channel -d 'Payment channel' -a 'alipay'
+complete -c ${cli} -n '${helperPrefix}_seen_path billing balance recharge' -l amount -d 'CNY amount'
+complete -c ${cli} -n '${helperPrefix}_seen_path billing balance recharge' -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '${helperPrefix}_seen_path billing balance recharge-history' -l range -d 'Shanghai day range' -a '1d 3d 7d 30d'
+complete -c ${cli} -n '${helperPrefix}_seen_path billing balance recharge-history' -l start-time -d 'Start time'
+complete -c ${cli} -n '${helperPrefix}_seen_path billing balance recharge-history' -l end-time -d 'End time'
+complete -c ${cli} -n '${helperPrefix}_seen_path billing balance recharge-history' -l page -d 'Page number'
+complete -c ${cli} -n '${helperPrefix}_seen_path billing balance recharge-history' -l page-size -d 'Page size'
+complete -c ${cli} -n '${helperPrefix}_seen_path billing balance recharge-history' -l format -d 'Output format' -a 'table json text'
 
 complete -c ${cli} -n '__fish_seen_subcommand_from billing limit'     -l format -d 'Output format' -a 'table json text'
 complete -c ${cli} -n '__fish_seen_subcommand_from billing breakdown' -l group-by     -d 'Group by' -a 'model api-key'

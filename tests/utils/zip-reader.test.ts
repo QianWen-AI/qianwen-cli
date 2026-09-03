@@ -38,7 +38,9 @@ describe('readZipEntries — parsing happy paths', () => {
   });
 
   it('reads sizes/CRC from the CD when bit 3 zeroes the local header fields', () => {
-    const zip = buildZip([{ path: 'dd.txt', data: 'descriptor', method: 8, useDataDescriptor: true }]);
+    const zip = buildZip([
+      { path: 'dd.txt', data: 'descriptor', method: 8, useDataDescriptor: true },
+    ]);
 
     const entries = readZipEntries(zip);
 
@@ -135,9 +137,7 @@ describe('readZipEntries — decompression bombs and duplicate paths', () => {
   });
 
   it('accepts an entry declaring exactly the per-entry limit', () => {
-    const zip = buildZip([
-      { path: 'edge.bin', data: 'tiny', uncompressedSizeOverride: 50 * MIB },
-    ]);
+    const zip = buildZip([{ path: 'edge.bin', data: 'tiny', uncompressedSizeOverride: 50 * MIB }]);
     expect(readZipEntries(zip)).toHaveLength(1);
   });
 
@@ -148,9 +148,7 @@ describe('readZipEntries — decompression bombs and duplicate paths', () => {
       { path: 'b.bin', data: 'x', uncompressedSizeOverride: 40 * MIB },
       { path: 'c.bin', data: 'x', uncompressedSizeOverride: 40 * MIB },
     ]);
-    expect(() => readZipEntries(zip)).toThrow(
-      /exceeds the 100 MiB total uncompressed size limit/,
-    );
+    expect(() => readZipEntries(zip)).toThrow(/exceeds the 100 MiB total uncompressed size limit/);
   });
 
   it('rejects archives declaring more entries than the entry-count cap', () => {
@@ -195,9 +193,7 @@ describe('extractZipTo — extraction behaviour', () => {
     extractZipTo(zip, dest);
 
     expect(readFileSync(path.join(dest, 'plain.txt'), 'utf8')).toBe('stored bytes');
-    expect(readFileSync(path.join(dest, 'packed.txt'), 'utf8')).toBe(
-      'deflated bytes '.repeat(20),
-    );
+    expect(readFileSync(path.join(dest, 'packed.txt'), 'utf8')).toBe('deflated bytes '.repeat(20));
   });
 
   it('creates parent directories for nested paths without directory entries', () => {
@@ -256,9 +252,7 @@ describe('extractZipTo — extraction behaviour', () => {
   });
 
   it('fails on a size mismatch against the Central Directory', () => {
-    const zip = buildZip([
-      { path: 'bad-size.txt', data: 'payload', uncompressedSizeOverride: 3 },
-    ]);
+    const zip = buildZip([{ path: 'bad-size.txt', data: 'payload', uncompressedSizeOverride: 3 }]);
 
     expect(() => extractZipTo(zip, dest)).toThrow(/size mismatch/);
   });

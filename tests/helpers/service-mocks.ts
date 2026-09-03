@@ -6,7 +6,7 @@
  *   - CachedFetcher ({ getOrFetch, invalidate })
  *
  * Each mock is a minimal stub that lets a test override only the surfaces
- * it cares about. Mock domain follows the *.test.qianwen.com convention.
+ * it cares about. Mock domain follows the *.test.qianwenai.com convention.
  */
 import { vi, type Mock } from 'vitest';
 import type {

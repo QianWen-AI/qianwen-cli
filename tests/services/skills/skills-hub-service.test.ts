@@ -414,7 +414,7 @@ describe('SkillsHubService.getSkillDetail — call contract', () => {
 
 describe('SkillsHubService.getSkillDownload — call contract', () => {
   const downloadData: RawSkillDownloadData = {
-    OssUrl: 'https://oss.test.qianwen.com/skill.zip?sig=abc',
+    OssUrl: 'https://oss.test.qianwenai.com/skill.zip?sig=abc',
     ExpiresAt: '2026-07-27T20:00:00+08:00',
   };
 
@@ -447,7 +447,7 @@ describe('SkillsHubService.getSkillDownload — call contract', () => {
     const out = await svc.getSkillDownload('pdf-extractor');
 
     expect(out).toEqual({
-      ossUrl: 'https://oss.test.qianwen.com/skill.zip?sig=abc',
+      ossUrl: 'https://oss.test.qianwenai.com/skill.zip?sig=abc',
       expiresAt: '2026-07-27T20:00:00+08:00',
     });
   });
@@ -462,7 +462,7 @@ describe('SkillsHubService.getSkillDownload — call contract', () => {
 
   it('tolerates the camelCase sha256 spelling', async () => {
     const svc = makeDetailService(
-      hubEnvelope({ ossUrl: 'https://oss.test.qianwen.com/skill.zip', sha256: 'ab'.repeat(32) }),
+      hubEnvelope({ ossUrl: 'https://oss.test.qianwenai.com/skill.zip', sha256: 'ab'.repeat(32) }),
     );
 
     const out = await svc.getSkillDownload('pdf-extractor');

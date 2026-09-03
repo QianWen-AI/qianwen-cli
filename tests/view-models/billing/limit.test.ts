@@ -18,11 +18,7 @@ function makeLimit(overrides: Partial<UsageLimit> = {}): UsageLimit {
 describe('buildBillingLimitViewModel', () => {
   it('returns the three card fields in display order', () => {
     const vm = buildBillingLimitViewModel(makeLimit(), ctx);
-    expect(vm.fields.map((f) => f.label)).toEqual([
-      'Status',
-      'Limit',
-      'Alert threshold',
-    ]);
+    expect(vm.fields.map((f) => f.label)).toEqual(['Status', 'Limit', 'Alert threshold']);
   });
 
   it('maps known statuses to friendly labels', () => {

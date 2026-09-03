@@ -132,7 +132,7 @@ describe('buildRequest (Type B)', () => {
   });
 
   it('serializes cornerstoneParam into the inner params when present', () => {
-    const corner = { domain: 'override.test.qianwen.com', protocol: 'V3' };
+    const corner = { domain: 'override.test.qianwenai.com', protocol: 'V3' };
     const out = buildRequest('B', {
       product: '',
       action: '',

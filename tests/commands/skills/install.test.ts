@@ -508,7 +508,11 @@ describe('agent directory detection', () => {
     holder.services = makeMockServices({
       skillsHubService: {
         getSkillDetail: async () => {
-          throw new CliError({ code: 'NOT_FOUND', message: 'Skill not found: ghost.', exitCode: 3 });
+          throw new CliError({
+            code: 'NOT_FOUND',
+            message: 'Skill not found: ghost.',
+            exitCode: 3,
+          });
         },
       },
       skillsInstallService: {
