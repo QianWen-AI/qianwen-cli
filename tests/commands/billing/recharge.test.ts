@@ -617,8 +617,9 @@ describe('billing balance recharge table flow', () => {
     expect(waitForRechargeResult).toHaveBeenCalledOnce();
     expect(getAvailableBalance).toHaveBeenCalledOnce();
     expect(renderWithInkSpy).toHaveBeenCalledOnce();
-    // Nothing the user reads comes from the Ink frame.
-    expect(finalInteractiveFrame).toBe('');
+    // Nothing the user reads comes from the Ink frame. Ink's unmount appends a
+    // lone newline when it detects a CI environment, so compare trimmed.
+    expect(finalInteractiveFrame.trim()).toBe('');
     // The order and its exact link are static main-screen text, so the terminal
     // alone decides how the link wraps.
     expect(result.stdout).toContain(createdOrder.paymentUrl);
