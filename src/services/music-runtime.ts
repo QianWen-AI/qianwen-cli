@@ -2,7 +2,6 @@
 
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { site, sourceUserAgent } from '../site.js';
-import { resolveCredentials } from '../auth/credentials.js';
 import { getConfigValueWithSource } from '../config/manager.js';
 import { DashScopeTransport } from '../api/providers/dashscope/transport.js';
 import { MusicClient } from '../api/providers/dashscope/music-client.js';
@@ -29,10 +28,6 @@ export interface MusicRuntimeOptions {
 
 export function createMusicService(options: MusicRuntimeOptions = {}): MusicService {
   const credentialResolver = new InvocationCredentialResolver({
-    resolveOAuth: () => {
-      const resolved = resolveCredentials();
-      return resolved ? { access_token: resolved.access_token } : null;
-    },
     readEnv: (name) => process.env[name],
     readConfig: () => {
       const entry = getConfigValueWithSource('model.api_key');

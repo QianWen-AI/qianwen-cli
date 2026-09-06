@@ -2,7 +2,6 @@
 
 import { setTimeout as sleepFor } from 'timers/promises';
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'fs';
-import { resolveCredentials } from '../auth/credentials.js';
 import { getConfigValueWithSource } from '../config/manager.js';
 import { site, sourceUserAgent } from '../site.js';
 import { DashScopeTransport } from '../api/providers/dashscope/transport.js';
@@ -25,10 +24,6 @@ export interface TaskRuntimeOptions {
 
 export function createTaskService(options: TaskRuntimeOptions = {}): TaskService {
   const credentialResolver = new InvocationCredentialResolver({
-    resolveOAuth: () => {
-      const resolved = resolveCredentials();
-      return resolved ? { access_token: resolved.access_token } : null;
-    },
     readEnv: (name) => process.env[name],
     readConfig: () => {
       const entry = getConfigValueWithSource('model.api_key');

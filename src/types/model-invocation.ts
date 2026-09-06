@@ -8,7 +8,7 @@ export interface TokenUsage {
   total: number;
 }
 
-export type CredentialSource = 'flag' | 'env' | 'oauth' | 'config';
+export type CredentialSource = 'flag' | 'env' | 'config';
 
 export interface ResolvedInvocationCredential {
   token: string;

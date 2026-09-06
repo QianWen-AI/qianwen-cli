@@ -3,7 +3,6 @@
 import { setTimeout as sleepFor } from 'timers/promises';
 import { existsSync, readFileSync, statSync } from 'fs';
 import { site, sourceUserAgent } from '../site.js';
-import { resolveCredentials } from '../auth/credentials.js';
 import { getConfigValueWithSource } from '../config/manager.js';
 import { DashScopeTransport } from '../api/providers/dashscope/transport.js';
 import { ASRClient } from '../api/providers/dashscope/asr-client.js';
@@ -32,10 +31,6 @@ export interface ASRRuntimeOptions {
 
 export function createASRService(options: ASRRuntimeOptions = {}): ASRService {
   const credentialResolver = new InvocationCredentialResolver({
-    resolveOAuth: () => {
-      const resolved = resolveCredentials();
-      return resolved ? { access_token: resolved.access_token } : null;
-    },
     readEnv: (name) => process.env[name],
     readConfig: () => {
       const entry = getConfigValueWithSource('model.api_key');
