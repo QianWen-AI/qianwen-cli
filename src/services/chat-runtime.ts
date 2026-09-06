@@ -3,7 +3,6 @@
 import { existsSync, readFileSync } from 'fs';
 import { statSync } from 'fs';
 import { site, sourceUserAgent } from '../site.js';
-import { resolveCredentials } from '../auth/credentials.js';
 import { getConfigValueWithSource } from '../config/manager.js';
 import { DashScopeTransport } from '../api/providers/dashscope/transport.js';
 import { ChatClient } from '../api/providers/dashscope/chat-client.js';
@@ -30,10 +29,6 @@ export interface ChatRuntimeOptions {
 
 export function createChatService(options: ChatRuntimeOptions = {}): ChatService {
   const credentialResolver = new InvocationCredentialResolver({
-    resolveOAuth: () => {
-      const resolved = resolveCredentials();
-      return resolved ? { access_token: resolved.access_token } : null;
-    },
     readEnv: (name) => process.env[name],
     readConfig: () => {
       const entry = getConfigValueWithSource('model.api_key');

@@ -3,7 +3,6 @@
 import { setTimeout as sleepFor } from 'timers/promises';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { site, sourceUserAgent } from '../site.js';
-import { resolveCredentials } from '../auth/credentials.js';
 import { getConfigValueWithSource } from '../config/manager.js';
 import { DashScopeTransport } from '../api/providers/dashscope/transport.js';
 import { Model3dClient } from '../api/providers/dashscope/model3d-client.js';
@@ -39,10 +38,6 @@ export interface Model3dRuntimeOptions {
 
 export function createModel3dService(options: Model3dRuntimeOptions = {}): Model3dService {
   const credentialResolver = new InvocationCredentialResolver({
-    resolveOAuth: () => {
-      const resolved = resolveCredentials();
-      return resolved ? { access_token: resolved.access_token } : null;
-    },
     readEnv: (name) => process.env[name],
     readConfig: () => {
       const entry = getConfigValueWithSource('model.api_key');

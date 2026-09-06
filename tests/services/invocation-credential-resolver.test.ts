@@ -1,19 +1,18 @@
 /**
- * Unit tests for InvocationCredentialResolver — the four-tier credential chain
+ * Unit tests for InvocationCredentialResolver — the three-tier credential chain
  * used by every model-invocation command.
  *
  * Per specification the chain is, highest priority first:
  *   1. explicit flag value
  *   2. environment variable
- *   3. OAuth token from the credential store
- *   4. persisted configuration value
+ *   3. persisted configuration value
  *
  * A resolved credential always reports which tier supplied it, so callers can
  * surface provenance in diagnostics. When every tier is empty the resolver is
  * expected to fail with an authentication-class exit code rather than return an
  * empty token.
  *
- * External dependencies (env, credential store, config) are injected, so these
+ * External dependencies (env, config) are injected, so these
  * tests drive the real resolver logic and never stub the resolution itself.
  */
 import { describe, it, expect, vi } from 'vitest';
@@ -30,12 +29,11 @@ const ENV_NAME = 'QIANWEN_API_KEY';
 const GENERIC_ALIAS = 'DASHSCOPE_API_KEY';
 
 /**
- * Build dependency doubles for the three external sources. Every source is
+ * Build dependency doubles for the two external sources. Every source is
  * empty by default so each test opts into exactly the tiers it exercises.
  */
 function makeDeps(overrides: Partial<CredentialResolverDeps> = {}): CredentialResolverDeps {
   return {
-    resolveOAuth: () => null,
     readEnv: () => undefined,
     readConfig: () => undefined,
     ...overrides,
@@ -48,7 +46,6 @@ describe('InvocationCredentialResolver', () => {
       const resolver = new InvocationCredentialResolver(
         makeDeps({
           readEnv: () => 'sk-from-env',
-          resolveOAuth: () => ({ access_token: 'token-from-oauth' }),
           readConfig: () => 'sk-from-config',
         }),
       );
@@ -63,23 +60,11 @@ describe('InvocationCredentialResolver', () => {
       const resolver = new InvocationCredentialResolver(
         makeDeps({
           readEnv: (name) => (name === ENV_NAME ? 'sk-from-env' : undefined),
-          resolveOAuth: () => ({ access_token: 'token-from-oauth' }),
           readConfig: () => 'sk-from-config',
         }),
       );
 
       expect(resolver.resolve()).toEqual({ token: 'sk-from-env', source: 'env' });
-    });
-
-    it('falls back to the OAuth token when flag and environment are empty', () => {
-      const resolver = new InvocationCredentialResolver(
-        makeDeps({
-          resolveOAuth: () => ({ access_token: 'token-from-oauth' }),
-          readConfig: () => 'sk-from-config',
-        }),
-      );
-
-      expect(resolver.resolve()).toEqual({ token: 'token-from-oauth', source: 'oauth' });
     });
 
     it('falls back to configuration as the lowest priority tier', () => {
@@ -134,13 +119,13 @@ describe('InvocationCredentialResolver', () => {
       expect(resolver.resolve('sk-flag')).toEqual({ token: 'sk-flag', source: 'flag' });
     });
 
-    it('only reaches OAuth after all environment aliases are empty', () => {
+    it('only reaches config after all environment aliases are empty', () => {
       const readEnv = vi.fn(() => undefined);
       const resolver = new InvocationCredentialResolver(
-        makeDeps({ readEnv, resolveOAuth: () => ({ access_token: 'token-oauth' }) }),
+        makeDeps({ readEnv, readConfig: () => 'sk-from-config' }),
       );
 
-      expect(resolver.resolve()).toEqual({ token: 'token-oauth', source: 'oauth' });
+      expect(resolver.resolve()).toEqual({ token: 'sk-from-config', source: 'config' });
       expect(readEnv).toHaveBeenCalledWith(ENV_NAME);
       expect(readEnv).toHaveBeenCalledWith(GENERIC_ALIAS);
     });
@@ -164,17 +149,6 @@ describe('InvocationCredentialResolver', () => {
       const resolver = new InvocationCredentialResolver(
         makeDeps({
           readEnv: () => '   ',
-          resolveOAuth: () => ({ access_token: 'token-from-oauth' }),
-        }),
-      );
-
-      expect(resolver.resolve()).toEqual({ token: 'token-from-oauth', source: 'oauth' });
-    });
-
-    it('ignores an OAuth entry carrying an empty access token', () => {
-      const resolver = new InvocationCredentialResolver(
-        makeDeps({
-          resolveOAuth: () => ({ access_token: '' }),
           readConfig: () => 'sk-from-config',
         }),
       );
@@ -218,14 +192,14 @@ describe('InvocationCredentialResolver', () => {
       expect(message.trim().split('\n')).toHaveLength(1);
     });
 
-    it('does not consult the credential store once an earlier tier already matched', () => {
-      const resolveOAuth = vi.fn(() => ({ access_token: 'token-from-oauth' }));
+    it('does not consult config once an earlier tier already matched', () => {
+      const readConfig = vi.fn(() => 'sk-from-config');
       const resolver = new InvocationCredentialResolver(
-        makeDeps({ readEnv: () => 'sk-from-env', resolveOAuth }),
+        makeDeps({ readEnv: () => 'sk-from-env', readConfig }),
       );
 
       expect(resolver.resolve().source).toBe('env');
-      expect(resolveOAuth).not.toHaveBeenCalled();
+      expect(readConfig).not.toHaveBeenCalled();
     });
   });
 });

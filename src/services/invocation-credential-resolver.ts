@@ -9,7 +9,6 @@ export const API_KEY_ENV_NAME = `${site.envPrefix}_API_KEY`;
 export const GENERIC_API_KEY_ENV_NAME = 'DASHSCOPE_API_KEY';
 
 export interface CredentialResolverDeps {
-  resolveOAuth: () => { access_token: string } | null;
   readEnv: (name: string) => string | undefined;
   readConfig: (key: 'model.api_key') => string | undefined;
 }
@@ -38,7 +37,6 @@ export class InvocationCredentialResolver {
           return undefined;
         },
       ],
-      ['oauth', () => firstNonBlank(this.deps.resolveOAuth()?.access_token)],
       ['config', () => firstNonBlank(this.deps.readConfig('model.api_key'))],
     ];
 
