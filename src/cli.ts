@@ -34,6 +34,7 @@ import {
 import { collectRepeatable } from './commands/usage/logs.js';
 import { registerUpdateCommand, registerVersionCommand } from './commands/version.js';
 import { registerWorkspaceCommands } from './commands/workspace/index.js';
+import { registerYunqiCommands } from './commands/yunqi/index.js';
 import { getCommandErrorSupplement, setCommandHelpMetadata } from './utils/commander-helpers.js';
 import { isHelpRequest } from './utils/cli-help.js';
 
@@ -617,6 +618,7 @@ function applyTopLevelHelpMetadata(program: Command): void {
 
   setTopLevelHelpMetadata(program, 'support', 'Support', 520);
   setTopLevelHelpMetadata(program, 'update', 'Support', 530);
+  setTopLevelHelpMetadata(program, 'yunqi', 'Activity', 440);
 }
 
 // ---------------------------------------------------------------------------
@@ -657,6 +659,7 @@ export function createProgram(): Command {
   registerSupportCommands(program);
   registerDocsCommands(program);
   registerSkillsCommands(program);
+  registerYunqiCommands(program);
 
   // Local utilities & meta
   registerConfigCommands(program);

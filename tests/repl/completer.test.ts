@@ -412,3 +412,80 @@ describe('unknownCommandMsg', () => {
     expect(msg).not.toContain('Did you mean');
   });
 });
+
+describe('tabCompleter — yunqi 三级补全', () => {
+  const RESOURCES = ['forums', 'exhibitors', 'subscriptions', 'summaries', '--help'];
+
+  it('yunqi + 空格 → 子命令', () => {
+    expect(tabCompleter('yunqi ')[0]).toEqual(['list', 'subscribe', 'unsubscribe', '--help']);
+  });
+
+  it('yunqi list + 空格 → 资源名而非 flag', () => {
+    expect(tabCompleter('yunqi list ')[0]).toEqual(RESOURCES);
+  });
+
+  it('部分资源名 → 过滤后的候选', () => {
+    const [completions, partial] = tabCompleter('yunqi list su');
+    expect(completions).toEqual(['subscriptions', 'summaries']);
+    expect(partial).toBe('su');
+  });
+
+  it('未知资源名 → 无候选', () => {
+    expect(tabCompleter('yunqi list typo ')[0]).toEqual([]);
+  });
+
+  it('forums 只提示论坛 flag，不提示展商专属 flag', () => {
+    const [completions] = tabCompleter('yunqi list forums ');
+    expect(completions).toContain('--industry');
+    expect(completions).toContain('--theme-name');
+    expect(completions).toContain('--page');
+    expect(completions).toContain('--format');
+    expect(completions).not.toContain('--enabled');
+    expect(completions).not.toContain('--hall-name');
+  });
+
+  it('exhibitors 只提示展商 flag，不提示论坛专属 flag', () => {
+    const [completions] = tabCompleter('yunqi list exhibitors ');
+    expect(completions).toContain('--enabled');
+    expect(completions).toContain('--hall-name');
+    expect(completions).toContain('--format');
+    expect(completions).not.toContain('--industry');
+    expect(completions).not.toContain('--theme-name');
+    expect(completions).not.toContain('--guest-name');
+  });
+
+  it('subscriptions 不接受业务参数，只提示 --format', () => {
+    expect(tabCompleter('yunqi list subscriptions ')[0]).toEqual(['--format', '--help']);
+  });
+
+  it('summaries 只提示 --forum-id 与 --format', () => {
+    expect(tabCompleter('yunqi list summaries ')[0]).toEqual(['--forum-id', '--format', '--help']);
+  });
+
+  it('--enabled 后提示 true/false', () => {
+    expect(tabCompleter('yunqi list exhibitors --enabled ')).toEqual([['true', 'false'], '']);
+  });
+
+  it('两个资源共享的 --keyword 在两侧都可补全', () => {
+    expect(tabCompleter('yunqi list forums --key')[0]).toEqual(['--keyword']);
+    expect(tabCompleter('yunqi list exhibitors --key')[0]).toEqual(['--keyword']);
+  });
+
+  it('已用过的 flag 不再重复提示', () => {
+    const [completions] = tabCompleter('yunqi list summaries --forum-id F-1 ');
+    expect(completions).not.toContain('--forum-id');
+    expect(completions).toContain('--format');
+  });
+
+  it('静态补全表与运行时校验的资源集合一致', () => {
+    expect(SUBCOMMANDS['yunqi list']).toEqual([
+      'forums',
+      'exhibitors',
+      'subscriptions',
+      'summaries',
+    ]);
+    for (const resource of SUBCOMMANDS['yunqi list']) {
+      expect(COMMAND_FLAGS[`yunqi list ${resource}`]).toBeDefined();
+    }
+  });
+});

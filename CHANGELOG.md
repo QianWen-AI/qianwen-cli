@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-09-16
+
+### Added
+
+- `yunqi list forums` command for browsing Apsara Conference forums, with pagination and filters
+- `yunqi list exhibitors` command for browsing exhibitor booths, with per-booth hall, zone and booth detail
+- `yunqi list subscriptions` command for your subscribed forums, with per-status counts
+- `yunqi list summaries` command for subscribed forum summaries, optionally scoped by `--forum-id`
+- `yunqi subscribe forum` and `yunqi unsubscribe forum` commands
+- Bash, Zsh, Fish and REPL completion for the `yunqi` command group
+
 ## [1.6.1] - 2026-09-06
 
 ### Fixed

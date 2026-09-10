@@ -6,7 +6,7 @@
 
 > Official command-line tool for [QianWen](https://www.qianwenai.com/). Discover models, check usage, manage authentication, and diagnose local setup from a terminal or an AI agent runtime.
 
-![Version](https://img.shields.io/badge/version-1.6.1-blue)
+![Version](https://img.shields.io/badge/version-1.7.0-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
@@ -23,6 +23,7 @@
 - **Agent-ready contract**: commands support `--format json`, standardized exit codes, parseable JSON errors, and `--quiet` for exit-code-only checks.
 - **Model and usage workflows**: browse models, inspect model metadata, search by keyword, and review Free Tier, Token Plan, and PAYG usage.
 - **Skill discovery and install**: search SkillHub with `skills search` and install into a local directory with `skills install`; no login required.
+- **Yunqi Conference activities**: browse conference forums and exhibitors with `yunqi`, subscribe to the forums you care about, and review subscription status and session summaries.
 - **Native credential storage**: credentials are stored in the OS keychain when available, with an encrypted file fallback. No `keytar` or native Node binding is required.
 - **Self-documenting command tree**: every command supports `--help`; generated help is the canonical syntax reference.
 
@@ -154,6 +155,7 @@ Run diagnostics to verify authentication, network access, configuration, and she
 | Billing | `billing summary`, `billing breakdown`, `billing limit`, `billing balance summary`, `billing balance recharge`, `billing balance recharge-history` | `--from`, `--to`, `--period`, `--group-by`, `--granularity`, `--channel`, `--amount`, `--range`, `--start-time`, `--end-time`, `--page`, `--page-size`, `--format` |
 | Workspace | `workspace list`, `workspace limit` | `--format` |
 | Subscription | `subscription status`, `subscription orders`, `subscription tokenplan status`, `subscription tokenplan seats` | `--format` |
+| Yunqi Conference | `yunqi list forums`, `yunqi list exhibitors`, `yunqi list subscriptions`, `yunqi list summaries`, `yunqi subscribe forum`, `yunqi unsubscribe forum` | `--page`, `--page-size`, `--forum-id`, `--keyword`, `--format` |
 | Docs | `docs search`, `docs view` | `--format` |
 | Skills | `skills search`, `skills install` | `--limit`, `--dir`, `--format` |
 | Support | `support list`, `support view`, `support create`, `support reply`, `support close`, `support rate` | `--format` |

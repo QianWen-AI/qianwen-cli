@@ -114,6 +114,7 @@ ${fnName}() {
     'doctor:Run diagnostics'
     'completion:Install shell tab completion'
     'version:Show CLI version'
+    'yunqi:Yunqi activity forums and exhibitors'
   )
 
   if (( CURRENT == 2 )); then
@@ -654,6 +655,81 @@ ${fnName}() {
     update)
       _arguments '(-h --help)'{-h,--help}'[Show help]'
       ;;
+
+    yunqi)
+      if (( CURRENT == 3 )); then
+        local -a subs
+        subs=('list:List forums, exhibitors, subscriptions or summaries' 'subscribe:Subscribe to a forum' 'unsubscribe:Unsubscribe from a forum')
+        _describe -t commands 'yunqi subcommand' subs
+      else
+        case "\${words[3]}" in
+          list)
+            case "\${words[4]}" in
+              forums)
+                _arguments \\
+                  '--page[Page number]:n:()' \\
+                  '--page-size[Page size]:n:()' \\
+                  '--industry[Filter by industry]:value:()' \\
+                  '--interest[Filter by interest]:value:()' \\
+                  '--location[Filter by location]:value:()' \\
+                  '--forum-id[Filter by forum ID]:value:()' \\
+                  '--keyword[Filter by keyword]:value:()' \\
+                  '--forum-name[Filter by forum name]:value:()' \\
+                  '--member-name[Filter by member name]:value:()' \\
+                  '--theme-name[Filter by theme name]:value:()' \\
+                  '--topic-name[Filter by topic name]:value:()' \\
+                  '--guest-name[Filter by guest name]:value:()' \\
+                  '--company-name[Filter by company name]:value:()' \\
+                  '--format[Output format]:format:(table json text)' \\
+                  '(-h --help)'{-h,--help}'[Show help]'
+                ;;
+              exhibitors)
+                _arguments \\
+                  '--page[Page number]:n:()' \\
+                  '--page-size[Page size]:n:()' \\
+                  '--keyword[Filter by keyword]:value:()' \\
+                  '--company-name[Filter by company name]:value:()' \\
+                  '--hall-name[Filter by hall name]:value:()' \\
+                  '--zone-name[Filter by zone name]:value:()' \\
+                  '--booth-name[Filter by booth name]:value:()' \\
+                  '--exhibit-name[Filter by exhibit name]:value:()' \\
+                  '--enabled[Filter by enabled status]:bool:(true false)' \\
+                  '--format[Output format]:format:(table json text)' \\
+                  '(-h --help)'{-h,--help}'[Show help]'
+                ;;
+              subscriptions)
+                _arguments \\
+                  '--format[Output format]:format:(table json text)' \\
+                  '(-h --help)'{-h,--help}'[Show help]'
+                ;;
+              summaries)
+                _arguments \\
+                  '--forum-id[Forum ID]:value:()' \\
+                  '--format[Output format]:format:(table json text)' \\
+                  '(-h --help)'{-h,--help}'[Show help]'
+                ;;
+              *)
+                local -a yunqi_resources
+                yunqi_resources=(
+                  'forums:Browse forums'
+                  'exhibitors:Browse exhibitors'
+                  'subscriptions:Your subscribed forums'
+                  'summaries:Summaries of subscribed forums'
+                )
+                _describe -t resources 'yunqi list resource' yunqi_resources
+                ;;
+            esac
+            ;;
+          subscribe|unsubscribe)
+            _arguments \\
+              '1:resource:(forum)' \\
+              '--forum-id[Forum ID]:id:()' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+        esac
+      fi
+      ;;
   esac
 }
 
@@ -665,12 +741,13 @@ function generateBashCompletion(): string {
   const cli = site.cliName;
   const fnName = `_${cli}`;
   return `${fnName}() {
-  local cur prev cmd sub
+  local cur prev cmd sub third
   COMPREPLY=()
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
   cmd="\${COMP_WORDS[1]}"
   sub="\${COMP_WORDS[2]}"
+  third="\${COMP_WORDS[3]}"
 
   # ── Option value completions ──────────────────────────────────────────────
   case "$prev" in
@@ -708,6 +785,8 @@ function generateBashCompletion(): string {
       COMPREPLY=( $(compgen -W "alipay" -- "$cur") ); return 0 ;;
     --range)
       COMPREPLY=( $(compgen -W "1d 3d 7d 30d" -- "$cur") ); return 0 ;;
+    --enabled)
+      COMPREPLY=( $(compgen -W "true false" -- "$cur") ); return 0 ;;
   esac
 
 
@@ -820,6 +899,22 @@ function generateBashCompletion(): string {
           search)  COMPREPLY=( $(compgen -W "--limit --format -h --help" -- "$cur") ); return 0 ;;
           install) COMPREPLY=( $(compgen -W "--dir --format -h --help" -- "$cur") ); return 0 ;;
         esac ;;
+      yunqi)
+        case "$sub" in
+          list)
+            case "$third" in
+              forums)        COMPREPLY=( $(compgen -W "--page --page-size --industry --interest --location --forum-id --keyword --forum-name --member-name --theme-name --topic-name --guest-name --company-name --format -h --help" -- "$cur") ); return 0 ;;
+              exhibitors)    COMPREPLY=( $(compgen -W "--page --page-size --keyword --company-name --hall-name --zone-name --booth-name --exhibit-name --enabled --format -h --help" -- "$cur") ); return 0 ;;
+              subscriptions) COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
+              summaries)     COMPREPLY=( $(compgen -W "--forum-id --format -h --help" -- "$cur") ); return 0 ;;
+              *)             COMPREPLY=( $(compgen -W "forums exhibitors subscriptions summaries" -- "$cur") ); return 0 ;;
+            esac ;;
+          subscribe|unsubscribe)
+            case "$third" in
+              forum) COMPREPLY=( $(compgen -W "--forum-id --format -h --help" -- "$cur") ); return 0 ;;
+              *)     COMPREPLY=( $(compgen -W "forum --forum-id --format -h --help" -- "$cur") ); return 0 ;;
+            esac ;;
+        esac ;;
     esac
   fi
 
@@ -844,12 +939,13 @@ function generateBashCompletion(): string {
       skills)     COMPREPLY=( $(compgen -W "search install" -- "$cur") ); return 0 ;;
       config)     COMPREPLY=( $(compgen -W "list get set unset" -- "$cur") ); return 0 ;;
       completion) COMPREPLY=( $(compgen -W "install generate" -- "$cur") ); return 0 ;;
+      yunqi)      COMPREPLY=( $(compgen -W "list subscribe unsubscribe" -- "$cur") ); return 0 ;;
     esac
   fi
 
   # ── Top-level command completions ─────────────────────────────────────────
   if [ "$COMP_CWORD" -eq 1 ]; then
-    COMPREPLY=( $(compgen -W "auth chat image video audio model3d music models task usage billing subscription workspace support update docs skills config doctor completion version -h --help" -- "$cur") )
+    COMPREPLY=( $(compgen -W "auth chat image video audio model3d music models task usage billing subscription workspace support update docs skills config doctor completion version yunqi -h --help" -- "$cur") )
   fi
 }
 
@@ -884,6 +980,7 @@ function generateFishCompletion(): string {
     'completion',
     'version',
     'update',
+    'yunqi',
   ];
   const topGuard = `not __fish_seen_subcommand_from ${topCommands.join(' ')}`;
   return `# ${site.cliDisplayName} completions for fish
@@ -938,6 +1035,7 @@ complete -c ${cli} -n '${topGuard}' -a config        -d 'Manage CLI configuratio
 complete -c ${cli} -n '${topGuard}' -a doctor        -d 'Run diagnostics'
 complete -c ${cli} -n '${topGuard}' -a completion    -d 'Install shell tab completion'
 complete -c ${cli} -n '${topGuard}' -a version       -d 'Show CLI version'
+complete -c ${cli} -n '${topGuard}' -a yunqi         -d 'Yunqi activity forums and exhibitors'
 
 # ── auth subcommands ──────────────────────────────────────────────────────────
 complete -c ${cli} -n '__fish_seen_subcommand_from auth; and not __fish_seen_subcommand_from login logout status' -f
@@ -1219,6 +1317,48 @@ complete -c ${cli} -n '__fish_seen_subcommand_from skills; and __fish_seen_subco
 complete -c ${cli} -n '__fish_seen_subcommand_from skills; and __fish_seen_subcommand_from search' -l format -d 'Output format' -a 'table json text'
 complete -c ${cli} -n '__fish_seen_subcommand_from skills; and __fish_seen_subcommand_from install' -l dir    -d 'Directory to install into' -r
 complete -c ${cli} -n '__fish_seen_subcommand_from skills; and __fish_seen_subcommand_from install' -l format -d 'Output format' -a 'table json text'
+
+# ── yunqi subcommands ────────────────────────────────────────────────────────
+complete -c ${cli} -n '__fish_seen_subcommand_from yunqi; and not __fish_seen_subcommand_from list subscribe unsubscribe' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from yunqi; and not __fish_seen_subcommand_from list subscribe unsubscribe' -a list        -d 'List forums, exhibitors, subscriptions or summaries'
+complete -c ${cli} -n '__fish_seen_subcommand_from yunqi; and not __fish_seen_subcommand_from list subscribe unsubscribe' -a subscribe   -d 'Subscribe to a forum'
+complete -c ${cli} -n '__fish_seen_subcommand_from yunqi; and not __fish_seen_subcommand_from list subscribe unsubscribe' -a unsubscribe -d 'Unsubscribe from a forum'
+
+complete -c ${cli} -n '__fish_seen_subcommand_from yunqi; and __fish_seen_subcommand_from list; and not __fish_seen_subcommand_from forums exhibitors subscriptions summaries' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from yunqi; and __fish_seen_subcommand_from list; and not __fish_seen_subcommand_from forums exhibitors subscriptions summaries' -a forums        -d 'Browse forums'
+complete -c ${cli} -n '__fish_seen_subcommand_from yunqi; and __fish_seen_subcommand_from list; and not __fish_seen_subcommand_from forums exhibitors subscriptions summaries' -a exhibitors    -d 'Browse exhibitors'
+complete -c ${cli} -n '__fish_seen_subcommand_from yunqi; and __fish_seen_subcommand_from list; and not __fish_seen_subcommand_from forums exhibitors subscriptions summaries' -a subscriptions -d 'Your subscribed forums'
+complete -c ${cli} -n '__fish_seen_subcommand_from yunqi; and __fish_seen_subcommand_from list; and not __fish_seen_subcommand_from forums exhibitors subscriptions summaries' -a summaries     -d 'Summaries of subscribed forums'
+
+# 'list' alone is not a sufficient condition: models, usage, support, workspace
+# and config all have a 'list' subcommand, so both tokens must match. Each flag
+# group below keys on the resource token, which is unique to yunqi, so a flag
+# belonging to another resource is never offered.
+complete -c ${cli} -n '__fish_seen_subcommand_from forums exhibitors' -l page         -d 'Page number'
+complete -c ${cli} -n '__fish_seen_subcommand_from forums exhibitors' -l page-size    -d 'Page size'
+complete -c ${cli} -n '__fish_seen_subcommand_from forums exhibitors' -l keyword      -d 'Filter by keyword'
+complete -c ${cli} -n '__fish_seen_subcommand_from forums exhibitors' -l company-name -d 'Filter by company name'
+
+complete -c ${cli} -n '__fish_seen_subcommand_from forums' -l industry    -d 'Filter by industry'
+complete -c ${cli} -n '__fish_seen_subcommand_from forums' -l interest    -d 'Filter by interest'
+complete -c ${cli} -n '__fish_seen_subcommand_from forums' -l location    -d 'Filter by location'
+complete -c ${cli} -n '__fish_seen_subcommand_from forums' -l forum-id    -d 'Filter by forum ID'
+complete -c ${cli} -n '__fish_seen_subcommand_from forums' -l forum-name  -d 'Filter by forum name'
+complete -c ${cli} -n '__fish_seen_subcommand_from forums' -l member-name -d 'Filter by member name'
+complete -c ${cli} -n '__fish_seen_subcommand_from forums' -l theme-name  -d 'Filter by theme name'
+complete -c ${cli} -n '__fish_seen_subcommand_from forums' -l topic-name  -d 'Filter by topic name'
+complete -c ${cli} -n '__fish_seen_subcommand_from forums' -l guest-name  -d 'Filter by guest name'
+
+complete -c ${cli} -n '__fish_seen_subcommand_from exhibitors' -l hall-name    -d 'Filter by hall name'
+complete -c ${cli} -n '__fish_seen_subcommand_from exhibitors' -l zone-name    -d 'Filter by zone name'
+complete -c ${cli} -n '__fish_seen_subcommand_from exhibitors' -l booth-name   -d 'Filter by booth name'
+complete -c ${cli} -n '__fish_seen_subcommand_from exhibitors' -l exhibit-name -d 'Filter by exhibit name'
+complete -c ${cli} -n '__fish_seen_subcommand_from exhibitors' -l enabled      -d 'Filter by enabled status' -a 'true false'
+
+complete -c ${cli} -n '__fish_seen_subcommand_from summaries' -l forum-id -d 'Only this forum'
+
+complete -c ${cli} -n '__fish_seen_subcommand_from yunqi; and __fish_seen_subcommand_from subscribe unsubscribe; and not __fish_seen_subcommand_from forum' -a forum -d 'The only subscribable resource'
+complete -c ${cli} -n '__fish_seen_subcommand_from yunqi; and __fish_seen_subcommand_from subscribe unsubscribe' -l forum-id -d 'Forum ID' -r
 
 # ── Global options ────────────────────────────────────────────────────────────
 complete -c ${cli} -l format -d 'Output format' -a 'table json text'

@@ -19,3 +19,4 @@ coverage/
 ref/
 *copilot*
 .e2e-output
+*.tgz

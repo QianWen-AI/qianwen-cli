@@ -13,6 +13,8 @@ export const API_PRODUCT_SEARCH = 'aliyun-search-maas';
 export const API_PRODUCT_WORKORDER = 'Workorder';
 /** Product identifier for the website portal (SkillHub search/install). */
 export const API_PRODUCT_WEBSITE_PORTAL = 'WebsitePortal';
+/** Product identifier for yunqi (forum) service. */
+export const API_PRODUCT_MAAS_PORTAL = 'MaasPortal';
 
 // Action constants
 export const API_ACTION_LIST_MODELS = 'ListModelSeries';

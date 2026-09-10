@@ -51,6 +51,7 @@ export const TOP_COMMANDS = [
   'doctor',
   'completion',
   'version',
+  'yunqi',
   // REPL built-ins
   'help',
   'clear',
@@ -77,6 +78,8 @@ export const SUBCOMMANDS: Record<string, string[]> = {
   skills: ['search', 'install'],
   config: ['list', 'get', 'set', 'unset'],
   completion: ['install', 'generate'],
+  yunqi: ['list', 'subscribe', 'unsubscribe'],
+  'yunqi list': ['forums', 'exhibitors', 'subscriptions', 'summaries'],
 };
 
 /** Available flags per "cmd subcmd". */
@@ -249,6 +252,39 @@ export const COMMAND_FLAGS: Record<string, string[]> = {
   version: ['--check'],
   'completion install': ['--shell'],
   'completion generate': ['--shell'],
+  'yunqi list': [],
+  'yunqi list forums': [
+    '--page',
+    '--page-size',
+    '--industry',
+    '--interest',
+    '--location',
+    '--forum-id',
+    '--keyword',
+    '--forum-name',
+    '--member-name',
+    '--theme-name',
+    '--topic-name',
+    '--guest-name',
+    '--company-name',
+    '--format',
+  ],
+  'yunqi list exhibitors': [
+    '--page',
+    '--page-size',
+    '--keyword',
+    '--company-name',
+    '--hall-name',
+    '--zone-name',
+    '--booth-name',
+    '--exhibit-name',
+    '--enabled',
+    '--format',
+  ],
+  'yunqi list subscriptions': ['--format'],
+  'yunqi list summaries': ['--forum-id', '--format'],
+  'yunqi subscribe': ['--forum-id', '--format'],
+  'yunqi unsubscribe': ['--forum-id', '--format'],
 };
 
 /** Universal flag injected into every command level. */
@@ -272,6 +308,7 @@ export const FLAG_VALUES: Record<string, string[]> = {
   '--group-by': ['model', 'api-key'],
   '--channel': ['alipay'],
   '--range': ['1d', '3d', '7d', '30d'],
+  '--enabled': ['true', 'false'],
   '--texture-quality': ['standard', 'detailed'],
   '--response-format': ['url', 'b64'],
 };
