@@ -156,7 +156,6 @@ export class MusicService {
     let finalUrl: string | undefined;
     let requestId: string | undefined;
     let usage: Record<string, unknown> | undefined;
-    let extraInfo: Record<string, unknown> | undefined;
     let finished = false;
     const timeoutMs = input.timeoutMs ?? DEFAULT_MUSIC_TIMEOUT_MS;
     try {
@@ -167,7 +166,6 @@ export class MusicService {
           if (event.audioData) chunks.push(event.audioData);
           if (event.url) finalUrl = event.url;
           if (event.usage) usage = event.usage;
-          if (event.extraInfo) extraInfo = event.extraInfo;
           if (event.finishReason === 'stop') finished = true;
         }
       });

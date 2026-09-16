@@ -6,7 +6,7 @@
 
 > 千问AI平台官方命令行工具。在终端或 AI Agent 运行时中，发现模型、查看用量、管理认证与诊断本地环境。
 
-![Version](https://img.shields.io/badge/version-1.6.1-blue)
+![Version](https://img.shields.io/badge/version-1.7.0-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
@@ -23,6 +23,7 @@
 - **Agent 友好协议**：命令支持 `--format json`、标准化退出码、可解析的 JSON 错误信息，以及 `--quiet` 仅返回退出码。
 - **模型与用量工作流**：浏览模型、查看模型详情、按关键词搜索，以及查看免费额度、Token Plan 和按量计费用量。
 - **技能发现与安装**：通过 `skills search` 搜索 SkillHub 技能，通过 `skills install` 安装到本地目录，无需登录即可使用。
+- **云栖大会活动**：通过 `yunqi` 浏览大会论坛与展商信息，订阅感兴趣的论坛，并查看订阅状态与会议纪要。
 - **原生凭证存储**：凭证存储在操作系统钥匙串中（可用时），并支持加密文件回退。无需 `keytar` 或原生 Node 绑定。
 - **自文档化命令树**：每个命令均支持 `--help`，生成的帮助信息即为权威语法参考。
 
@@ -152,6 +153,7 @@ qianwen auth login --complete --format json
 | 账单 | `billing summary`, `billing breakdown`, `billing limit`, `billing balance summary`, `billing balance recharge`, `billing balance recharge-history` | `--from`, `--to`, `--period`, `--group-by`, `--granularity`, `--channel`, `--amount`, `--range`, `--start-time`, `--end-time`, `--page`, `--page-size`, `--format` |
 | 业务空间 | `workspace list`, `workspace limit` | `--format` |
 | 订阅 | `subscription status`, `subscription orders`, `subscription tokenplan status`, `subscription tokenplan seats` | `--format` |
+| 云栖大会 | `yunqi list forums`, `yunqi list exhibitors`, `yunqi list subscriptions`, `yunqi list summaries`, `yunqi subscribe forum`, `yunqi unsubscribe forum` | `--page`, `--page-size`, `--forum-id`, `--keyword`, `--format` |
 | 文档 | `docs search`, `docs view` | `--format` |
 | 技能 | `skills search`, `skills install` | `--limit`, `--dir`, `--format` |
 | 工单 | `support list`, `support view`, `support create`, `support reply`, `support close`, `support rate` | `--format` |

@@ -53,6 +53,7 @@ import { SubscriptionTokenPlanService } from './subscription-tokenplan-service.j
 import { SupportService } from './support-service.js';
 import { SkillsHubService } from './skills-hub-service.js';
 import { SkillsInstallService } from './skills-install-service.js';
+import { YunqiService } from './yunqi-service.js';
 
 import type { CachedFetcher } from '../types/cache.js';
 import type { ApiModelGroup, ApiModelItem, ConsumeSummaryLineItem } from '../types/api-models.js';
@@ -80,6 +81,7 @@ export interface ServiceContainer {
   supportService: SupportService;
   skillsHubService: SkillsHubService;
   skillsInstallService: SkillsInstallService;
+  yunqiService: YunqiService;
 }
 
 export interface CreateServicesOptions {
@@ -181,6 +183,7 @@ export function createServices(options: CreateServicesOptions = {}): ServiceCont
   const supportService = new SupportService(apiClient);
   const skillsHubService = new SkillsHubService(apiClient);
   const skillsInstallService = new SkillsInstallService(skillsHubService);
+  const yunqiService = new YunqiService(apiClient);
 
   return {
     apiClient,
@@ -199,5 +202,6 @@ export function createServices(options: CreateServicesOptions = {}): ServiceCont
     supportService,
     skillsHubService,
     skillsInstallService,
+    yunqiService,
   };
 }
