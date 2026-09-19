@@ -21,6 +21,8 @@ import type {
   RawHubEnvelope,
   RawSkillDetailData,
   RawSkillDownloadData,
+  RawPackDownloadData,
+  PackManifest,
 } from '../../../src/types/skills.js';
 
 function okEnvelope(items: RawSkillSearchItem[], totalCount = items.length): RawSearchHubEnvelope {
@@ -44,6 +46,7 @@ function pascalItem(overrides: Partial<RawSkillSearchItem> = {}): RawSkillSearch
     SecurityDesc: '安全',
     SecurityStatus: 'safe',
     CurrentVersion: '1.2.0',
+    Provider: { ProviderId: '@qianwen-ai', ProviderName: '千问 AI 平台', ProviderIcon: '' },
     ...overrides,
   };
 }
@@ -102,10 +105,10 @@ describe('SkillsHubService.searchSkills — normalization', () => {
     expect(out.totalCount).toBe(42);
     expect(out.results).toEqual([
       {
-        slug: 'pdf-extractor',
+        slug: '@qianwen-ai/pdf-extractor',
         name: 'PDF Extractor',
         description: 'Extract text from PDFs',
-        publisher: 'acme',
+        publisher: '千问 AI 平台',
         currentVersion: '1.2.0',
         verified: true,
       },
@@ -123,7 +126,7 @@ describe('SkillsHubService.searchSkills — normalization', () => {
             resourceName: 'camel-skill',
             displayName: 'Camel Skill',
             description: 'camel case payload',
-            authorName: 'camel',
+            provider: { providerId: '@ns', providerName: 'Camel NS' },
             securityStatus: 'safe',
             currentVersion: '0.0.1',
           },
@@ -134,16 +137,16 @@ describe('SkillsHubService.searchSkills — normalization', () => {
     const out = await svc.searchSkills({ query: 'camel' });
 
     expect(out.results[0]).toEqual({
-      slug: 'camel-skill',
+      slug: '@ns/camel-skill',
       name: 'Camel Skill',
       description: 'camel case payload',
-      publisher: 'camel',
+      publisher: 'Camel NS',
       currentVersion: '0.0.1',
       verified: true,
     });
   });
 
-  it('falls back name to slug when DisplayName is missing', async () => {
+  it('falls back name to the bare ResourceName when DisplayName is missing', async () => {
     const svc = makeService(okEnvelope([pascalItem({ DisplayName: null })]));
 
     const out = await svc.searchSkills({ query: 'pdf' });
@@ -206,17 +209,25 @@ describe('SkillsHubService.searchSkills — exact slug hoisting (C-014)', () => 
   it('hoists the exact slug match to the front, preserving relative order', async () => {
     const svc = makeService(okEnvelope(items));
 
-    const out = await svc.searchSkills({ query: 'pdf' });
+    const out = await svc.searchSkills({ query: '@qianwen-ai/pdf' });
 
-    expect(out.results.map((r) => r.slug)).toEqual(['pdf', 'alpha', 'beta']);
+    expect(out.results.map((r) => r.slug)).toEqual([
+      '@qianwen-ai/pdf',
+      '@qianwen-ai/alpha',
+      '@qianwen-ai/beta',
+    ]);
   });
 
-  it('is case-sensitive: "PDF" does not hoist slug "pdf"', async () => {
+  it('is case-sensitive: "@qianwen-ai/PDF" does not hoist slug "@qianwen-ai/pdf"', async () => {
     const svc = makeService(okEnvelope(items));
 
-    const out = await svc.searchSkills({ query: 'PDF' });
+    const out = await svc.searchSkills({ query: '@qianwen-ai/PDF' });
 
-    expect(out.results.map((r) => r.slug)).toEqual(['alpha', 'pdf', 'beta']);
+    expect(out.results.map((r) => r.slug)).toEqual([
+      '@qianwen-ai/alpha',
+      '@qianwen-ai/pdf',
+      '@qianwen-ai/beta',
+    ]);
   });
 
   it('hoists only the first match when multiple slugs are identical', async () => {
@@ -228,18 +239,26 @@ describe('SkillsHubService.searchSkills — exact slug hoisting (C-014)', () => 
       ]),
     );
 
-    const out = await svc.searchSkills({ query: 'dup' });
+    const out = await svc.searchSkills({ query: '@qianwen-ai/dup' });
 
-    expect(out.results.map((r) => r.slug)).toEqual(['dup', 'other', 'dup']);
+    expect(out.results.map((r) => r.slug)).toEqual([
+      '@qianwen-ai/dup',
+      '@qianwen-ai/other',
+      '@qianwen-ai/dup',
+    ]);
     expect(out.results[0].description).toBe('first dup');
   });
 
   it('keeps order untouched when the match is already first', async () => {
     const svc = makeService(okEnvelope(items));
 
-    const out = await svc.searchSkills({ query: 'alpha' });
+    const out = await svc.searchSkills({ query: '@qianwen-ai/alpha' });
 
-    expect(out.results.map((r) => r.slug)).toEqual(['alpha', 'pdf', 'beta']);
+    expect(out.results.map((r) => r.slug)).toEqual([
+      '@qianwen-ai/alpha',
+      '@qianwen-ai/pdf',
+      '@qianwen-ai/beta',
+    ]);
   });
 });
 
@@ -353,6 +372,7 @@ describe('SkillsHubService.getSkillDetail — call contract', () => {
         { version: '1.1.0', publishedAt: '2026-06-20', changelog: 'newer', isLatest: true },
         { version: '1.0.0', publishedAt: '2026-05-10', changelog: 'initial', isLatest: false },
       ],
+      provider: '',
     });
   });
 
@@ -397,7 +417,7 @@ describe('SkillsHubService.getSkillDetail — call contract', () => {
     expect(out.securityStatus).toBe('');
   });
 
-  it('maps a NOT_FOUND business code to an actionable CliError', async () => {
+  it('maps a NOT_FOUND business code to an actionable CliError with SKILL_NOT_FOUND code and exit 1', async () => {
     const svc = makeDetailService({
       Code: 'NOT_FOUND',
       Success: false,
@@ -405,8 +425,9 @@ describe('SkillsHubService.getSkillDetail — call contract', () => {
     });
 
     await expect(svc.getSkillDetail('nope')).rejects.toMatchObject({
-      code: 'NOT_FOUND',
+      code: 'SKILL_NOT_FOUND',
       message: expect.stringContaining('Skill not found: nope'),
+      exitCode: 1,
     });
     await expect(svc.getSkillDetail('nope')).rejects.toBeInstanceOf(CliError);
   });
@@ -478,12 +499,364 @@ describe('SkillsHubService.getSkillDownload — call contract', () => {
     );
   });
 
-  it('maps a NOT_FOUND business code to the same actionable CliError', async () => {
+  it('maps a NOT_FOUND business code to the same actionable CliError with SKILL_NOT_FOUND code and exit 1', async () => {
     const svc = makeDetailService({ Code: 'NOT_FOUND', Success: false, Message: 'missing' });
 
     await expect(svc.getSkillDownload('ghost')).rejects.toMatchObject({
-      code: 'NOT_FOUND',
+      code: 'SKILL_NOT_FOUND',
       message: expect.stringContaining('Skill not found: ghost'),
+      exitCode: 1,
     });
+  });
+});
+
+describe('SkillsHubService.searchSkills — Provider object normalization', () => {
+  it('derives publisher from Provider.ProviderName (PascalCase)', async () => {
+    const svc = makeService(okEnvelope([pascalItem()]));
+
+    const out = await svc.searchSkills({ query: 'pdf' });
+
+    expect(out.results[0].publisher).toBe('千问 AI 平台');
+  });
+
+  it('tolerates the camelCase provider object spelling on a PascalCase item', async () => {
+    const svc = makeService(
+      okEnvelope([
+        pascalItem({
+          Provider: null,
+          provider: { providerId: '@ns', providerName: 'Camel NS' },
+        }),
+      ]),
+    );
+
+    const out = await svc.searchSkills({ query: 'pdf' });
+
+    expect(out.results[0].publisher).toBe('Camel NS');
+  });
+
+  it('falls back to ProviderId when ProviderName is null', async () => {
+    const svc = makeService(
+      okEnvelope([pascalItem({ Provider: { ProviderId: '@qianwen-ai', ProviderName: null } })]),
+    );
+
+    const out = await svc.searchSkills({ query: 'pdf' });
+
+    expect(out.results[0].publisher).toBe('@qianwen-ai');
+  });
+
+  it('falls back to ProviderId when ProviderName is empty', async () => {
+    const svc = makeService(
+      okEnvelope([pascalItem({ Provider: { ProviderId: '@qianwen-ai', ProviderName: '' } })]),
+    );
+
+    const out = await svc.searchSkills({ query: 'pdf' });
+
+    expect(out.results[0].publisher).toBe('@qianwen-ai');
+  });
+
+  it('ignores the deprecated AuthorName field entirely', async () => {
+    const svc = makeService(okEnvelope([pascalItem({ AuthorName: 'legacy-author' })]));
+
+    const out = await svc.searchSkills({ query: 'pdf' });
+
+    expect(out.results[0].publisher).toBe('千问 AI 平台');
+  });
+
+  it('emits an empty publisher and a bare slug when the Provider object is missing', async () => {
+    const svc = makeService(okEnvelope([pascalItem({ Provider: null })]));
+
+    const out = await svc.searchSkills({ query: 'pdf' });
+
+    expect(out.results[0].publisher).toBe('');
+    expect(out.results[0].slug).toBe('pdf-extractor');
+  });
+
+  it('composes the full slug from ProviderId and ResourceName', async () => {
+    const svc = makeService(okEnvelope([pascalItem()]));
+
+    const out = await svc.searchSkills({ query: 'pdf' });
+
+    expect(out.results[0].slug).toBe('@qianwen-ai/pdf-extractor');
+  });
+
+  it('keeps the bare ResourceName as slug when ProviderId is missing', async () => {
+    const svc = makeService(okEnvelope([pascalItem({ Provider: { ProviderName: 'No Id' } })]));
+
+    const out = await svc.searchSkills({ query: 'pdf' });
+
+    expect(out.results[0].slug).toBe('pdf-extractor');
+  });
+
+  it('maps RequiresApiKey=true into the result', async () => {
+    const svc = makeService(okEnvelope([pascalItem({ RequiresApiKey: true })]));
+
+    const out = await svc.searchSkills({ query: 'pdf' });
+
+    expect(out.results[0].requiresApiKey).toBe(true);
+  });
+
+  it('maps RequiresApiKey=false into the result as an explicit false', async () => {
+    const svc = makeService(okEnvelope([pascalItem({ RequiresApiKey: false })]));
+
+    const out = await svc.searchSkills({ query: 'pdf' });
+
+    expect(out.results[0].requiresApiKey).toBe(false);
+  });
+
+  it('omits the requiresApiKey key when the server drops the field or sends null', async () => {
+    const missing = makeService(okEnvelope([pascalItem()]));
+    const missingOut = await missing.searchSkills({ query: 'pdf' });
+    expect('requiresApiKey' in missingOut.results[0]).toBe(false);
+
+    const nullItem = makeService(okEnvelope([pascalItem({ RequiresApiKey: null })]));
+    const nullOut = await nullItem.searchSkills({ query: 'pdf' });
+    expect('requiresApiKey' in nullOut.results[0]).toBe(false);
+  });
+});
+
+describe('SkillsHubService.searchSkills — exact slug hoisting with full slugs', () => {
+  const items = [
+    pascalItem({ ResourceName: 'alpha' }),
+    pascalItem({ ResourceName: 'pdf' }),
+    pascalItem({ ResourceName: 'beta' }),
+  ];
+
+  it('hoists an exact full-slug query match to the front', async () => {
+    const svc = makeService(okEnvelope(items));
+
+    const out = await svc.searchSkills({ query: '@qianwen-ai/pdf' });
+
+    expect(out.results.map((r) => r.slug)).toEqual([
+      '@qianwen-ai/pdf',
+      '@qianwen-ai/alpha',
+      '@qianwen-ai/beta',
+    ]);
+  });
+
+  it('does not hoist a bare-name query against full-slug items', async () => {
+    const svc = makeService(okEnvelope(items));
+
+    const out = await svc.searchSkills({ query: 'pdf' });
+
+    expect(out.results.map((r) => r.slug)).toEqual([
+      '@qianwen-ai/alpha',
+      '@qianwen-ai/pdf',
+      '@qianwen-ai/beta',
+    ]);
+  });
+
+  it('keeps legacy hoisting for items without a Provider object', async () => {
+    const svc = makeService(
+      okEnvelope([
+        pascalItem({ ResourceName: 'alpha', Provider: null }),
+        pascalItem({ ResourceName: 'pdf', Provider: null }),
+        pascalItem({ ResourceName: 'beta', Provider: null }),
+      ]),
+    );
+
+    const out = await svc.searchSkills({ query: 'pdf' });
+
+    expect(out.results.map((r) => r.slug)).toEqual(['pdf', 'alpha', 'beta']);
+  });
+});
+
+describe('SkillsHubService.getSkillDownload — Provider parameter', () => {
+  const downloadData: RawSkillDownloadData = {
+    OssUrl: 'https://oss.test.qianwenai.com/skill.zip?sig=abc',
+    ExpiresAt: '2026-07-27T20:00:00+08:00',
+  };
+
+  it('passes Provider alongside SkillName and SkillVersion when all are given', async () => {
+    const capture: { opts?: { params?: Record<string, unknown> } } = {};
+    const svc = makeDetailService(hubEnvelope(downloadData), capture);
+
+    await svc.getSkillDownload('pdf-extractor', '1.1.0', '@qianwen-ai');
+
+    expect(capture.opts?.params).toEqual({
+      SkillName: 'pdf-extractor',
+      Provider: '@qianwen-ai',
+      SkillVersion: '1.1.0',
+    });
+  });
+
+  it('passes Provider without SkillVersion', async () => {
+    const capture: { opts?: { params?: Record<string, unknown> } } = {};
+    const svc = makeDetailService(hubEnvelope(downloadData), capture);
+
+    await svc.getSkillDownload('pdf-extractor', undefined, '@qianwen-ai');
+
+    expect(capture.opts?.params).toEqual({
+      SkillName: 'pdf-extractor',
+      Provider: '@qianwen-ai',
+    });
+  });
+
+  it('omits Provider entirely in legacy bare-slug mode', async () => {
+    const capture: { opts?: { params?: Record<string, unknown> } } = {};
+    const svc = makeDetailService(hubEnvelope(downloadData), capture);
+
+    await svc.getSkillDownload('pdf-extractor');
+
+    expect(capture.opts?.params).toEqual({ SkillName: 'pdf-extractor' });
+  });
+});
+
+describe('SkillsHubService.getSkillDetail — provider parameter', () => {
+  it('does not send Provider when it is omitted (regression)', async () => {
+    const capture: { opts?: { params?: Record<string, unknown> } } = {};
+    const svc = makeDetailService(hubEnvelope(detailData()), capture);
+
+    await svc.getSkillDetail('pdf-extractor');
+
+    expect(capture.opts?.params).toEqual({
+      SkillName: 'pdf-extractor',
+      Language: site.defaults.language,
+    });
+  });
+
+  it('passes Provider through when explicitly provided', async () => {
+    const capture: { opts?: { params?: Record<string, unknown> } } = {};
+    const svc = makeDetailService(hubEnvelope(detailData()), capture);
+
+    await svc.getSkillDetail('pdf-extractor', '@qianwen-ai');
+
+    expect(capture.opts?.params).toEqual({
+      SkillName: 'pdf-extractor',
+      Language: site.defaults.language,
+      Provider: '@qianwen-ai',
+    });
+  });
+});
+
+// ── Pack collection actions (getPackDownload) ──
+
+const manifestObj = (overrides: Partial<PackManifest> = {}): PackManifest => ({
+  skills: [
+    { skillName: 'skill-a', provider: '@qianwen-ai', version: '0.0.1' },
+    { skillName: 'skill-b', provider: '@other-ns', version: '0.0.2' },
+  ],
+  packName: 'test-pack',
+  displayName: 'Test Pack',
+  summary: 'pack summary',
+  skillsNames: ['skill-a', 'skill-b'],
+  ...overrides,
+});
+
+function packDownloadEnvelope(
+  manifest: unknown,
+  overrides: Partial<RawPackDownloadData> = {},
+): RawHubEnvelope<RawPackDownloadData> {
+  return hubEnvelope({
+    OssUrl: 'https://oss.test.qianwenai.com/pack.zip?Signature=abc',
+    Sha256: 'ab'.repeat(32),
+    ExpiresAt: '2026-09-09T20:00:00.347527135+08:00',
+    Manifest: manifest as RawPackDownloadData['Manifest'],
+    ...overrides,
+  });
+}
+
+describe('SkillsHubService.getPackDownload — call contract', () => {
+  it('passes only CollectionName with authOptional to HubSkillCollectionDownload', async () => {
+    const capture: { opts?: { params?: Record<string, unknown> } } = {};
+    const svc = makeDetailService(packDownloadEnvelope(manifestObj()), capture);
+
+    await svc.getPackDownload('test-pack');
+
+    expect(capture.opts).toMatchObject({
+      product: 'WebsitePortal',
+      action: 'HubSkillCollectionDownload',
+      authOptional: true,
+    });
+    expect(capture.opts?.params).toEqual({ CollectionName: 'test-pack' });
+  });
+});
+
+describe('SkillsHubService.getPackDownload — response parsing and error mapping', () => {
+  it('returns ossUrl/sha256/expiresAt/manifest verbatim', async () => {
+    const svc = makeDetailService(packDownloadEnvelope(manifestObj()));
+
+    const out = await svc.getPackDownload('test-pack');
+
+    expect(out).toEqual({
+      ossUrl: 'https://oss.test.qianwenai.com/pack.zip?Signature=abc',
+      sha256: 'ab'.repeat(32),
+      expiresAt: '2026-09-09T20:00:00.347527135+08:00',
+      manifest: manifestObj(),
+    });
+  });
+
+  it('parses a JSON-string manifest into a pre-parsed object', async () => {
+    const svc = makeDetailService(packDownloadEnvelope(JSON.stringify(manifestObj())));
+
+    const out = await svc.getPackDownload('test-pack');
+
+    expect(out.manifest).toEqual(manifestObj());
+    expect(out.manifest.skills[0].version).toBe('0.0.1');
+  });
+
+  it('passes a pre-parsed object manifest through (POC §10.1)', async () => {
+    const svc = makeDetailService(packDownloadEnvelope(manifestObj()));
+
+    const out = await svc.getPackDownload('test-pack');
+
+    expect(out.manifest.skills).toHaveLength(2);
+    expect(out.manifest.packName).toBe('test-pack');
+  });
+
+  it('tolerates a legacy top-level type field in the manifest (pre 09-07 format)', async () => {
+    const svc = makeDetailService(
+      packDownloadEnvelope(JSON.stringify(manifestObj({ type: '千问AI平台技能市场技能包' }))),
+    );
+
+    const out = await svc.getPackDownload('test-pack');
+
+    expect(out.manifest.type).toBe('千问AI平台技能市场技能包');
+    expect(out.manifest.skills).toHaveLength(2);
+  });
+
+  it('throws PACK_EMPTY when manifest.skills is an empty array', async () => {
+    const svc = makeDetailService(
+      packDownloadEnvelope(JSON.stringify(manifestObj({ skills: [] }))),
+    );
+
+    await expect(svc.getPackDownload('test-pack')).rejects.toMatchObject({
+      code: 'PACK_EMPTY',
+      message: 'Skill pack is empty: test-pack.',
+      exitCode: 1,
+    });
+  });
+
+  it('throws PACK_EMPTY when manifest.skills is missing or null', async () => {
+    const missing = makeDetailService(
+      packDownloadEnvelope(JSON.stringify({ packName: 'test-pack', displayName: 'Test Pack' })),
+    );
+    await expect(missing.getPackDownload('test-pack')).rejects.toMatchObject({
+      code: 'PACK_EMPTY',
+    });
+
+    const nullSkills = makeDetailService(
+      packDownloadEnvelope(JSON.stringify({ packName: 'test-pack', skills: null })),
+    );
+    await expect(nullSkills.getPackDownload('test-pack')).rejects.toMatchObject({
+      code: 'PACK_EMPTY',
+    });
+  });
+
+  it('throws PACK_EMPTY instead of a raw SyntaxError on invalid JSON', async () => {
+    const svc = makeDetailService(packDownloadEnvelope('{not json'));
+
+    await expect(svc.getPackDownload('test-pack')).rejects.toMatchObject({ code: 'PACK_EMPTY' });
+    await expect(svc.getPackDownload('test-pack')).rejects.toBeInstanceOf(CliError);
+  });
+
+  it('maps a NOT_FOUND business envelope to PACK_NOT_FOUND with exit code 1', async () => {
+    const svc = makeDetailService({ Code: 'NOT_FOUND', Success: false, Message: 'missing' });
+
+    await expect(svc.getPackDownload('ghost-pack')).rejects.toMatchObject({
+      code: 'PACK_NOT_FOUND',
+      message: 'Skill pack not found: ghost-pack.',
+      exitCode: 1,
+    });
+    await expect(svc.getPackDownload('ghost-pack')).rejects.toBeInstanceOf(CliError);
   });
 });

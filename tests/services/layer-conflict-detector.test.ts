@@ -77,9 +77,7 @@ describe('LayerConflictDetector', () => {
 
       const report = detector.detect([TEMPERATURE], { parameters: { temperature: 0.9 } });
 
-      expect(report.conflicts).toEqual([
-        { flag: '--temperature', path: 'parameters.temperature' },
-      ]);
+      expect(report.conflicts).toEqual([{ flag: '--temperature', path: 'parameters.temperature' }]);
     });
 
     it('reports both candidate paths when the body sets the semantic twice', () => {

@@ -28,8 +28,8 @@ const MAX_LIMIT = 50;
  * README exit-code alignment: auth-class codes exit 2, network/API-class
  * codes exit 3. AUTH_REQUIRED/TOKEN_EXPIRED (2) and NETWORK_ERROR (3)
  * already match the global EXIT_CODES table and pass through unchanged;
- * SERVER_ERROR/RATE_LIMITED/NOT_FOUND/API_ERROR carry other global values
- * and are normalized here at the command boundary — global codes untouched.
+ * SERVER_ERROR/RATE_LIMITED/API_ERROR carry other global values and are
+ * normalized here at the command boundary — global codes untouched.
  */
 const SKILLS_EXIT_BY_CODE: Record<string, 2 | 3> = {
   AUTH_REQUIRED: 2,
@@ -38,7 +38,6 @@ const SKILLS_EXIT_BY_CODE: Record<string, 2 | 3> = {
   SERVER_ERROR: 3,
   RATE_LIMITED: 3,
   API_ERROR: 3,
-  NOT_FOUND: 3,
 };
 
 export function toSkillsCliError(error: unknown): CliError {

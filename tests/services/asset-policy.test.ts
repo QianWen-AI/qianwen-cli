@@ -54,7 +54,11 @@ describe('AssetPolicy', () => {
     it('forwards an http URL unchanged', async () => {
       const policy = new AssetPolicy(makeDeps());
 
-      const asset = await policy.resolve('http://mock-api.test.qianwenai.com/a.png', CTX, UPLOAD_ONLY);
+      const asset = await policy.resolve(
+        'http://mock-api.test.qianwenai.com/a.png',
+        CTX,
+        UPLOAD_ONLY,
+      );
 
       expect(asset.delivery).toBe('public-url');
     });
@@ -80,7 +84,11 @@ describe('AssetPolicy', () => {
     it('attaches no extra headers for a public URL', async () => {
       const policy = new AssetPolicy(makeDeps());
 
-      const asset = await policy.resolve('https://mock-api.test.qianwenai.com/a.png', CTX, UPLOAD_ONLY);
+      const asset = await policy.resolve(
+        'https://mock-api.test.qianwenai.com/a.png',
+        CTX,
+        UPLOAD_ONLY,
+      );
 
       expect(asset.extraHeaders).toBeUndefined();
     });
@@ -177,9 +185,7 @@ describe('AssetPolicy', () => {
     });
 
     it('encodes the actual file bytes', async () => {
-      const policy = new AssetPolicy(
-        makeDeps({ readFileBytes: () => Buffer.from('hello-bytes') }),
-      );
+      const policy = new AssetPolicy(makeDeps({ readFileBytes: () => Buffer.from('hello-bytes') }));
 
       const asset = await policy.resolve('/tmp/a.png', CTX, BASE64_ONLY);
 
@@ -338,11 +344,7 @@ describe('AssetPolicy', () => {
     it('still forwards a public URL when no local delivery is permitted', async () => {
       const policy = new AssetPolicy(makeDeps());
 
-      const asset = await policy.resolve(
-        'https://mock-api.test.qianwenai.com/a.png',
-        CTX,
-        NEITHER,
-      );
+      const asset = await policy.resolve('https://mock-api.test.qianwenai.com/a.png', CTX, NEITHER);
 
       expect(asset.delivery).toBe('public-url');
     });

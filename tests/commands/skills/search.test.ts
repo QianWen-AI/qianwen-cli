@@ -2,7 +2,9 @@
  * Tests for `skills search` — behavior contract coverage:
  * --limit validation (exit 1, exact wording in text/table, structured JSON
  * in json), JSON shape { query, results }, empty query pass-through, empty
- * results exit 0, tri-state rendering and the README exit-code contract
+ * results exit 0, full-slug display adaptation (Name=DisplayName,
+ * Slug=@provider/name, publisher=ProviderName across the three formats),
+ * tri-state rendering and the README exit-code contract
  * (2 = auth, 3 = network/API).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -66,18 +68,18 @@ const sample: SkillsSearchResult = {
   totalCount: 2,
   results: [
     {
-      slug: 'pdf-extractor',
+      slug: '@qianwen-ai/pdf-extractor',
       name: 'PDF Extractor',
       description: 'Extract text from PDFs',
-      publisher: 'acme',
+      publisher: '千问 AI 平台',
       currentVersion: '1.2.0',
       verified: true,
     },
     {
-      slug: 'pdf-merge',
+      slug: '@qianwen-ai-test/pdf-merge',
       name: 'PDF Merge',
       description: 'Merge PDF files',
-      publisher: 'beta',
+      publisher: '千问 AI 测试',
       verified: false,
     },
   ],
@@ -246,7 +248,7 @@ describe('skills search — rendering modes', () => {
     expect(r.exitCode).toBeUndefined();
     expect(renderWithInkSpy).not.toHaveBeenCalled();
     expect(renderInteractiveSpy).not.toHaveBeenCalled();
-    expect(r.stdout).toContain('pdf-extractor');
+    expect(r.stdout).toContain('@qianwen-ai/pdf-extractor');
   });
 
   it('table mode mounts the interactive table with the full result set', async () => {
@@ -261,8 +263,8 @@ describe('skills search — rendering modes', () => {
     expect(element.props.totalItems).toBe(2);
     expect(element.props.perPage).toBe(2);
     expect(element.props.initialRows).toHaveLength(2);
-    expect(element.props.initialRows[0].slug).toBe('pdf-extractor');
-    expect(element.props.initialRows[1].slug).toBe('pdf-merge');
+    expect(element.props.initialRows[0].slug).toBe('@qianwen-ai/pdf-extractor');
+    expect(element.props.initialRows[1].slug).toBe('@qianwen-ai-test/pdf-merge');
     expect(element.props.title).toBe('Skills Search \u00b7 "pdf"');
     expect(element.props.subtitle).toContain('2 skills');
     expect(element.props.subtitle).toContain('skills install <slug>');
@@ -275,6 +277,43 @@ describe('skills search — rendering modes', () => {
     expect(renderWithInkSpy).not.toHaveBeenCalled();
     expect(renderInteractiveSpy).not.toHaveBeenCalled();
     expect(r.stdout).toContain('No skills found.');
+  });
+});
+
+describe('skills search — full slug display adaptation', () => {
+  it('carries the full slug verbatim in JSON output', async () => {
+    stubSearch(sample);
+    const r = await runCommand(build, ['skills', 'search', 'pdf', '--format', 'json']);
+    const payload = JSON.parse(r.stdout);
+    expect(payload.results[0].slug).toBe('@qianwen-ai/pdf-extractor');
+    expect(payload.results[1].slug).toBe('@qianwen-ai-test/pdf-merge');
+  });
+
+  it('renders the display name and the full slug on the same line in text mode', async () => {
+    stubSearch(sample);
+    const r = await runCommand(build, ['skills', 'search', 'pdf', '--format', 'text']);
+    const line = r.stdout.split('\n').find((l) => l.includes('PDF Extractor'));
+    expect(line).toBeDefined();
+    expect(line).toContain('@qianwen-ai/pdf-extractor');
+  });
+
+  it('passes provider names through in all three formats', async () => {
+    stubSearch(sample);
+    const json = await runCommand(build, ['skills', 'search', 'pdf', '--format', 'json']);
+    expect(JSON.parse(json.stdout).results[0].publisher).toBe('千问 AI 平台');
+    const text = await runCommand(build, ['skills', 'search', 'pdf', '--format', 'text']);
+    expect(text.stdout).toContain('千问 AI 平台');
+  });
+
+  it('table rows carry full slugs, display names and provider names', async () => {
+    stubSearch(sample);
+    await runCommand(build, ['skills', 'search', 'pdf', '--format', 'table']);
+    const element = renderInteractiveSpy.mock.calls[0]![0];
+    expect(element.props.initialRows[0]).toMatchObject({
+      slug: '@qianwen-ai/pdf-extractor',
+      name: 'PDF Extractor',
+      publisher: '千问 AI 平台',
+    });
   });
 });
 

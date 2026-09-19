@@ -214,6 +214,21 @@ export function extractZipTo(buf: Buffer, destDir: string): void {
   }
 }
 
+/**
+ * Read one file entry's decoded bytes by exact path (validated against the
+ * Central Directory size and CRC-32) — used for nested payloads such as pack
+ * member zips inside a pack archive. Throws ZipReadError when the path is
+ * absent from the archive.
+ */
+export function readZipEntryByPath(buf: Buffer, entryPath: string): Buffer {
+  const entries = readZipEntries(buf);
+  const entry = entries.find((e) => e.path === entryPath && !e.isDirectory);
+  if (!entry) {
+    throw new ZipReadError(`Zip entry not found: ${entryPath}`);
+  }
+  return readEntryData(buf, entry);
+}
+
 // O_NOFOLLOW closes the check→open window against a symlink swapped in
 // between; capability-detected because not every platform exposes it (the
 // exclusive-create fallback still refuses to follow an existing symlink).
@@ -276,15 +291,19 @@ function readEntryData(buf: Buffer, entry: ZipEntry): Buffer {
   const raw = buf.subarray(dataStart, dataEnd);
   let data: Buffer;
   if (entry.method === METHOD_DEFLATE) {
-    try {
-      // maxOutputLength caps inflation at the declared size, so a bomb fails
-      // during decompression instead of after allocating its full payload.
-      data = inflateRawSync(raw, { maxOutputLength: entry.uncompressedSize });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE') {
-        throw new ZipReadError(`Zip entry inflates beyond its declared size: ${entry.path}`);
+    if (entry.uncompressedSize === 0) {
+      data = Buffer.alloc(0);
+    } else {
+      try {
+        // maxOutputLength caps inflation at the declared size, so a bomb fails
+        // during decompression instead of after allocating its full payload.
+        data = inflateRawSync(raw, { maxOutputLength: entry.uncompressedSize });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE') {
+          throw new ZipReadError(`Zip entry inflates beyond its declared size: ${entry.path}`);
+        }
+        throw new ZipReadError(`Failed to decompress zip entry: ${entry.path}`);
       }
-      throw new ZipReadError(`Failed to decompress zip entry: ${entry.path}`);
     }
   } else {
     data = Buffer.from(raw);

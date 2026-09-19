@@ -148,7 +148,11 @@ describe('TtsWebSocketClient', () => {
       'message',
       Buffer.from(
         JSON.stringify({
-          header: { event: 'task-failed', error_message: 'Model not exist.', error_code: 'InvalidParameter' },
+          header: {
+            event: 'task-failed',
+            error_message: 'Model not exist.',
+            error_code: 'InvalidParameter',
+          },
         }),
       ),
       false,

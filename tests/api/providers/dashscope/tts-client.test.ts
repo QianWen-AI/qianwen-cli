@@ -24,9 +24,7 @@ function makeTransport(overrides: Partial<DashScopeTransport> = {}): DashScopeTr
 describe('TTSClient', () => {
   describe('endpoint', () => {
     it('targets the multimodal generation synthesis path', () => {
-      expect(SPEECH_SYNTHESIS_PATH).toBe(
-        '/api/v1/services/aigc/multimodal-generation/generation',
-      );
+      expect(SPEECH_SYNTHESIS_PATH).toBe('/api/v1/services/aigc/multimodal-generation/generation');
     });
   });
 

@@ -74,7 +74,10 @@ describe('DefaultModelResolver', () => {
     it('distinguishes entries by task mode', async () => {
       const resolver = new DefaultModelResolver(
         makeDeps({
-          readCache: () => ({ 'video generate:t2v': 'wan2.7-t2v', 'video generate:i2v': 'wan2.7-i2v' }),
+          readCache: () => ({
+            'video generate:t2v': 'wan2.7-t2v',
+            'video generate:i2v': 'wan2.7-i2v',
+          }),
         }),
       );
 

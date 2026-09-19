@@ -1,13 +1,16 @@
 /**
- * Tests for `skills install` — behavior contract coverage:
- * slug validation (exit 1, structured JSON in json / exact wording in text),
- * --dir preflight (existing writable directory, exit 1 on failure) and
- * pass-through, JSON shape { slug, version, outcome, targetDir, security,
- * sha256 }, tri-state rendering, mode/status summary rows, anonymous usage,
- * and the README exit-code contract (2 = auth, 3 = network/API,
- * 1 = install/conflict failures).
+ * Tests for `skills install` — behavior contract coverage: dual-format slug
+ * input (full `@provider/slug` two-level branch + bare-slug compatibility
+ * branch), slug validation (INVALID_SLUG, exit 1, structured JSON in json /
+ * exact wording in text), --dir preflight (existing writable directory,
+ * exit 1 on failure) and pass-through, JSON shape { slug, version, outcome,
+ * targetDir, sha256 }, tri-state rendering, mode/status summary
+ * rows, anonymous usage, and the README exit-code contract (2 = auth,
+ * 3 = network/API, 1 = install/conflict failures).
  */
+import { Command } from 'commander';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { ReactElement } from 'react';
 import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -17,6 +20,8 @@ import type { ServiceContainer } from '../../../src/services/index.js';
 import type { SkillsInstallResult } from '../../../src/types/skills.js';
 import type { AgentDirSelection } from '../../../src/ui/AgentDirPrompt.js';
 import { CliError } from '../../../src/utils/errors.js';
+import { getCommandExamples } from '../../../src/utils/commander-helpers.js';
+import { getKnownAgents } from '../../../src/utils/agent-dirs.js';
 import {
   renderInkForTest,
   clearRenderedFrames,
@@ -27,13 +32,22 @@ const holder: { services: ServiceContainer } = { services: makeMockServices() };
 let workDir: string;
 let prevCwd: string;
 
-const { renderWithInkSpy, isRecognizedAgentDirMock, promptAgentDirMock } = vi.hoisted(() => ({
-  renderWithInkSpy: vi.fn<(el: any) => Promise<void>>(),
+let prevStdinIsTTY: boolean | undefined;
+
+const {
+  renderWithInkSpy,
+  isRecognizedAgentDirMock,
+  promptAgentDirMock,
+  promptSkillOverrideConfirmMock,
+} = vi.hoisted(() => ({
+  renderWithInkSpy: vi.fn<(el: ReactElement) => Promise<void>>(),
   isRecognizedAgentDirMock: vi.fn<(resolvedPath: string) => boolean>(),
   promptAgentDirMock:
     vi.fn<
       (defaultPath: string, agents: unknown[], slug: string) => Promise<AgentDirSelection | null>
     >(),
+  promptSkillOverrideConfirmMock:
+    vi.fn<(info: unknown, slug: string, version: string) => Promise<boolean>>(),
 }));
 
 vi.mock('../../../src/services/index.js', () => ({
@@ -67,6 +81,9 @@ vi.mock('../../../src/utils/agent-dirs.js', async (importOriginal) => {
 vi.mock('../../../src/ui/AgentDirPrompt.js', () => ({
   promptAgentDir: promptAgentDirMock,
 }));
+vi.mock('../../../src/ui/SkillOverrideConfirm.js', () => ({
+  promptSkillOverrideConfirm: promptSkillOverrideConfirmMock,
+}));
 
 import { registerSkillsInstallCommand } from '../../../src/commands/skills/install.js';
 
@@ -86,16 +103,21 @@ beforeEach(() => {
   isRecognizedAgentDirMock.mockReturnValue(true);
   promptAgentDirMock.mockReset();
   promptAgentDirMock.mockResolvedValue(null);
+  promptSkillOverrideConfirmMock.mockReset();
+  promptSkillOverrideConfirmMock.mockResolvedValue(false);
   // Run every case from a throwaway cwd: invocations without --dir install
   // straight into the current directory and must never touch the repository
   // working tree.
   prevCwd = process.cwd();
+  prevStdinIsTTY = process.stdin.isTTY;
+  Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
   workDir = mkdtempSync(path.join(tmpdir(), 'qianwen-install-cmd-'));
   process.chdir(workDir);
 });
 
 afterEach(() => {
   process.chdir(prevCwd);
+  Object.defineProperty(process.stdin, 'isTTY', { value: prevStdinIsTTY, configurable: true });
   rmSync(workDir, { recursive: true, force: true });
 });
 
@@ -126,6 +148,14 @@ const sampleDetail = {
   auditTime: '2026-01-01T00:00:00Z',
   latestVersion: '1.2.0',
   versions: [],
+  provider: '',
+};
+
+const FULL_SLUG = '@qianwen-ai/pdf-extractor';
+const fullSample: SkillsInstallResult = {
+  ...sample,
+  slug: FULL_SLUG,
+  targetDir: '/tmp/skills/pdf-extractor',
 };
 
 function stubInstall(result: SkillsInstallResult, calls?: Array<Record<string, unknown>>) {
@@ -134,8 +164,31 @@ function stubInstall(result: SkillsInstallResult, calls?: Array<Record<string, u
       getSkillDetail: async () => sampleDetail,
     },
     skillsInstallService: {
+      precheckSlugConflict: () => null,
       install: async (opts: Record<string, unknown>) => {
         calls?.push(opts);
+        return result;
+      },
+    },
+  });
+}
+
+function stubInstallCapture(
+  result: SkillsInstallResult,
+  installCalls: Array<Record<string, unknown>>,
+  detailCalls: Array<{ name: string; provider?: string }>,
+) {
+  holder.services = makeMockServices({
+    skillsHubService: {
+      getSkillDetail: async (name: string, provider?: string) => {
+        detailCalls.push({ name, provider });
+        return sampleDetail;
+      },
+    },
+    skillsInstallService: {
+      precheckSlugConflict: () => null,
+      install: async (opts: Record<string, unknown>) => {
+        installCalls.push(opts);
         return result;
       },
     },
@@ -148,6 +201,7 @@ function stubInstallError(error: unknown) {
       getSkillDetail: async () => sampleDetail,
     },
     skillsInstallService: {
+      precheckSlugConflict: () => null,
       install: async () => {
         throw error;
       },
@@ -170,42 +224,71 @@ async function runCapturingExitCode(argv: string[]) {
 const ANSI_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
 const stripAnsi = (s: string) => s.replace(ANSI_PATTERN, '');
 
+const INVALID_SLUGS = [
+  '@ns/abc.def',
+  '@ns/abc/def',
+  '@/abc',
+  '@ns/',
+  '',
+  'abc.def',
+  '../evil',
+  'has space',
+  'x'.repeat(129),
+  '@qianwen-ai/con',
+  '@qianwen-ai/prn',
+  'nul',
+  'aux',
+  'com1',
+  'lpt1',
+];
+
 describe('skills install — slug validation (exit 1)', () => {
   // '-leading' is intentionally absent: commander intercepts it as an
   // unknown option before the action-level slug validation runs.
-  it.each(['../evil', 'has space', '_leading', 'trailing-', 'dot.name', 'a'.repeat(65)])(
-    'rejects invalid slug %s with structured JSON before any service call',
+  it.each(INVALID_SLUGS)(
+    'rejects invalid slug %j with structured JSON before any service call',
     async (bad) => {
-      const calls: Array<Record<string, unknown>> = [];
-      stubInstall(sample, calls);
+      const installCalls: Array<Record<string, unknown>> = [];
+      const detailCalls: Array<{ name: string; provider?: string }> = [];
+      stubInstallCapture(sample, installCalls, detailCalls);
       const r = await runCommand(build, ['skills', 'install', bad, '--format', 'json']);
       expect(r.exitCode).toBe(1);
       expect(JSON.parse(r.stderr)).toEqual({
         error: {
-          code: 'INVALID_ARGUMENT',
-          message:
-            'Invalid skill name: must be 1-64 characters of letters, digits, ' +
-            'hyphens or underscores, starting and ending with a letter or digit.',
+          code: 'INVALID_SLUG',
+          message: `Invalid Skill slug: ${bad}. Expected @<provider>/slug.`,
           exit_code: 1,
         },
       });
       expect(r.stdout).toBe('');
-      expect(calls).toHaveLength(0);
+      expect(installCalls).toHaveLength(0);
+      expect(detailCalls).toHaveLength(0);
     },
   );
 
   it('keeps the exact plain wording on stderr in text format (exit 1)', async () => {
-    const calls: Array<Record<string, unknown>> = [];
-    stubInstall(sample, calls);
-    const r = await runCapturingExitCode(['skills', 'install', '../evil', '--format', 'text']);
+    const installCalls: Array<Record<string, unknown>> = [];
+    const detailCalls: Array<{ name: string; provider?: string }> = [];
+    stubInstallCapture(sample, installCalls, detailCalls);
+    const r = await runCapturingExitCode(['skills', 'install', '@ns/abc.def', '--format', 'text']);
     expect(r.finalExit).toBe(1);
-    expect(r.stderr.trim()).toBe(
-      'Invalid skill name: must be 1-64 characters of letters, digits, ' +
-        'hyphens or underscores, starting and ending with a letter or digit.',
-    );
+    expect(r.stderr.trim()).toBe('Invalid Skill slug: @ns/abc.def. Expected @<provider>/slug.');
+    expect(r.stderr).not.toContain('\u001b[');
     expect(r.stdout).toBe('');
-    expect(calls).toHaveLength(0);
+    expect(installCalls).toHaveLength(0);
+    expect(detailCalls).toHaveLength(0);
   });
+
+  it.each(['_leading', 'trailing-', 'a'.repeat(65)])(
+    'accepts bare slug %j under the new rule',
+    async (slug) => {
+      const installCalls: Array<Record<string, unknown>> = [];
+      stubInstallCapture(sample, installCalls, []);
+      const r = await runCommand(build, ['skills', 'install', slug, '--format', 'json']);
+      expect(r.exitCode).toBeUndefined();
+      expect(installCalls).toHaveLength(1);
+    },
+  );
 
   it('accepts a single-character slug', async () => {
     const calls: Array<Record<string, unknown>> = [];
@@ -213,6 +296,135 @@ describe('skills install — slug validation (exit 1)', () => {
     const r = await runCommand(build, ['skills', 'install', 'a', '--format', 'json']);
     expect(r.exitCode).toBeUndefined();
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe('skills install — full slug input (flat path)', () => {
+  it('passes the raw full slug and the parsed slug object to the service', async () => {
+    const installCalls: Array<Record<string, unknown>> = [];
+    stubInstallCapture(sample, installCalls, []);
+    await runCommand(build, ['skills', 'install', FULL_SLUG, '--format', 'json']);
+    expect(installCalls[0]).toMatchObject({
+      slug: FULL_SLUG,
+      parsedSlug: {
+        provider: '@qianwen-ai',
+        skillName: 'pdf-extractor',
+        raw: FULL_SLUG,
+      },
+    });
+  });
+
+  it('queries the hub detail by the bare skill name part with provider', async () => {
+    const installCalls: Array<Record<string, unknown>> = [];
+    const detailCalls: Array<{ name: string; provider?: string }> = [];
+    stubInstallCapture(sample, installCalls, detailCalls);
+    await runCommand(build, ['skills', 'install', FULL_SLUG, '--format', 'table']);
+    expect(detailCalls).toEqual([{ name: 'pdf-extractor', provider: '@qianwen-ai' }]);
+  });
+
+  it('echoes the full slug in the JSON output', async () => {
+    stubInstall(fullSample);
+    const r = await runCommand(build, ['skills', 'install', FULL_SLUG, '--format', 'json']);
+    expect(JSON.parse(r.stdout).slug).toBe(FULL_SLUG);
+  });
+
+  it('renders the full slug in text mode', async () => {
+    stubInstall(fullSample);
+    const r = await runCommand(build, ['skills', 'install', FULL_SLUG, '--format', 'text']);
+    expect(r.stdout).toContain(FULL_SLUG);
+  });
+
+  it('shows the install location in the --dir banner (table only)', async () => {
+    stubInstall(fullSample);
+    const explicitDir = path.join(workDir, 'target');
+    mkdirSync(explicitDir, { recursive: true });
+    const r = await runCommand(build, [
+      'skills',
+      'install',
+      FULL_SLUG,
+      '--dir',
+      explicitDir,
+      '--format',
+      'table',
+    ]);
+    expect(r.stdout).toContain(`Install location: ${path.join(explicitDir, 'pdf-extractor')}`);
+  });
+
+  it('passes the full slug to the agent directory prompt (table mode)', async () => {
+    stubInstall(sample);
+    isRecognizedAgentDirMock.mockReturnValue(false);
+    promptAgentDirMock.mockResolvedValue(null);
+    await runCommand(build, ['skills', 'install', FULL_SLUG, '--format', 'table']);
+    expect(promptAgentDirMock.mock.calls[0]?.[2]).toBe(FULL_SLUG);
+  });
+});
+
+describe('skills install — bare slug input (compatibility branch)', () => {
+  it('queries the hub detail with the bare slug and installs without parsedSlug', async () => {
+    const installCalls: Array<Record<string, unknown>> = [];
+    const detailCalls: Array<{ name: string; provider?: string }> = [];
+    stubInstallCapture(sample, installCalls, detailCalls);
+    await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'json']);
+    expect(installCalls[0]).toEqual({ slug: 'pdf-extractor', baseDir: process.cwd() });
+    await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'table']);
+    expect(detailCalls).toEqual([{ name: 'pdf-extractor', provider: undefined }]);
+  });
+
+  it('suggests searching when the server rejects a bare slug query with SKILL_NOT_FOUND', async () => {
+    const installCalls: Array<Record<string, unknown>> = [];
+    holder.services = makeMockServices({
+      skillsHubService: {
+        getSkillDetail: async () => {
+          throw new CliError({
+            code: 'SKILL_NOT_FOUND',
+            message: 'Skill not found: pdf-extractor.',
+            exitCode: 1,
+          });
+        },
+      },
+      skillsInstallService: {
+        precheckSlugConflict: () => null,
+        install: async (opts: Record<string, unknown>) => {
+          installCalls.push(opts);
+          return sample;
+        },
+      },
+    });
+    const r = await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'table']);
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toContain('Skill not found: pdf-extractor.');
+    expect(r.stderr).toContain(
+      'Try searching first: skills search <keyword>, ' +
+        'then install with the full slug from the results.',
+    );
+    expect(installCalls).toHaveLength(0);
+  });
+});
+
+describe('skills install — agent scope context (table summary)', () => {
+  it('shows Ready to use globally when the agent selection carries global scope', async () => {
+    stubInstall(sample);
+    isRecognizedAgentDirMock.mockReturnValue(false);
+    const opencode = getKnownAgents().find((a) => a.name === 'opencode')!;
+    const selectedDir = path.join(workDir, 'global', 'opencode', 'skills');
+    promptAgentDirMock.mockResolvedValue({
+      path: selectedDir,
+      agent: opencode,
+      scope: 'global',
+    });
+    await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'table']);
+    expect(lastRenderedFrame() ?? '').toContain('Ready to use globally');
+  });
+});
+
+describe('skills install — command registration examples', () => {
+  it('advertises the full slug form in the install examples', () => {
+    const program = new Command();
+    const skills = program.command('skills');
+    const install = registerSkillsInstallCommand(skills);
+    const examples = getCommandExamples(install);
+    expect(examples.length).toBeGreaterThan(0);
+    expect(examples.some((e) => e.includes('@qianwen-ai/qianwen-find-skills'))).toBe(true);
   });
 });
 
@@ -244,7 +456,7 @@ describe('skills install — service call contract', () => {
 });
 
 describe('skills install — JSON output contract', () => {
-  it('emits { slug, version, outcome, targetDir, security, sha256 } on stdout only', async () => {
+  it('emits { slug, version, outcome, targetDir, sha256 } on stdout only', async () => {
     stubInstall(sample);
     const r = await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'json']);
     expect(r.exitCode).toBeUndefined();
@@ -254,7 +466,6 @@ describe('skills install — JSON output contract', () => {
       version: '1.2.0',
       outcome: 'installed',
       targetDir: '/tmp/skills/pdf-extractor',
-      security: 'safe',
       sha256: 'a'.repeat(64),
     });
   });
@@ -278,7 +489,6 @@ describe('skills install — JSON output contract', () => {
       version: '0.0.1',
       outcome: 'updated',
       targetDir: '/tmp/skills/pdf-extractor',
-      security: 'safe',
       sha256: 'a'.repeat(64),
       downgrade: { from: '0.0.2', to: '0.0.1' },
     });
@@ -355,8 +565,9 @@ describe('skills install — exit codes', () => {
       new CliError({
         code: 'UNMANAGED_CONFLICT',
         message:
-          "A directory named 'pdf-extractor' already exists at '/tmp/x' but is not managed " +
-          'by this CLI (missing or invalid .qianwen-skill.json). No changes were made.',
+          "The directory '/tmp/x' already exists but is not managed " +
+          'by this CLI (.qianwen-skill.json is missing or invalid). ' +
+          'Please rename or remove the directory, then run the command again. No changes were made this time.',
         exitCode: 1,
       }),
     );
@@ -364,7 +575,7 @@ describe('skills install — exit codes', () => {
     expect(r.exitCode).toBe(1);
     const payload = JSON.parse(r.stderr);
     expect(payload.error.code).toBe('UNMANAGED_CONFLICT');
-    expect(payload.error.message).toContain('No changes were made.');
+    expect(payload.error.message).toContain('No changes were made this time.');
     expect(r.stdout).toBe('');
   });
 
@@ -381,12 +592,12 @@ describe('skills install — exit codes', () => {
     expect(JSON.parse(r.stderr).error.code).toBe('DOWNLOAD_FAILED');
   });
 
-  it('remaps a NOT_FOUND CliError to exit 3', async () => {
+  it('passes a NOT_FOUND CliError through as exit 1', async () => {
     stubInstallError(
-      new CliError({ code: 'NOT_FOUND', message: 'Skill not found: ghost.', exitCode: 7 }),
+      new CliError({ code: 'NOT_FOUND', message: 'Skill not found: ghost.', exitCode: 1 }),
     );
     const r = await runCommand(build, ['skills', 'install', 'ghost', '--format', 'json']);
-    expect(r.exitCode).toBe(3);
+    expect(r.exitCode).toBe(1);
     expect(JSON.parse(r.stderr).error.code).toBe('NOT_FOUND');
   });
 
@@ -406,7 +617,7 @@ describe('skills install — exit codes', () => {
 });
 
 describe('agent directory detection', () => {
-  it('table 模式检测非 Agent 目录时触发 agent 选择提示并使用所选目录', async () => {
+  it('table mode triggers agent directory prompt for non-agent dir and uses selected directory', async () => {
     const calls: Array<Record<string, unknown>> = [];
     stubInstall(sample, calls);
     const selectedDir = path.join(workDir, '.agents', 'skills');
@@ -425,7 +636,7 @@ describe('agent directory detection', () => {
     expect(existsSync(selectedDir)).toBe(true);
   });
 
-  it('用户选择继续当前目录时安装到 cwd 且不创建子目录', async () => {
+  it('installs to cwd without creating subdirectory when user selects current directory', async () => {
     const calls: Array<Record<string, unknown>> = [];
     stubInstall(sample, calls);
     isRecognizedAgentDirMock.mockReturnValue(false);
@@ -437,7 +648,7 @@ describe('agent directory detection', () => {
     expect(existsSync(path.join(process.cwd(), 'skills'))).toBe(false);
   });
 
-  it('json/text 模式不触发 agent 选择提示', async () => {
+  it('json/text mode does not trigger agent directory prompt', async () => {
     isRecognizedAgentDirMock.mockReturnValue(false);
     for (const fmt of ['json', 'text']) {
       const calls: Array<Record<string, unknown>> = [];
@@ -452,7 +663,7 @@ describe('agent directory detection', () => {
     expect(promptAgentDirMock).not.toHaveBeenCalled();
   });
 
-  it('--dir 显式指定时跳过 agent 检测', async () => {
+  it('skips agent detection when --dir is explicitly specified', async () => {
     const calls: Array<Record<string, unknown>> = [];
     stubInstall(sample, calls);
     isRecognizedAgentDirMock.mockReturnValue(false);
@@ -473,7 +684,7 @@ describe('agent directory detection', () => {
     expect(calls[0]).toEqual({ slug: 'pdf-extractor', baseDir: explicitDir });
   });
 
-  it('当前目录已是已知 Agent 目录时不触发提示', async () => {
+  it('does not trigger prompt when cwd is a recognized agent directory', async () => {
     const calls: Array<Record<string, unknown>> = [];
     stubInstall(sample, calls);
     isRecognizedAgentDirMock.mockReturnValue(true);
@@ -485,7 +696,7 @@ describe('agent directory detection', () => {
     expect(calls[0]).toHaveProperty('preloadedDetail');
   });
 
-  it('用户取消选择时正常退出且不调用安装服务', async () => {
+  it('exits gracefully without calling install service when user cancels selection', async () => {
     const calls: Array<Record<string, unknown>> = [];
     stubInstall(sample, calls);
     isRecognizedAgentDirMock.mockReturnValue(false);
@@ -503,7 +714,7 @@ describe('agent directory detection', () => {
     expect(existsSync(path.join(process.cwd(), 'skills'))).toBe(false);
   });
 
-  it('rejects a non-existent slug before entering the directory prompt (table mode, exit 3)', async () => {
+  it('rejects a non-existent slug before entering the directory prompt (table mode, exit 1)', async () => {
     const installCalls: Array<Record<string, unknown>> = [];
     holder.services = makeMockServices({
       skillsHubService: {
@@ -511,11 +722,12 @@ describe('agent directory detection', () => {
           throw new CliError({
             code: 'NOT_FOUND',
             message: 'Skill not found: ghost.',
-            exitCode: 3,
+            exitCode: 1,
           });
         },
       },
       skillsInstallService: {
+        precheckSlugConflict: () => null,
         install: async (opts: Record<string, unknown>) => {
           installCalls.push(opts);
           return sample;
@@ -526,7 +738,7 @@ describe('agent directory detection', () => {
     promptAgentDirMock.mockResolvedValue(null);
     const r = await runCommand(build, ['skills', 'install', 'ghost', '--format', 'table']);
     // Must fail before the prompt is shown and before install is called.
-    expect(r.exitCode).toBe(3);
+    expect(r.exitCode).toBe(1);
     expect(r.stderr).toContain('Skill not found: ghost.');
     expect(promptAgentDirMock).not.toHaveBeenCalled();
     expect(installCalls).toHaveLength(0);
@@ -534,7 +746,7 @@ describe('agent directory detection', () => {
 });
 
 describe('skills install — --dir preflight validation', () => {
-  it('--dir 指向不存在路径时 text 格式以 exit 1 拒绝（纯文本无 ANSI，安装服务不被调用）', async () => {
+  it('text mode rejects with exit 1 when --dir points to non-existent path (plain text, no ANSI, install service not called)', async () => {
     const calls: Array<Record<string, unknown>> = [];
     stubInstall(sample, calls);
     const missingDir = path.join(workDir, 'does-not-exist');
@@ -557,7 +769,7 @@ describe('skills install — --dir preflight validation', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('--dir 指向不存在路径时 json 格式输出结构化错误（exit 1，安装服务不被调用）', async () => {
+  it('json mode outputs structured error with exit 1 when --dir points to non-existent path (install service not called)', async () => {
     const calls: Array<Record<string, unknown>> = [];
     stubInstall(sample, calls);
     const missingDir = path.join(workDir, 'does-not-exist');
@@ -584,7 +796,7 @@ describe('skills install — --dir preflight validation', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('--dir 指向不存在路径时 table 格式 \u2717 以基础红色标红（含 ANSI，文案不变）', async () => {
+  it('table mode renders cross mark in basic red (with ANSI) when --dir points to non-existent path', async () => {
     const calls: Array<Record<string, unknown>> = [];
     stubInstall(sample, calls);
     const missingDir = path.join(workDir, 'does-not-exist');
@@ -611,7 +823,7 @@ describe('skills install — --dir preflight validation', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('--dir 指向文件（非目录）时以 exit 1 拒绝并按不存在文案处理（json 结构化）', async () => {
+  it('rejects with exit 1 when --dir points to a file (not a directory), treated as non-existent (json structured)', async () => {
     const calls: Array<Record<string, unknown>> = [];
     stubInstall(sample, calls);
     const filePath = path.join(workDir, 'a-file');
@@ -639,7 +851,7 @@ describe('skills install — --dir preflight validation', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('--dir 目录存在但无写权限时以 exit 1 拒绝（json 结构化，安装服务不被调用）', async () => {
+  it('rejects with exit 1 when --dir exists but is not writable (json structured, install service not called)', async () => {
     const calls: Array<Record<string, unknown>> = [];
     stubInstall(sample, calls);
     const readonlyDir = path.join(workDir, 'readonly');
@@ -673,7 +885,7 @@ describe('skills install — --dir preflight validation', () => {
     }
   });
 
-  it('--dir 目录存在但无写权限时 text 格式保持既有纯文本文案（exit 1）', async () => {
+  it('text mode outputs plain-text error when --dir exists but is not writable (exit 1)', async () => {
     const calls: Array<Record<string, unknown>> = [];
     stubInstall(sample, calls);
     const readonlyDir = path.join(workDir, 'readonly');
@@ -702,10 +914,94 @@ describe('skills install — --dir preflight validation', () => {
       chmodSync(readonlyDir, 0o755);
     }
   });
+
+  it('rejects with ROOT_DIR_NOT_ALLOWED when --dir is filesystem root (json, exit 1)', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    stubInstall(sample, calls);
+    const r = await runCommand(build, [
+      'skills',
+      'install',
+      'pdf-extractor',
+      '--dir',
+      path.parse(workDir).root,
+      '--format',
+      'json',
+    ]);
+    expect(r.exitCode).toBe(1);
+    expect(JSON.parse(r.stderr)).toEqual({
+      error: {
+        code: 'ROOT_DIR_NOT_ALLOWED',
+        message:
+          'The installation base directory cannot be the filesystem root. Choose a Skills directory.',
+        exit_code: 1,
+      },
+    });
+    expect(r.stdout).toBe('');
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe('skills install — CWD root guard', () => {
+  it('rejects with ROOT_DIR_NOT_ALLOWED when CWD is filesystem root (text, exit 1)', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    stubInstall(sample, calls);
+    // Temporarily override cwd to return the filesystem root
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(path.parse(workDir).root);
+    try {
+      const r = await runCapturingExitCode([
+        'skills',
+        'install',
+        'pdf-extractor',
+        '--format',
+        'text',
+      ]);
+      expect(r.finalExit).toBe(1);
+      expect(r.stderr).toContain(
+        'The installation base directory cannot be the filesystem root. Choose a Skills directory.',
+      );
+      expect(r.stderr).not.toContain('\u001b[');
+      expect(r.stdout).toBe('');
+      expect(calls).toHaveLength(0);
+    } finally {
+      cwdSpy.mockRestore();
+    }
+  });
+
+  it('rejects with ROOT_DIR_NOT_ALLOWED when CWD is filesystem root (json, exit 1)', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    stubInstall(sample, calls);
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(path.parse(workDir).root);
+    try {
+      const r = await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'json']);
+      expect(r.exitCode).toBe(1);
+      expect(JSON.parse(r.stderr)).toEqual({
+        error: {
+          code: 'ROOT_DIR_NOT_ALLOWED',
+          message:
+            'The installation base directory cannot be the filesystem root. Choose a Skills directory.',
+          exit_code: 1,
+        },
+      });
+      expect(r.stdout).toBe('');
+      expect(calls).toHaveLength(0);
+    } finally {
+      cwdSpy.mockRestore();
+    }
+  });
+
+  it('does not reject when CWD is a normal directory', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    stubInstall(sample, calls);
+    // workDir is the current cwd set in beforeEach — a normal temp directory
+    const r = await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'json']);
+    expect(r.exitCode).toBeUndefined();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ baseDir: process.cwd() });
+  });
 });
 
 describe('skills install — --dir pre-install banner (table only)', () => {
-  it('table 模式在安装前输出显式目录信息块', async () => {
+  it('table mode outputs explicit directory info banner before install', async () => {
     stubInstall(sample);
     const explicitDir = path.join(workDir, 'target');
     mkdirSync(explicitDir, { recursive: true });
@@ -723,7 +1019,7 @@ describe('skills install — --dir pre-install banner (table only)', () => {
     expect(r.stdout).toContain(`Install location: ${path.join(explicitDir, 'pdf-extractor')}`);
   });
 
-  it('json/text 模式不输出该信息块', async () => {
+  it('json/text mode does not output the directory info banner', async () => {
     const explicitDir = path.join(workDir, 'target');
     mkdirSync(explicitDir, { recursive: true });
     for (const fmt of ['json', 'text']) {
@@ -744,7 +1040,7 @@ describe('skills install — --dir pre-install banner (table only)', () => {
 });
 
 describe('skills install — summary mode rows (three install modes)', () => {
-  it('默认当前目录模式：table 摘要首行为 ✓ Skill installed successfully 且行序为 Skill/Mode/Location/Status（无 Version/Security/SHA256）', async () => {
+  it('current directory mode: table summary starts with check Skill installed successfully, rows are Skill/Mode/Location/Status (no Version/Security/SHA256)', async () => {
     stubInstall(sample);
     await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'table']);
     const frame = lastRenderedFrame() ?? '';
@@ -764,19 +1060,19 @@ describe('skills install — summary mode rows (three install modes)', () => {
     expect(idx('Location')).toBeLessThan(idx('Status'));
   });
 
-  it('updated 结果：table 摘要首行为 ✓ Skill updated successfully', async () => {
+  it('updated outcome: table summary starts with check Skill updated successfully', async () => {
     stubInstall({ ...sample, outcome: 'updated' });
     await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'table']);
     expect(lastRenderedFrame() ?? '').toContain('\u2713 Skill updated successfully');
   });
 
-  it('noop 结果：table 摘要首行沿用现行文案并统一 ✓ 前缀格式', async () => {
+  it('noop outcome: table summary shows existing copy with unified check prefix', async () => {
     stubInstall({ ...sample, outcome: 'noop' });
     await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'table']);
     expect(lastRenderedFrame() ?? '').toContain('\u2713 Already installed \u2014 nothing to do');
   });
 
-  it('选择 Agent 模式：table 摘要含 Agent displayName 与 Ready to use in this project', async () => {
+  it('agent selection mode: table summary contains agent displayName and Ready to use in this project', async () => {
     stubInstall(sample);
     isRecognizedAgentDirMock.mockReturnValue(false);
     const selectedDir = path.join(workDir, '.agents', 'skills');
@@ -789,7 +1085,7 @@ describe('skills install — summary mode rows (three install modes)', () => {
     expect(frame).toContain('Ready to use in this project');
   });
 
-  it('--dir 模式：table 摘要含 Explicit directory (--dir) 与 Status: Installed', async () => {
+  it('--dir mode: table summary contains Explicit directory (--dir) and Status: Installed', async () => {
     stubInstall(sample);
     const explicitDir = path.join(workDir, 'target');
     mkdirSync(explicitDir, { recursive: true });
@@ -809,7 +1105,7 @@ describe('skills install — summary mode rows (three install modes)', () => {
     expect(frame).toContain('Installed');
   });
 
-  it('默认当前目录模式：text 输出首行结果横幅且仅含 skill/mode/location/status 四行明细', async () => {
+  it('current directory mode: text output starts with result banner and contains skill/mode/location/status rows', async () => {
     stubInstall(sample);
     const r = await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'text']);
     expect(r.stdout).toContain('\u2713 Skill installed successfully');
@@ -818,12 +1114,12 @@ describe('skills install — summary mode rows (three install modes)', () => {
     expect(idx('skill: pdf-extractor')).toBeLessThan(idx('mode: Current directory'));
     expect(idx('mode: Current directory')).toBeLessThan(idx('location: '));
     expect(idx('location: ')).toBeLessThan(idx('status: Installed'));
-    expect(r.stdout).not.toContain('version: ');
+    expect(r.stdout).toContain('version: ');
+    expect(r.stdout).toContain('sha256: ');
     expect(r.stdout).not.toContain('security: ');
-    expect(r.stdout).not.toContain('sha256: ');
   });
 
-  it('--dir 模式：text 输出含 explicit directory mode 行', async () => {
+  it('--dir mode: text output includes explicit directory mode line', async () => {
     stubInstall(sample);
     const explicitDir = path.join(workDir, 'target');
     mkdirSync(explicitDir, { recursive: true });
@@ -839,5 +1135,176 @@ describe('skills install — summary mode rows (three install modes)', () => {
     expect(r.stdout).toContain('\u2713 Skill installed successfully');
     expect(r.stdout).toContain('mode: Explicit directory (--dir)');
     expect(r.stdout).toContain('status: Installed');
+  });
+});
+
+describe('skills install — stdin non-TTY bypass', () => {
+  it('table mode falls back to cwd without prompting when stdin is not a TTY', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    stubInstall(sample, calls);
+    isRecognizedAgentDirMock.mockReturnValue(false);
+    const originalIsTTY = process.stdin.isTTY;
+    try {
+      Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+      const r = await runCommand(build, [
+        'skills',
+        'install',
+        'pdf-extractor',
+        '--format',
+        'table',
+      ]);
+      expect(r.exitCode).toBeUndefined();
+      expect(promptAgentDirMock).not.toHaveBeenCalled();
+      expect(calls[0]).toMatchObject({ slug: 'pdf-extractor', baseDir: process.cwd() });
+    } finally {
+      Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
+    }
+  });
+
+  it('table mode with stdout TTY but stdin non-TTY still uses cwd without prompting', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    stubInstall(sample, calls);
+    isRecognizedAgentDirMock.mockReturnValue(false);
+    const originalStdinTTY = process.stdin.isTTY;
+    const originalStdoutTTY = process.stdout.isTTY;
+    try {
+      Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+      Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+      const r = await runCommand(build, [
+        'skills',
+        'install',
+        'pdf-extractor',
+        '--format',
+        'table',
+      ]);
+      expect(r.exitCode).toBeUndefined();
+      expect(promptAgentDirMock).not.toHaveBeenCalled();
+      expect(calls[0]).toMatchObject({ slug: 'pdf-extractor', baseDir: process.cwd() });
+    } finally {
+      Object.defineProperty(process.stdin, 'isTTY', {
+        value: originalStdinTTY,
+        configurable: true,
+      });
+      Object.defineProperty(process.stdout, 'isTTY', {
+        value: originalStdoutTTY,
+        configurable: true,
+      });
+    }
+  });
+});
+
+describe('skills install — requiresApiKey notice rendering', () => {
+  const apiKeySample: SkillsInstallResult = { ...sample, requiresApiKey: true };
+
+  it('json output includes requiresApiKey: true', async () => {
+    stubInstall(apiKeySample);
+    const r = await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'json']);
+    expect(JSON.parse(r.stdout).requiresApiKey).toBe(true);
+  });
+
+  it('json output omits requiresApiKey when not set', async () => {
+    stubInstall(sample);
+    const r = await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'json']);
+    expect(JSON.parse(r.stdout)).not.toHaveProperty('requiresApiKey');
+  });
+
+  it('text output includes notice line', async () => {
+    stubInstall(apiKeySample);
+    const r = await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'text']);
+    expect(r.stdout).toContain('notice: This skill requires an API Key to use.');
+  });
+
+  it('text output omits notice when requiresApiKey is not set', async () => {
+    stubInstall(sample);
+    const r = await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'text']);
+    expect(r.stdout).not.toContain('notice:');
+  });
+
+  it('table output includes notice line', async () => {
+    stubInstall(apiKeySample);
+    await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'table']);
+    expect(lastRenderedFrame() ?? '').toContain('notice: This skill requires an API Key to use.');
+  });
+
+  it('table output omits notice when requiresApiKey is not set', async () => {
+    stubInstall(sample);
+    await runCommand(build, ['skills', 'install', 'pdf-extractor', '--format', 'table']);
+    expect(lastRenderedFrame() ?? '').not.toContain('notice:');
+  });
+});
+
+describe('skills install - slug conflict override confirmation', () => {
+  const conflictInfo = {
+    existingSlug: '@other-ns/pdf-extractor',
+    existingVersion: '0.5.0',
+    targetDir: '/tmp/skills/pdf-extractor',
+  };
+
+  function stubInstallWithConflict(
+    result: SkillsInstallResult,
+    conflictReturn: unknown = conflictInfo,
+  ) {
+    holder.services = makeMockServices({
+      skillsHubService: {
+        getSkillDetail: async () => sampleDetail,
+      },
+      skillsInstallService: {
+        precheckSlugConflict: () => conflictReturn,
+        install: async () => result,
+      },
+    });
+  }
+
+  it('renders SkillOverrideConfirm when table + TTY + conflict + no --dir', async () => {
+    stubInstallWithConflict(sample);
+    promptSkillOverrideConfirmMock.mockResolvedValue(true);
+    await runCommand(build, ['skills', 'install', FULL_SLUG, '--format', 'table']);
+    expect(promptSkillOverrideConfirmMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('exits 0 with cancellation message when user declines override', async () => {
+    stubInstallWithConflict(sample);
+    promptSkillOverrideConfirmMock.mockResolvedValue(false);
+    const r = await runCapturingExitCode(['skills', 'install', FULL_SLUG, '--format', 'table']);
+    expect(r.finalExit).toBe(0);
+    expect(r.stderr).toContain('Installation cancelled by user.');
+  });
+
+  it('auto-overrides with banner when --dir is specified with conflict', async () => {
+    const overriddenResult: SkillsInstallResult = {
+      ...sample,
+      slug: FULL_SLUG,
+      overwritten: true,
+      previousSlug: '@other-ns/pdf-extractor',
+      previousVersion: '0.5.0',
+    };
+    stubInstallWithConflict(overriddenResult);
+    const explicitDir = path.join(workDir, 'target');
+    mkdirSync(explicitDir, { recursive: true });
+    const r = await runCapturingExitCode([
+      'skills',
+      'install',
+      FULL_SLUG,
+      '--dir',
+      explicitDir,
+      '--format',
+      'table',
+    ]);
+    expect(r.stderr).toContain('override: Replaced');
+    expect(promptSkillOverrideConfirmMock).not.toHaveBeenCalled();
+  });
+
+  it('exits 1 when non-TTY without --dir encounters conflict', async () => {
+    stubInstallWithConflict(sample);
+    const originalIsTTY = process.stdin.isTTY;
+    try {
+      Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+      const r = await runCapturingExitCode(['skills', 'install', FULL_SLUG, '--format', 'table']);
+      expect(r.finalExit).toBe(1);
+      expect(r.stderr).toContain('Target directory is occupied by a different skill');
+      expect(promptSkillOverrideConfirmMock).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
+    }
   });
 });

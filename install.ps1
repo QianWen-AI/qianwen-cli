@@ -1,10 +1,10 @@
 # QianWen CLI Installer for Windows
 # Usage:
 #   irm https://raw.githubusercontent.com/QianWen-AI/qianwen-cli/main/install.ps1 | iex
-#   .\install.ps1 -Version v1.7.0
+#   .\install.ps1 -Version v1.8.0
 #
 # Parameters:
-#   -Version           - version to install (e.g. v1.7.0, default: v1.7.0)
+#   -Version           - version to install (e.g. v1.8.0, default: v1.8.0)
 #
 # Behavior:
 #   - If a previous installation exists in the install directory, the existing
@@ -30,7 +30,7 @@ $script:IsCLM = ($ExecutionContext.SessionState.LanguageMode -eq 'ConstrainedLan
 
 # ─── Default Version ────────────────────────────────────────────────────────
 # Update this value when releasing a new version.
-$DefaultVersion = "v1.7.0"
+$DefaultVersion = "v1.8.0"
 
 # ─── Brand Colors ────────────────────────────────────────────────────────────
 # #3047F5 via ANSI 24-bit true color escape sequences (matching install.sh)
