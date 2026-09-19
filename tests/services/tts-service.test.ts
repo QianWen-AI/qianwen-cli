@@ -188,7 +188,8 @@ describe('TTSService.buildRequest — tier 3 passthrough', () => {
     const svc = new TTSService(makeDeps());
 
     const { body } = await svc.buildRequest({
-      request: '{"model":"qwen3-tts-flash","input":{"text":"你好","voice":"Cherry","language_type":"Chinese"}}',
+      request:
+        '{"model":"qwen3-tts-flash","input":{"text":"你好","voice":"Cherry","language_type":"Chinese"}}',
     });
 
     const input = body.input as Record<string, unknown>;
@@ -422,7 +423,11 @@ describe('TTSService.generate — WebSocket-only models', () => {
       makeDeps({ wsClient, downloader, modelResolver: makeResolver('sambert-zhinan-v1') }),
     );
 
-    const envelope = await svc.generate({ text: 'hi', model: 'sambert-zhinan-v1', download: false });
+    const envelope = await svc.generate({
+      text: 'hi',
+      model: 'sambert-zhinan-v1',
+      download: false,
+    });
 
     expect(writeBytes).not.toHaveBeenCalled();
     expect('audio' in (envelope.data as Record<string, unknown>)).toBe(false);

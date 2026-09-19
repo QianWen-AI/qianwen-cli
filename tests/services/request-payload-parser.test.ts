@@ -109,10 +109,7 @@ describe('RequestPayloadParser', () => {
 
       const result = parser.parse('{"max_completion_tokens":512,"enable_thinking":false}');
 
-      expect(Object.keys(result.body).sort()).toEqual([
-        'enable_thinking',
-        'max_completion_tokens',
-      ]);
+      expect(Object.keys(result.body).sort()).toEqual(['enable_thinking', 'max_completion_tokens']);
     });
 
     it('does not inject any default fields', () => {

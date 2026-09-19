@@ -154,7 +154,8 @@ describe('MusicService.buildRequest — tier 0 / tier 1', () => {
     const svc = new MusicService(makeDeps());
 
     const { body } = await svc.buildRequest({
-      request: '{"model":"fun-music-v1","input":{"lyrics":"[verse]清晨的风","is_instrumental":true}}',
+      request:
+        '{"model":"fun-music-v1","input":{"lyrics":"[verse]清晨的风","is_instrumental":true}}',
     });
 
     const input = body.input as Record<string, unknown>;
@@ -289,9 +290,7 @@ describe('MusicService.generate — SSE streaming (default)', () => {
   });
 
   it('forwards the per-request timeout to the stream (only bounds the connection open)', async () => {
-    const { client, generateStream } = makeStreamClient([
-      { url: AUDIO_URL, finishReason: 'stop' },
-    ]);
+    const { client, generateStream } = makeStreamClient([{ url: AUDIO_URL, finishReason: 'stop' }]);
     const svc = new MusicService(makeDeps({ client }));
 
     await svc.generate({ prompt: 'x' });
@@ -305,10 +304,10 @@ describe('MusicService.generate — SSE streaming (default)', () => {
 
 describe('MusicService.generate — blocking (--no-stream)', () => {
   it('uses the one-shot generate() and raises the request timeout', async () => {
-    const { client, generate } = makeStreamClient(
-      [],
-      { request_id: 'r-1', output: { audio: { url: AUDIO_URL } } },
-    );
+    const { client, generate } = makeStreamClient([], {
+      request_id: 'r-1',
+      output: { audio: { url: AUDIO_URL } },
+    });
     const svc = new MusicService(makeDeps({ client }));
 
     await svc.generate({ prompt: 'x', stream: false });

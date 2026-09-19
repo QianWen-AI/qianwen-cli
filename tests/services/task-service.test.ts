@@ -237,8 +237,16 @@ describe('TaskService.get', () => {
       },
     ]);
     const download = vi.fn(async (data: Record<string, unknown>, out?: string) => [
-      { type: 'model', url: 'https://mock-api.test.qianwenai.com/model.glb?auth=1', path: `${out ?? '.'}/model.glb` },
-      { type: 'preview', url: 'https://mock-api.test.qianwenai.com/preview.webp?auth=2', path: `${out ?? '.'}/preview.webp` },
+      {
+        type: 'model',
+        url: 'https://mock-api.test.qianwenai.com/model.glb?auth=1',
+        path: `${out ?? '.'}/model.glb`,
+      },
+      {
+        type: 'preview',
+        url: 'https://mock-api.test.qianwenai.com/preview.webp?auth=2',
+        path: `${out ?? '.'}/preview.webp`,
+      },
     ]);
     const svc = new TaskService(
       makeDeps({
@@ -252,8 +260,16 @@ describe('TaskService.get', () => {
     expect(download).toHaveBeenCalledTimes(1);
     expect(env.data.type).toBe('model3d');
     expect(env.data.files).toEqual([
-      { type: 'model', url: 'https://mock-api.test.qianwenai.com/model.glb?auth=1', path: 'out/model.glb' },
-      { type: 'preview', url: 'https://mock-api.test.qianwenai.com/preview.webp?auth=2', path: 'out/preview.webp' },
+      {
+        type: 'model',
+        url: 'https://mock-api.test.qianwenai.com/model.glb?auth=1',
+        path: 'out/model.glb',
+      },
+      {
+        type: 'preview',
+        url: 'https://mock-api.test.qianwenai.com/preview.webp?auth=2',
+        path: 'out/preview.webp',
+      },
     ]);
     expect('artifacts' in env.data).toBe(false);
     expect('urls' in env.data).toBe(false);

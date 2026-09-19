@@ -13,7 +13,10 @@
  * silently falls through to a different site.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { EndpointResolver, type EndpointResolverDeps } from '../../src/services/endpoint-resolver.js';
+import {
+  EndpointResolver,
+  type EndpointResolverDeps,
+} from '../../src/services/endpoint-resolver.js';
 import { CliError } from '../../src/utils/errors.js';
 import { EXIT_CODES } from '../../src/utils/exit-codes.js';
 import { site } from '../../src/site.js';

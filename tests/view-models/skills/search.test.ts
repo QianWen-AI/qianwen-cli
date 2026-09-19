@@ -15,7 +15,7 @@ describe('buildSkillsSearchViewModel', () => {
       totalCount: 2,
       results: [
         {
-          slug: 'pdf-a',
+          slug: '@qianwen-ai/pdf-a',
           name: 'PDF A',
           description: 'first',
           publisher: 'acme',
@@ -23,7 +23,7 @@ describe('buildSkillsSearchViewModel', () => {
           verified: true,
         },
         {
-          slug: 'pdf-b',
+          slug: '@qianwen-ai/pdf-b',
           name: 'PDF B',
           description: 'second',
           publisher: 'beta',
@@ -39,7 +39,7 @@ describe('buildSkillsSearchViewModel', () => {
     expect(vm.isEmpty).toBe(false);
     expect(vm.rows[0]).toEqual({
       index: 1,
-      slug: 'pdf-a',
+      slug: '@qianwen-ai/pdf-a',
       name: 'PDF A',
       description: 'first',
       publisher: 'acme',

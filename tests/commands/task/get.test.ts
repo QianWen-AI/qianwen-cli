@@ -155,8 +155,16 @@ describe('task get — output', () => {
         task_status: 'SUCCEEDED',
         type: 'model3d',
         files: [
-          { type: 'model', url: 'https://mock-api.test.qianwenai.com/model.glb', path: 'out/model.glb' },
-          { type: 'preview', url: 'https://mock-api.test.qianwenai.com/preview.webp', path: 'out/preview.webp' },
+          {
+            type: 'model',
+            url: 'https://mock-api.test.qianwenai.com/model.glb',
+            path: 'out/model.glb',
+          },
+          {
+            type: 'preview',
+            url: 'https://mock-api.test.qianwenai.com/preview.webp',
+            path: 'out/preview.webp',
+          },
         ],
       },
     });

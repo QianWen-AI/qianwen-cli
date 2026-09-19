@@ -328,9 +328,7 @@ describe('Model3dService.generate — site guard and async wait', () => {
             output: {
               task_id: 'td-1',
               task_status: 'SUCCEEDED',
-              results: [
-                { pbr_model_url: 'https://openapi.cdn.tripo3d.com/model.glb?auth_key=x' },
-              ],
+              results: [{ pbr_model_url: 'https://openapi.cdn.tripo3d.com/model.glb?auth_key=x' }],
             },
           },
         ]),

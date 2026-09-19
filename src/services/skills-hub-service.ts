@@ -1,12 +1,13 @@
 /**
  * SkillsHubService — SkillHub access via the WebsitePortal flat-parameter
- * gateway (SearchHub / GetHubSkill / GetHubSkillDownload actions).
+ * gateway (SearchHub / GetHubSkill / GetHubSkillDownload plus the skill
+ * collection list/detail/download actions).
  *
  * The API layer unwraps the outer gateway envelope (`code === '200'`); the
  * response then carries a second business envelope which this service unwraps:
  * success when `Success === true` or `Code === '200'`, business data under
- * `Data`. Field names are PascalCase with camelCase tolerated. All three
- * actions share this envelope shape.
+ * `Data`. Field names are PascalCase with camelCase tolerated. All actions
+ * share this envelope shape.
  */
 
 import type { ApiClient } from '../api/api-client.js';
@@ -18,6 +19,7 @@ import {
   API_ACTION_SEARCH_HUB,
   API_ACTION_GET_HUB_SKILL,
   API_ACTION_GET_HUB_SKILL_DOWNLOAD,
+  API_ACTION_HUB_COLLECTION_DOWNLOAD,
 } from '../types/api-routes.js';
 import type {
   RawHubEnvelope,
@@ -26,11 +28,14 @@ import type {
   RawSkillDownloadData,
   RawSkillSearchItem,
   RawSkillVersionItem,
+  RawPackDownloadData,
   SkillDetail,
   SkillDownload,
   SkillSearchItem,
   SkillVersionInfo,
   SkillsSearchResult,
+  PackDownload,
+  PackManifest,
 } from '../types/skills.js';
 import { site } from '../site.js';
 
@@ -105,39 +110,48 @@ export class SkillsHubService {
   /**
    * Fetch skill detail (GetHubSkill). Used by install for the latest version
    * number and the platform security state. A missing skill surfaces
-   * as a NOT_FOUND CliError with an actionable message.
+   * as a SKILL_NOT_FOUND CliError with an actionable message.
    */
-  async getSkillDetail(slug: string): Promise<SkillDetail> {
+  async getSkillDetail(slug: string, provider?: string): Promise<SkillDetail> {
     const envelope = await this.apiClient.callFlatApi<RawHubEnvelope<RawSkillDetailData> | null>({
       product: API_PRODUCT_WEBSITE_PORTAL,
       action: API_ACTION_GET_HUB_SKILL,
       params: {
         SkillName: slug,
         Language: site.defaults.language,
+        ...(provider ? { Provider: provider } : {}),
       },
       authOptional: true,
     });
 
-    const data = unwrapHubEnvelope(envelope, 'GetHubSkill', slug);
+    const displaySlug = provider ? `${provider}/${slug}` : slug;
+    const data = unwrapHubEnvelope(envelope, 'GetHubSkill', displaySlug);
     return normalizeSkillDetail(slug, data);
   }
 
   /**
    * Fetch the signed temporary download URL (GetHubSkillDownload). When
    * `version` is omitted the server resolves the current published version.
+   * `provider` is only sent for full-slug installs; the bare-slug mode omits it.
    */
-  async getSkillDownload(slug: string, version?: string): Promise<SkillDownload> {
+  async getSkillDownload(
+    slug: string,
+    version?: string,
+    provider?: string,
+  ): Promise<SkillDownload> {
     const envelope = await this.apiClient.callFlatApi<RawHubEnvelope<RawSkillDownloadData> | null>({
       product: API_PRODUCT_WEBSITE_PORTAL,
       action: API_ACTION_GET_HUB_SKILL_DOWNLOAD,
       params: {
         SkillName: slug,
+        ...(provider ? { Provider: provider } : {}),
         ...(version ? { SkillVersion: version } : {}),
       },
       authOptional: true,
     });
 
-    const data = unwrapHubEnvelope(envelope, 'GetHubSkillDownload', slug);
+    const displaySlug = provider ? `${provider}/${slug}` : slug;
+    const data = unwrapHubEnvelope(envelope, 'GetHubSkillDownload', displaySlug);
     const ossUrl = toStr(data?.OssUrl ?? data?.ossUrl);
     if (!ossUrl) {
       throw new GatewayBusinessError(
@@ -152,6 +166,40 @@ export class SkillsHubService {
       ...(sha256 ? { sha256 } : {}),
     };
   }
+
+  /**
+   * Fetch the signed temporary pack download URL plus the pre-parsed
+   * manifest. The wire `Manifest` is a JSON string (a pre-parsed object is
+   * tolerated); parsing and validation are centralized here. A missing
+   * pack surfaces as PACK_NOT_FOUND; an empty or malformed manifest as
+   * PACK_EMPTY.
+   */
+  async getPackDownload(collectionName: string): Promise<PackDownload> {
+    const envelope = await this.apiClient.callFlatApi<RawHubEnvelope<RawPackDownloadData> | null>({
+      product: API_PRODUCT_WEBSITE_PORTAL,
+      action: API_ACTION_HUB_COLLECTION_DOWNLOAD,
+      params: {
+        CollectionName: collectionName,
+      },
+      authOptional: true,
+    });
+
+    const data = unwrapHubEnvelope(envelope, 'HubSkillCollectionDownload', collectionName, 'pack');
+    const ossUrl = toStr(data?.OssUrl ?? data?.ossUrl);
+    if (!ossUrl) {
+      throw new GatewayBusinessError(
+        'EMPTY_RESPONSE',
+        'HubSkillCollectionDownload returned no download URL',
+      );
+    }
+    const manifest = parsePackManifest(collectionName, data?.Manifest ?? data?.manifest);
+    return {
+      ossUrl,
+      sha256: toStr(data?.Sha256 ?? data?.sha256),
+      expiresAt: toStr(data?.ExpiresAt ?? data?.expiresAt),
+      manifest,
+    };
+  }
 }
 
 /** Service-level defensive clamp; strict user-input validation (exit 2) lives in the command layer. */
@@ -163,12 +211,15 @@ function clampLimit(raw: number | undefined): number {
 /**
  * Unwrap the inner business envelope shared by all WebsitePortal SkillHub
  * actions; throws on business failure. A NOT_FOUND business code becomes an
- * actionable CliError (the skills command group maps it to exit 4).
+ * actionable CliError: skill actions map to SKILL_NOT_FOUND (exit 1) and
+ * pack actions map to PACK_NOT_FOUND (exit 1). "Resource does not exist"
+ * is a deterministic result, not a transient network failure.
  */
 function unwrapHubEnvelope<TData>(
   envelope: RawHubEnvelope<TData> | null,
   action: string,
   slug?: string,
+  kind: 'skill' | 'pack' = 'skill',
 ): TData | null {
   if (!envelope || typeof envelope !== 'object') {
     throw new GatewayBusinessError('EMPTY_RESPONSE', `${action} returned an empty response`);
@@ -177,10 +228,17 @@ function unwrapHubEnvelope<TData>(
   const code = envelope.Code ?? envelope.code;
   if (success !== true && String(code) !== '200') {
     if (String(code) === 'NOT_FOUND' && slug) {
+      if (kind === 'pack') {
+        throw new CliError({
+          code: 'PACK_NOT_FOUND',
+          message: `Skill pack not found: ${slug}.`,
+          exitCode: EXIT_CODES.GENERAL_ERROR,
+        });
+      }
       throw new CliError({
-        code: 'NOT_FOUND',
+        code: 'SKILL_NOT_FOUND',
         message: `Skill not found: ${slug}. Use \`skills search <keyword>\` to find available skills.`,
-        exitCode: EXIT_CODES.NOT_FOUND,
+        exitCode: EXIT_CODES.GENERAL_ERROR,
       });
     }
     const message = envelope.Message ?? envelope.message ?? `${action} request failed`;
@@ -189,27 +247,70 @@ function unwrapHubEnvelope<TData>(
   return envelope.Data ?? envelope.data ?? null;
 }
 
+/**
+ * Parse and validate the pack manifest. The wire form is a JSON string (a
+ * pre-parsed object is tolerated); anything unparseable or without a
+ * non-empty skills list surfaces as PACK_EMPTY.
+ */
+function parsePackManifest(
+  packName: string,
+  raw: string | PackManifest | null | undefined,
+): PackManifest {
+  let manifest: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      manifest = JSON.parse(raw);
+    } catch {
+      throw packEmptyError(packName);
+    }
+  }
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+    throw packEmptyError(packName);
+  }
+  const record = manifest as Record<string, unknown>;
+  const skills = record.Skills ?? record.skills;
+  if (!Array.isArray(skills) || skills.length === 0) {
+    throw packEmptyError(packName);
+  }
+  return manifest as PackManifest;
+}
+
+function packEmptyError(packName: string): CliError {
+  return new CliError({
+    code: 'PACK_EMPTY',
+    message: `Skill pack is empty: ${packName}.`,
+    exitCode: EXIT_CODES.GENERAL_ERROR,
+  });
+}
+
 function extractItems(data: RawSearchHubData | null): RawSkillSearchItem[] {
   const items = data?.Items ?? data?.items;
   return Array.isArray(items) ? items : [];
 }
 
 /**
- * Normalize a raw item into the CLI output mapping.
- * `currentVersion` is usually present, but the key is
- * still omitted (never null) when the server response lacks it.
+ * Normalize a raw item into the CLI output mapping. `slug` is the full slug
+ * `@provider/skillName` when a provider id is known; `publisher` derives from
+ * Provider.ProviderName with ProviderId as fallback (AuthorName is never
+ * read). Keys are omitted (never null) when the server response lacks them;
+ * an explicit `RequiresApiKey: false` is kept.
  */
 function normalizeSkillSearchItem(raw: RawSkillSearchItem): SkillSearchItem {
-  const slug = toStr(raw.ResourceName ?? raw.resourceName);
+  const providerObj = raw.Provider ?? raw.provider;
+  const providerName = toStr(providerObj?.ProviderName ?? providerObj?.providerName);
+  const providerId = toStr(providerObj?.ProviderId ?? providerObj?.providerId);
+  const resourceName = toStr(raw.ResourceName ?? raw.resourceName);
   const displayName = toStr(raw.DisplayName ?? raw.displayName);
   const securityStatus = raw.SecurityStatus ?? raw.securityStatus;
   const currentVersion = toStr(raw.CurrentVersion ?? raw.currentVersion);
+  const requiresApiKey = raw.RequiresApiKey ?? raw.requiresApiKey;
   return {
-    slug,
-    name: displayName || slug,
+    slug: providerId ? `${providerId}/${resourceName}` : resourceName,
+    name: displayName || resourceName,
     description: toStr(raw.Description ?? raw.description),
-    publisher: toStr(raw.AuthorName ?? raw.authorName),
+    publisher: providerName || providerId,
     ...(currentVersion ? { currentVersion } : {}),
+    ...(typeof requiresApiKey === 'boolean' ? { requiresApiKey } : {}),
     verified: isVerifiedSecurityStatus(securityStatus),
   };
 }
@@ -234,6 +335,9 @@ function normalizeSkillDetail(slug: string, data: RawSkillDetailData | null): Sk
   const security = data?.Security ?? data?.security;
   const versions = normalizeVersions(data?.Versions ?? data?.versions);
   const latest = versions.find((v) => v.isLatest) ?? versions[0];
+  const requiresApiKey = data?.RequiresApiKey ?? data?.requiresApiKey;
+  const providerBlock = data?.Provider ?? data?.provider;
+  const provider = toStr(providerBlock?.ProviderId ?? providerBlock?.providerId);
   return {
     slug: toStr(data?.SkillName ?? data?.skillName) || slug,
     displayName: toStr(data?.DisplayName ?? data?.displayName) || slug,
@@ -243,6 +347,8 @@ function normalizeSkillDetail(slug: string, data: RawSkillDetailData | null): Sk
     auditTime: toStr(security?.AuditTime ?? security?.auditTime),
     latestVersion: latest?.version ?? '',
     versions,
+    ...(typeof requiresApiKey === 'boolean' ? { requiresApiKey } : {}),
+    provider,
   };
 }
 

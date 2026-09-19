@@ -83,9 +83,12 @@ export function assessSkillDir(targetDir: string): SkillDirState {
     return { kind: 'unmanaged', reason: 'missing-required-fields' };
   }
 
+  // provider is optional; non-string values are dropped so a corrupted
+  // field never reaches the install engine.
   const meta: SkillMetadataV1 = {
     schemaVersion: 1,
     slug: record.slug as string,
+    provider: typeof record.provider === 'string' ? record.provider : undefined,
     version: record.version as string,
     sha256: record.sha256 as string,
     installMethod: 'copy',

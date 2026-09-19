@@ -4,6 +4,7 @@
  */
 
 import type { SkillsInstallResult } from '../../types/skills.js';
+import type { AgentScope } from '../../utils/agent-dirs.js';
 
 const EM_DASH = '\u2014';
 
@@ -25,10 +26,14 @@ export interface SkillsInstallContext {
   mode: SkillsInstallMode;
   /** Present only when mode is 'agent'. */
   agentDisplayName?: string;
+  /** Present only when mode is 'agent'; defaults to the project wording. */
+  scope?: AgentScope;
 }
 
 export interface SkillsInstallViewModel {
   slug: string;
+  version: string;
+  sha256: string;
   outcome: SkillsInstallResult['outcome'];
   resultLine: string;
   targetDir: string;
@@ -37,6 +42,10 @@ export interface SkillsInstallViewModel {
   statusLabel: string;
   /** Pre-worded downgrade warning shared by text and TUI; absent when none. */
   downgradeWarning?: string;
+  /** Pre-worded API Key notice; absent when the skill does not require one. */
+  apiKeyNotice?: string;
+  /** Pre-worded slug-conflict override note (e.g. 'Replaced @a/tool v1.2.0'). */
+  overrideNote?: string;
 }
 
 export function buildSkillsInstallViewModel(
@@ -46,6 +55,8 @@ export function buildSkillsInstallViewModel(
   const isAgent = context.mode === 'agent';
   return {
     slug: data.slug,
+    version: data.version,
+    sha256: data.sha256,
     outcome: data.outcome,
     resultLine: RESULT_LINES[data.outcome],
     targetDir: data.targetDir,
@@ -55,13 +66,23 @@ export function buildSkillsInstallViewModel(
       : context.mode === 'explicit-dir'
         ? 'Explicit directory (--dir)'
         : 'Current directory',
-    statusLabel: isAgent ? 'Ready to use in this project' : 'Installed',
+    statusLabel: isAgent
+      ? context.scope === 'global'
+        ? 'Ready to use globally'
+        : 'Ready to use in this project'
+      : 'Installed',
     ...(data.downgrade
       ? {
           downgradeWarning:
             `downgraded from ${data.downgrade.from} to ${data.downgrade.to} ` +
             '(local version was newer than the hub release)',
         }
+      : {}),
+    ...(data.requiresApiKey === true
+      ? { apiKeyNotice: 'This skill requires an API Key to use.' }
+      : {}),
+    ...(data.overwritten && data.previousSlug
+      ? { overrideNote: `Replaced ${data.previousSlug} ${data.previousVersion ?? ''}`.trim() }
       : {}),
   };
 }

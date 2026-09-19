@@ -29,5 +29,8 @@ export const API_ACTION_SEARCH_HUB = 'SearchHub';
 export const API_ACTION_GET_HUB_SKILL = 'GetHubSkill';
 export const API_ACTION_GET_HUB_SKILL_DOWNLOAD = 'GetHubSkillDownload';
 
+// Pack actions (WebsitePortal) — skill collection download.
+export const API_ACTION_HUB_COLLECTION_DOWNLOAD = 'HubSkillCollectionDownload';
+
 // Products with optional authentication (public search API, etc.)
 export const AUTH_OPTIONAL_PRODUCTS: ReadonlySet<string> = new Set([API_PRODUCT_SEARCH]);

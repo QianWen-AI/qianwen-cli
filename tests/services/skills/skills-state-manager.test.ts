@@ -206,3 +206,70 @@ describe('decideInstallOutcome — tri-state decision', () => {
     expect(decideInstallOutcome({ kind: 'managed', meta: validMeta() }, '2.0.0')).toBe('updated');
   });
 });
+
+describe('assessSkillDir — provider read compatibility', () => {
+  it('reads legacy metadata without provider as managed with provider undefined', () => {
+    mkdirSync(target);
+    writeFileSync(skillMetaPath(target), JSON.stringify(validMeta()));
+
+    const state = assessSkillDir(target);
+
+    expect(state.kind).toBe('managed');
+    if (state.kind === 'managed') {
+      expect(state.meta.provider).toBeUndefined();
+    }
+  });
+
+  it('reads new metadata with provider as managed preserving the value', () => {
+    mkdirSync(target);
+    writeFileSync(skillMetaPath(target), JSON.stringify(validMeta({ provider: '@qianwen-ai' })));
+
+    const state = assessSkillDir(target);
+
+    expect(state.kind).toBe('managed');
+    if (state.kind === 'managed') {
+      expect(state.meta.provider).toBe('@qianwen-ai');
+    }
+  });
+
+  it('drops a non-string provider value to undefined (defensive parse)', () => {
+    mkdirSync(target);
+    writeFileSync(skillMetaPath(target), JSON.stringify({ ...validMeta(), provider: 123 }));
+
+    const state = assessSkillDir(target);
+
+    expect(state.kind).toBe('managed');
+    if (state.kind === 'managed') {
+      expect(state.meta.provider).toBeUndefined();
+    }
+  });
+});
+
+describe('writeSkillMeta — provider write extension', () => {
+  it('serializes provider into the JSON file when present', () => {
+    mkdirSync(target);
+    writeSkillMeta(target, validMeta({ provider: '@qianwen-ai' }));
+
+    const parsed = JSON.parse(readFileSync(skillMetaPath(target), 'utf8'));
+    expect(parsed.provider).toBe('@qianwen-ai');
+  });
+
+  it('omits the provider key entirely for legacy metadata', () => {
+    mkdirSync(target);
+    writeSkillMeta(target, validMeta());
+
+    const parsed = JSON.parse(readFileSync(skillMetaPath(target), 'utf8'));
+    expect('provider' in parsed).toBe(false);
+  });
+
+  it('round-trips provider through assessSkillDir', () => {
+    mkdirSync(target);
+    writeSkillMeta(target, validMeta({ provider: '@qianwen-ai' }));
+
+    const state = assessSkillDir(target);
+    expect(state).toEqual({ kind: 'managed', meta: validMeta({ provider: '@qianwen-ai' }) });
+    if (state.kind === 'managed') {
+      expect(state.meta.schemaVersion).toBe(1);
+    }
+  });
+});

@@ -36,6 +36,8 @@ export function SkillsInstallSummary({ vm }: SkillsInstallSummaryProps) {
           ))}
         </Box>
         {vm.downgradeWarning ? <Text color="yellow">warning: {vm.downgradeWarning}</Text> : null}
+        {vm.overrideNote ? <Text color="yellow">override: {vm.overrideNote}</Text> : null}
+        {vm.apiKeyNotice ? <Text color="yellow">notice: {vm.apiKeyNotice}</Text> : null}
       </Box>
     </Section>
   );

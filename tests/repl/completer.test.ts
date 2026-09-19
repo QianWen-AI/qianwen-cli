@@ -291,10 +291,16 @@ describe('tabCompleter', () => {
     expect(partial).toBe('skil');
   });
 
-  it('skills + space → suggests search/install subcommands plus --help', () => {
-    expect(SUBCOMMANDS.skills).toEqual(['search', 'install']);
+  it('skills + space → suggests search/install/pack-install subcommands plus --help', () => {
+    expect(SUBCOMMANDS.skills).toEqual(['search', 'install', 'pack-install']);
     const [completions] = tabCompleter('skills ');
-    expect(completions).toEqual(['search', 'install', '--help']);
+    expect(completions).toEqual(['search', 'install', 'pack-install', '--help']);
+  });
+
+  it('skills pack- prefix → completes to pack-install', () => {
+    const [completions, partial] = tabCompleter('skills pack-');
+    expect(completions).toEqual(['pack-install']);
+    expect(partial).toBe('pack-');
   });
 
   it('partial skills subcommand → filtered candidates', () => {
@@ -322,6 +328,21 @@ describe('tabCompleter', () => {
 
   it('skills install partial --d → completes to --dir', () => {
     const [completions, partial] = tabCompleter('skills install my-skill --d');
+    expect(completions).toEqual(['--dir']);
+    expect(partial).toBe('--d');
+  });
+
+  it('skills pack-install + space → suggests --dir, --format and --help but not --limit', () => {
+    expect(COMMAND_FLAGS['skills pack-install']).toEqual(['--dir', '--format']);
+    const [completions] = tabCompleter('skills pack-install my-pack ');
+    expect(completions).toContain('--dir');
+    expect(completions).toContain('--format');
+    expect(completions).toContain('--help');
+    expect(completions).not.toContain('--limit');
+  });
+
+  it('skills pack-install partial --d → completes to --dir', () => {
+    const [completions, partial] = tabCompleter('skills pack-install my-pack --d');
     expect(completions).toEqual(['--dir']);
     expect(partial).toBe('--d');
   });

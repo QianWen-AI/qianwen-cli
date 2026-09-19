@@ -536,10 +536,7 @@ describe('chat create — TTY streaming default', () => {
 
   it('streams by default on an interactive terminal', async () => {
     setTTY(true);
-    holder.streamEvents = [
-      { type: 'content', content: 'hello' },
-      { type: 'done' },
-    ];
+    holder.streamEvents = [{ type: 'content', content: 'hello' }, { type: 'done' }];
 
     const result = await runStreaming(['chat', 'create', 'hi', '--format', 'text']);
 
@@ -560,10 +557,7 @@ describe('chat create — TTY streaming default', () => {
 
   it('streams when --stream is explicit even without a terminal', async () => {
     setTTY(false);
-    holder.streamEvents = [
-      { type: 'content', content: 'forced' },
-      { type: 'done' },
-    ];
+    holder.streamEvents = [{ type: 'content', content: 'forced' }, { type: 'done' }];
 
     const result = await runStreaming(['chat', 'create', 'hi', '--stream', '--format', 'text']);
 

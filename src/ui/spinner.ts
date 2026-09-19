@@ -12,6 +12,31 @@ const spin = chalk.hex(colors.brand);
 /** Track how many spinners are currently animating on stdout. */
 let activeCount = 0;
 
+// State of the single active spinner animation. The CLI never nests spinners,
+// so one module-level slot is enough.
+let currentLabel = '';
+let currentFrame = 0;
+let timer: ReturnType<typeof setInterval> | null = null;
+let paused = false;
+
+function drawFrame(): void {
+  process.stdout.write(`\r  ${spin(FRAMES[currentFrame])}  ${currentLabel}…`);
+}
+
+function startTimer(): void {
+  timer = setInterval(() => {
+    currentFrame = (currentFrame + 1) % FRAMES.length;
+    drawFrame();
+  }, INTERVAL_MS);
+}
+
+function stopTimer(): void {
+  if (timer !== null) {
+    clearInterval(timer);
+    timer = null;
+  }
+}
+
 /**
  * If a spinner is currently active, erase its line so the next stderr write
  * starts on a fresh line.  Safe to call unconditionally — a no-op when no
@@ -21,9 +46,40 @@ let activeCount = 0;
  * a spinner is animating (addDiagnostic, handleError, etc.).
  */
 export function clearSpinnerLine(): void {
-  if (activeCount > 0) {
+  // Paused spinners have no frame on screen — nothing to erase.
+  if (activeCount > 0 && !paused) {
     process.stdout.write('\r\x1b[K');
   }
+}
+
+/**
+ * Pause the active spinner before an interactive Ink view (e.g. a
+ * confirmation page) takes over stdout: stop the animation timer, erase the
+ * frame line and break to a fresh line so the Ink render starts clean. While
+ * paused, no bytes are written by the spinner.
+ *
+ * No-op when no spinner is running or it is already paused.
+ */
+export function pauseSpinner(): void {
+  if (activeCount === 0 || paused) return;
+  paused = true;
+  stopTimer();
+  process.stdout.write('\r\x1b[K');
+  process.stdout.write('\n');
+}
+
+/**
+ * Resume a spinner paused by {@link pauseSpinner}: move below whatever the
+ * interactive view printed, redraw the frame and restart the animation timer.
+ *
+ * No-op when no spinner is running or it is not paused.
+ */
+export function resumeSpinner(): void {
+  if (activeCount === 0 || !paused) return;
+  paused = false;
+  process.stdout.write('\n');
+  drawFrame();
+  startTimer();
 }
 
 /**
@@ -43,25 +99,22 @@ export async function withSpinner<T>(
 
   if (silent) return fn();
 
-  let frame = 0;
-  const write = (text: string) => process.stdout.write(text);
+  currentLabel = label;
+  currentFrame = 0;
+  paused = false;
 
   activeCount++;
   // Draw first frame immediately so there's no blank gap
-  write(`\r  ${spin(FRAMES[frame])}  ${label}…`);
-
-  const timer = setInterval(() => {
-    frame = (frame + 1) % FRAMES.length;
-    write(`\r  ${spin(FRAMES[frame])}  ${label}…`);
-  }, INTERVAL_MS);
+  drawFrame();
+  startTimer();
 
   try {
     const result = await fn();
     return result;
   } finally {
-    clearInterval(timer);
+    stopTimer();
     activeCount--;
     // Erase the spinner line completely
-    write('\r\x1b[K');
+    process.stdout.write('\r\x1b[K');
   }
 }

@@ -138,9 +138,7 @@ describe('InvocationCredentialResolver', () => {
 
   describe('empty and blank values are skipped', () => {
     it('ignores an empty-string flag and continues down the chain', () => {
-      const resolver = new InvocationCredentialResolver(
-        makeDeps({ readEnv: () => 'sk-from-env' }),
-      );
+      const resolver = new InvocationCredentialResolver(makeDeps({ readEnv: () => 'sk-from-env' }));
 
       expect(resolver.resolve('')).toEqual({ token: 'sk-from-env', source: 'env' });
     });

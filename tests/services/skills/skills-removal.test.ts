@@ -57,13 +57,14 @@ function makeStaging(parent: string, suffix = 'abc123'): string {
   return dir;
 }
 
-function makeManaged(slug: string): string {
-  const dir = path.join(baseDir, slug);
-  mkdirSync(dir);
+function makeManaged(slug: string, provider?: string, dirName?: string): string {
+  const dir = path.join(baseDir, dirName ?? slug);
+  mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(dir, 'SKILL.md'), '# skill');
   const meta: SkillMetadataV1 = {
     schemaVersion: 1,
     slug,
+    ...(provider ? { provider } : {}),
     version: '1.0.0',
     sha256: 'aa'.repeat(32),
     installMethod: 'copy',
@@ -244,5 +245,33 @@ describe('safeRemove — successful removals', () => {
 
     expect(existsSync(dir)).toBe(false);
     expect(existsSync(baseDir)).toBe(true);
+  });
+});
+
+describe('safeRemove — managed-skill at a full-slug flat path', () => {
+  it('removes a managed @ns/slug directory when the full slug matches', () => {
+    const dir = makeManaged('@qianwen-ai/pdf-extractor', '@qianwen-ai', 'pdf-extractor');
+
+    safeRemove(dir, {
+      baseDir,
+      expectKind: 'managed-skill',
+      expectedSlug: '@qianwen-ai/pdf-extractor',
+    });
+
+    expect(existsSync(dir)).toBe(false);
+    expect(existsSync(baseDir)).toBe(true);
+  });
+
+  it('rejects when the metadata slug does not match the expected full slug', () => {
+    const dir = makeManaged('@qianwen-ai/other-skill', '@qianwen-ai', 'other-skill');
+
+    expect(() =>
+      safeRemove(dir, {
+        baseDir,
+        expectKind: 'managed-skill',
+        expectedSlug: '@qianwen-ai/pdf-extractor',
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'REMOVAL_REFUSED' }));
+    expect(existsSync(dir)).toBe(true);
   });
 });

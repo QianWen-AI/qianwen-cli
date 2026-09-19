@@ -100,9 +100,7 @@ describe('MappingRegistry', () => {
       };
       const i2v: MappingKey = { ...t2v, taskMode: 'i2v' };
       registry.register(makeEntry({ key: t2v, fieldTemplates: { '--size': 'parameters.size' } }));
-      registry.register(
-        makeEntry({ key: i2v, fieldTemplates: { '--image': 'input.media' } }),
-      );
+      registry.register(makeEntry({ key: i2v, fieldTemplates: { '--image': 'input.media' } }));
 
       expect(registry.lookup(t2v)?.fieldTemplates['--size']).toBe('parameters.size');
       expect(registry.lookup(i2v)?.fieldTemplates['--image']).toBe('input.media');
@@ -122,9 +120,7 @@ describe('MappingRegistry', () => {
 
     it('preserves the capability descriptor of a registered entry', () => {
       const registry = new MappingRegistry();
-      registry.register(
-        makeEntry({ capabilities: { streaming: false, asynchronous: true } }),
-      );
+      registry.register(makeEntry({ capabilities: { streaming: false, asynchronous: true } }));
 
       expect(registry.lookup(CHAT_KEY)?.capabilities).toEqual({
         streaming: false,
@@ -134,9 +130,7 @@ describe('MappingRegistry', () => {
 
     it('preserves the file policy of a registered entry', () => {
       const registry = new MappingRegistry();
-      registry.register(
-        makeEntry({ filePolicy: { allowBase64: false, allowTempUpload: true } }),
-      );
+      registry.register(makeEntry({ filePolicy: { allowBase64: false, allowTempUpload: true } }));
 
       expect(registry.lookup(CHAT_KEY)?.filePolicy).toEqual({
         allowBase64: false,

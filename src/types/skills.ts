@@ -6,6 +6,16 @@
  * lowerCamelCase variants also occur; both spellings are tolerated
  * (PascalCase preferred, camelCase fallback).
  */
+/** Provider block on a search item; both field spellings are tolerated. */
+export interface RawSkillProvider {
+  ProviderId?: string | null;
+  ProviderName?: string | null;
+  ProviderIcon?: string | null;
+  providerId?: string | null;
+  providerName?: string | null;
+  providerIcon?: string | null;
+}
+
 export interface RawSkillSearchItem {
   // PascalCase field names (preferred)
   ResourceType?: string | null;
@@ -14,11 +24,14 @@ export interface RawSkillSearchItem {
   DisplayName?: string | null;
   Description?: string | null;
   Channel?: string | null;
+  /** @deprecated Superseded by the Provider block; no longer read. */
   AuthorName?: string | null;
   SecurityDesc?: string | null;
   SecurityStatus?: string | null;
   CurrentVersion?: string | null;
   Status?: string | null;
+  Provider?: RawSkillProvider | null;
+  RequiresApiKey?: boolean | null;
   // camelCase field names (fallback)
   resourceType?: string | null;
   resourceId?: string | null;
@@ -31,6 +44,8 @@ export interface RawSkillSearchItem {
   securityStatus?: string | null;
   currentVersion?: string | null;
   status?: string | null;
+  provider?: RawSkillProvider | null;
+  requiresApiKey?: boolean | null;
 }
 
 /** Raw SearchHub business payload (`data.Data` in the actual response). */
@@ -66,19 +81,18 @@ export interface RawHubEnvelope<TData> {
 export type RawSearchHubEnvelope = RawHubEnvelope<RawSearchHubData>;
 
 /**
- * Normalized skill search item — the CLI output field mapping:
- *   ResourceName→slug, DisplayName??ResourceName→name, Description→description,
- *   AuthorName→publisher, CurrentVersion→currentVersion (omit key when absent),
- *   verified = isVerifiedSecurityStatus(securityStatus) (machine enum, locale
- *   independent).
+ * Normalized skill search item. `slug` is the full slug `@provider/skillName`
+ * (bare ResourceName when no provider id is known); `publisher` derives from
+ * Provider.ProviderName with ProviderId as fallback. Optional keys
+ * (currentVersion, requiresApiKey) are omitted — never null — when absent.
  */
 export interface SkillSearchItem {
   slug: string;
   name: string;
   description: string;
   publisher: string;
-  /** Omitted (not null) when the server response lacks CurrentVersion. */
   currentVersion?: string;
+  requiresApiKey?: boolean;
   verified: boolean;
 }
 
@@ -121,6 +135,8 @@ export interface RawSkillDetailData {
   SecurityStatus?: string | null;
   Security?: RawSkillSecurity | null;
   Versions?: RawSkillVersionItem[] | null;
+  RequiresApiKey?: boolean | null;
+  Provider?: RawSkillProvider | null;
   skillId?: string | null;
   skillName?: string | null;
   displayName?: string | null;
@@ -130,6 +146,8 @@ export interface RawSkillDetailData {
   securityStatus?: string | null;
   security?: RawSkillSecurity | null;
   versions?: RawSkillVersionItem[] | null;
+  requiresApiKey?: boolean | null;
+  provider?: RawSkillProvider | null;
 }
 
 export type RawSkillDetailEnvelope = RawHubEnvelope<RawSkillDetailData>;
@@ -154,6 +172,9 @@ export interface SkillDetail {
   /** Version marked `isLatest`; empty string when none is available. */
   latestVersion: string;
   versions: SkillVersionInfo[];
+  requiresApiKey?: boolean;
+  /** Provider ID from the server (e.g. '@qianwen-ai'); empty string when absent. */
+  provider: string;
 }
 
 // ── GetHubSkillDownload ─────────────────────────────────────────────────────
@@ -183,7 +204,10 @@ export interface SkillDownload {
 /** On-disk skill metadata, schema v1. Unknown extra fields are tolerated on read. */
 export interface SkillMetadataV1 {
   schemaVersion: 1;
+  /** Full slug (`@ns/name`) for two-level installs; bare name for legacy ones. */
   slug: string;
+  /** Provider ID with leading `@`; absent on legacy installs. */
+  provider?: string;
   version: string;
   /** SHA256 of the downloaded zip, computed locally after download. */
   sha256: string;
@@ -226,4 +250,98 @@ export interface SkillsInstallResult {
    * (both versions semver-parsable and installed > hub latest).
    */
   downgrade?: { from: string; to: string };
+  requiresApiKey?: boolean;
+  /** True when a slug-conflict override replaced a different skill. */
+  overwritten?: boolean;
+  /** Slug of the skill that was replaced (only when overwritten). */
+  previousSlug?: string;
+  /** Version of the skill that was replaced (only when overwritten). */
+  previousVersion?: string;
+}
+
+// ── Skill packs (WebsitePortal collection APIs) ─────────────────────────────
+
+/**
+ * Raw pack download payload; the manifest is a JSON string on the wire (a
+ * pre-parsed object is tolerated); both spellings tolerated.
+ */
+export interface RawPackDownloadData {
+  OssUrl?: string | null;
+  Sha256?: string | null;
+  ExpiresAt?: string | null;
+  Manifest?: string | PackManifest | null;
+  ossUrl?: string | null;
+  sha256?: string | null;
+  expiresAt?: string | null;
+  manifest?: string | PackManifest | null;
+}
+
+/**
+ * Normalized pack download descriptor: signed temporary OSS URL, package
+ * checksum, expiry, plus the pre-parsed manifest.
+ */
+export interface PackDownload {
+  ossUrl: string;
+  sha256: string;
+  expiresAt: string;
+  manifest: PackManifest;
+}
+
+/**
+ * One member skill listed by a pack manifest. `version` is optional —
+ * pre-2026-09-07 manifests shipped without it.
+ */
+export interface PackSkillEntry {
+  skillName: string;
+  provider: string;
+  version?: string;
+}
+
+/** Parsed pack manifest (the wire `Manifest` is a JSON string). */
+export interface PackManifest {
+  skills: PackSkillEntry[];
+  packName?: string;
+  displayName?: string;
+  summary?: string;
+  skillsNames?: string[];
+  /** Legacy field (pre 2026-09-08); tolerated when present. */
+  type?: string;
+}
+
+export type PackItemOutcome = 'installed' | 'changed' | 'noop' | 'failed';
+
+export type PackOverallStatus = 'success' | 'partial' | 'failed';
+
+export interface PackItemResult {
+  /** Full slug (`@provider/skillName`). */
+  fullSlug: string;
+  outcome: PackItemOutcome;
+  /** Target version from the manifest; absent when the manifest omits it. */
+  version?: string;
+  /** Previous local version (changed items). */
+  previousVersion?: string;
+  /** Slug of the skill that was replaced by a slug-conflict override. */
+  previousSlug?: string;
+  /** Present only for failed items. */
+  error?: { code: string; message: string };
+  /** Install target directory; absent for noop and failed items. */
+  targetDir?: string;
+}
+
+export interface PackInstallSummary {
+  installed: number;
+  changed: number;
+  /** noop count. */
+  skipped: number;
+  failed: number;
+}
+
+export interface PackInstallResult {
+  /** Pack name (CollectionName). */
+  pack: string;
+  displayName: string;
+  overallStatus: PackOverallStatus;
+  baseDir: string;
+  summary: PackInstallSummary;
+  items: PackItemResult[];
 }

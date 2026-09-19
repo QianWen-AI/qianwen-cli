@@ -142,16 +142,19 @@ describe('DashScopeTransport', () => {
       const fetchMock = vi.fn(async () => jsonResponse(payload));
       const transport = makeTransport(fetchMock as unknown as typeof fetch);
 
-      await expect(transport.request({ path: CHAT_PATH, method: 'POST', body: {} })).resolves.toEqual(
-        payload,
-      );
+      await expect(
+        transport.request({ path: CHAT_PATH, method: 'POST', body: {} }),
+      ).resolves.toEqual(payload);
     });
   });
 
   describe('error normalization', () => {
     it('normalizes the nested error dialect', async () => {
       const fetchMock = vi.fn(async () =>
-        jsonResponse({ error: { code: 'InvalidParameter', message: 'temperature must be Float' } }, 400),
+        jsonResponse(
+          { error: { code: 'InvalidParameter', message: 'temperature must be Float' } },
+          400,
+        ),
       );
       const transport = makeTransport(fetchMock as unknown as typeof fetch);
 
@@ -168,7 +171,10 @@ describe('DashScopeTransport', () => {
 
     it('normalizes the flat error dialect', async () => {
       const fetchMock = vi.fn(async () =>
-        jsonResponse({ code: 'Throttling', message: 'Requests throttled.', request_id: 'req-1' }, 429),
+        jsonResponse(
+          { code: 'Throttling', message: 'Requests throttled.', request_id: 'req-1' },
+          429,
+        ),
       );
       const transport = makeTransport(fetchMock as unknown as typeof fetch);
 
@@ -201,7 +207,9 @@ describe('DashScopeTransport', () => {
     });
 
     it('does not retry a failed request', async () => {
-      const fetchMock = vi.fn(async () => jsonResponse({ code: 'ServerError', message: 'boom' }, 500));
+      const fetchMock = vi.fn(async () =>
+        jsonResponse({ code: 'ServerError', message: 'boom' }, 500),
+      );
       const transport = makeTransport(fetchMock as unknown as typeof fetch);
 
       await expect(
@@ -227,8 +235,12 @@ describe('DashScopeTransport', () => {
 
         expect((captured as CliError).code).toBe('MODEL_NOT_SUPPORTED');
         expect((captured as CliError).message).toContain('该模型不在 Token Plan 支持范围内');
-        expect((captured as CliError).message).toContain('token-plan/personal/token-plan-personal-overview');
-        expect((captured as CliError).message).toContain('token-plan/team/token-plan-team-overview');
+        expect((captured as CliError).message).toContain(
+          'token-plan/personal/token-plan-personal-overview',
+        );
+        expect((captured as CliError).message).toContain(
+          'token-plan/team/token-plan-team-overview',
+        );
       },
     );
 
@@ -297,9 +309,9 @@ describe('DashScopeTransport', () => {
       const fetchMock = vi.fn(async () => response);
       const transport = makeTransport(fetchMock as unknown as typeof fetch);
 
-      await expect(transport.requestRaw({ path: CHAT_PATH, method: 'POST', body: {} })).resolves.toBe(
-        response,
-      );
+      await expect(
+        transport.requestRaw({ path: CHAT_PATH, method: 'POST', body: {} }),
+      ).resolves.toBe(response);
     });
 
     it('still raises on a failing status when requesting a raw response', async () => {
@@ -316,10 +328,7 @@ describe('DashScopeTransport', () => {
 
   describe('streaming (SSE) inactivity timer', () => {
     /** A streaming Response whose body emits chunks on the given schedule. */
-    function streamingResponse(
-      chunks: string[],
-      { gapMs = 0 }: { gapMs?: number } = {},
-    ): Response {
+    function streamingResponse(chunks: string[], { gapMs = 0 }: { gapMs?: number } = {}): Response {
       const encoder = new TextEncoder();
       let i = 0;
       const body = new ReadableStream<Uint8Array>({

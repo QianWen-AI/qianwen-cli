@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-09-19
+
+### Added
+
+- `skills pack-install` command for batch skill installation
+- Provider-based slugs (`@provider/skill`) for install and search
+- Project/Global scope selection for agent directory
+
 ## [1.7.0] - 2026-09-16
 
 ### Added

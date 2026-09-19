@@ -3,7 +3,7 @@
  * tri-state outcomes, deferred metadata write, staging cleanup, rollback on
  * failure and the unmanaged-conflict zero-change guarantee.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   mkdtempSync,
   rmSync,
@@ -19,10 +19,13 @@ import path from 'node:path';
 import { SkillsInstallService } from '../../../src/services/skills-install-service.js';
 import type { SkillsHubService } from '../../../src/services/skills-hub-service.js';
 import { skillMetaPath, writeSkillMeta } from '../../../src/services/skills-state-manager.js';
+import type { FullSlug } from '../../../src/utils/skills-security.js';
 import type { SkillDetail, SkillMetadataV1 } from '../../../src/types/skills.js';
 import { buildZip } from '../../fixtures/zip-builder.js';
 
 const SLUG = 'pdf-extractor';
+const NS = '@qianwen-ai';
+const FULL_SLUG = `${NS}/${SLUG}`;
 
 function makeDetail(overrides: Partial<SkillDetail> = {}): SkillDetail {
   return {
@@ -37,6 +40,7 @@ function makeDetail(overrides: Partial<SkillDetail> = {}): SkillDetail {
       { version: '1.2.0', publishedAt: '', changelog: '', isLatest: true },
       { version: '1.0.0', publishedAt: '', changelog: '', isLatest: false },
     ],
+    provider: '',
     ...overrides,
   };
 }
@@ -44,6 +48,7 @@ function makeDetail(overrides: Partial<SkillDetail> = {}): SkillDetail {
 interface HubCalls {
   detail: number;
   download: number;
+  downloadArgs?: { skillName?: string; version?: string; provider?: string };
 }
 
 function makeHub(detail: SkillDetail, calls: HubCalls, downloadSha256?: string): SkillsHubService {
@@ -52,8 +57,9 @@ function makeHub(detail: SkillDetail, calls: HubCalls, downloadSha256?: string):
       calls.detail += 1;
       return detail;
     },
-    getSkillDownload: async () => {
+    getSkillDownload: async (skillName?: string, version?: string, provider?: string) => {
       calls.download += 1;
+      calls.downloadArgs = { skillName, version, provider };
       return {
         ossUrl: 'https://oss.test.qianwenai.com/pkg.zip',
         expiresAt: '',
@@ -127,6 +133,10 @@ function makeService(
   return new SkillsInstallService(makeHub(detail, calls, sha256), {
     fetchImpl: makeFetch(zip, fetchCount),
   });
+}
+
+function fullSlugTarget(): string {
+  return path.join(baseDir, SLUG);
 }
 
 describe('SkillsInstallService — fresh install', () => {
@@ -303,7 +313,7 @@ describe('SkillsInstallService — unmanaged conflict (zero change)', () => {
     const svc = makeService();
 
     await expect(svc.install({ slug: SLUG, baseDir })).rejects.toMatchObject({
-      message: expect.stringContaining('No changes were made.'),
+      message: expect.stringContaining('No changes were made this time.'),
     });
   });
 });
@@ -338,6 +348,9 @@ describe('SkillsInstallService — server-declared SHA256 verification', () => {
       code: 'INSTALL_FAILED',
       exitCode: 1,
       message: expect.stringContaining('SHA256 mismatch'),
+    });
+    await expect(svc.install({ slug: SLUG, baseDir })).rejects.toMatchObject({
+      message: expect.stringContaining('Existing files were not changed.'),
     });
     // Nothing survives: no target, no metadata, no zip, no staging leftovers.
     expect(existsSync(targetDir)).toBe(false);
@@ -432,6 +445,425 @@ describe('SkillsInstallService — failure cleanup and rollback', () => {
     expect(readFileSync(path.join(targetDir, 'legacy.txt'), 'utf8')).toBe('old content');
     const kept = JSON.parse(readFileSync(skillMetaPath(targetDir), 'utf8'));
     expect(kept.version).toBe('1.0.0');
+    assertNoStagingLeftover(baseDir);
+  });
+});
+
+describe('SkillsInstallService — SKILL.md existence check', () => {
+  it('rejects a zip without SKILL.md on the single-install path', async () => {
+    const noSkillMdZip = buildZip([{ path: 'scripts/run.js', data: 'console.log(1)', method: 8 }]);
+    const svc = makeService(makeDetail(), noSkillMdZip);
+
+    await expect(svc.install({ slug: SLUG, baseDir })).rejects.toMatchObject({
+      code: 'INSTALL_FAILED',
+      exitCode: 1,
+      message: expect.stringContaining('SKILL.md was not found'),
+    });
+    expect(existsSync(targetDir)).toBe(false);
+    assertNoStagingLeftover(baseDir);
+  });
+
+  it('rejects a full-slug zip without SKILL.md on the single-install path', async () => {
+    const noSkillMdZip = buildZip([{ path: 'scripts/run.js', data: 'console.log(1)', method: 8 }]);
+    const svc = makeService(makeDetail(), noSkillMdZip);
+
+    await expect(svc.install({ slug: FULL_SLUG, baseDir })).rejects.toMatchObject({
+      code: 'INSTALL_FAILED',
+      exitCode: 1,
+      message: expect.stringContaining('SKILL.md was not found'),
+    });
+    expect(existsSync(fullSlugTarget())).toBe(false);
+    assertNoStagingLeftover(baseDir);
+  });
+
+  it('accepts a zip containing SKILL.md on the single-install path', async () => {
+    const svc = makeService();
+
+    const result = await svc.install({ slug: SLUG, baseDir });
+
+    expect(result.outcome).toBe('installed');
+    expect(readFileSync(path.join(targetDir, 'SKILL.md'), 'utf8')).toBe('# Skill');
+  });
+});
+
+describe('SkillsInstallService — full-slug flat install path', () => {
+  it('installs into baseDir/slug/ (flat, same as bare slug)', async () => {
+    const svc = makeService();
+
+    const result = await svc.install({ slug: FULL_SLUG, baseDir });
+
+    expect(result.outcome).toBe('installed');
+    expect(result.targetDir).toBe(fullSlugTarget());
+    expect(readFileSync(path.join(fullSlugTarget(), 'SKILL.md'), 'utf8')).toBe('# Skill');
+    expect(readFileSync(path.join(fullSlugTarget(), 'scripts', 'run.js'), 'utf8')).toBe(
+      'console.log(1)',
+    );
+    assertNoStagingLeftover(baseDir);
+  });
+
+  it('writes metadata carrying the full slug and the provider field', async () => {
+    const svc = makeService();
+
+    await svc.install({ slug: FULL_SLUG, baseDir });
+
+    const written = JSON.parse(readFileSync(skillMetaPath(fullSlugTarget()), 'utf8'));
+    expect(written.slug).toBe(FULL_SLUG);
+    expect(written.provider).toBe(NS);
+    expect(written.schemaVersion).toBe(1);
+  });
+
+  it('requests the bare skill name plus provider from the hub download API', async () => {
+    const svc = makeService();
+
+    await svc.install({ slug: FULL_SLUG, baseDir });
+
+    expect(calls.downloadArgs).toEqual({ skillName: SLUG, version: '1.2.0', provider: NS });
+  });
+
+  it('reuses a pre-parsed slug instead of re-parsing the raw input', async () => {
+    const svc = makeService();
+    const parsedSlug: FullSlug = { provider: NS, skillName: SLUG, raw: FULL_SLUG };
+
+    const result = await svc.install({
+      slug: '@wrong-ns/pdf-extractor',
+      baseDir,
+      parsedSlug,
+    });
+
+    expect(result.targetDir).toBe(fullSlugTarget());
+    expect(calls.downloadArgs?.provider).toBe(NS);
+  });
+
+  it('echoes the full slug in the result', async () => {
+    const svc = makeService();
+
+    const result = await svc.install({ slug: FULL_SLUG, baseDir });
+
+    expect(result.slug).toBe(FULL_SLUG);
+  });
+});
+
+describe('SkillsInstallService — bare-slug regression (single-level path)', () => {
+  it('keeps installing bare slugs into baseDir/slug/ when server has no provider', async () => {
+    const svc = makeService();
+
+    const result = await svc.install({ slug: SLUG, baseDir });
+
+    expect(result.slug).toBe(SLUG);
+    expect(result.targetDir).toBe(path.join(baseDir, SLUG));
+  });
+
+  it('omits the provider key in metadata for bare-slug installs when server has no provider', async () => {
+    const svc = makeService();
+
+    await svc.install({ slug: SLUG, baseDir });
+
+    const written = JSON.parse(readFileSync(skillMetaPath(targetDir), 'utf8'));
+    expect('provider' in written).toBe(false);
+  });
+});
+
+describe('SkillsInstallService — bare-slug canonical full slug normalization', () => {
+  it('canonicalizes bare slug to full slug when the server provides a provider', async () => {
+    const zip = goodZip();
+    const svc = makeService(makeDetail({ provider: NS }), zip);
+
+    const result = await svc.install({ slug: SLUG, baseDir });
+
+    expect(result.slug).toBe(FULL_SLUG);
+    expect(result.targetDir).toBe(path.join(baseDir, SLUG));
+  });
+
+  it('writes canonical full slug and provider in metadata when server provides provider', async () => {
+    const zip = goodZip();
+    const svc = makeService(makeDetail({ provider: NS }), zip);
+
+    await svc.install({ slug: SLUG, baseDir });
+
+    const written = JSON.parse(readFileSync(skillMetaPath(targetDir), 'utf8'));
+    expect(written.slug).toBe(FULL_SLUG);
+    expect(written.provider).toBe(NS);
+  });
+
+  it('preserves full slug from user input even when server returns a different provider', async () => {
+    const zip = goodZip();
+    const svc = makeService(makeDetail({ provider: '@other-provider' }), zip);
+
+    const result = await svc.install({ slug: FULL_SLUG, baseDir });
+
+    // User-provided provider takes precedence.
+    expect(result.slug).toBe(FULL_SLUG);
+  });
+
+  it('falls back to bare slug when server has no provider and user provides bare slug', async () => {
+    const svc = makeService();
+
+    const result = await svc.install({ slug: SLUG, baseDir });
+
+    expect(result.slug).toBe(SLUG);
+  });
+});
+
+describe('SkillsInstallService — full-slug noop / updated', () => {
+  it('returns noop for the same version at the flat path without downloading', async () => {
+    mkdirSync(fullSlugTarget(), { recursive: true });
+    writeSkillMeta(fullSlugTarget(), meta({ slug: FULL_SLUG, provider: NS, version: '1.2.0' }));
+    writeFileSync(path.join(fullSlugTarget(), 'SKILL.md'), 'existing');
+    const svc = makeService();
+
+    const result = await svc.install({ slug: FULL_SLUG, baseDir });
+
+    expect(result.outcome).toBe('noop');
+    expect(result.slug).toBe(FULL_SLUG);
+    expect(result.sha256).toBe('aa'.repeat(32));
+    expect(calls.download).toBe(0);
+    expect(fetchCount.count).toBe(0);
+    expect(readFileSync(path.join(fullSlugTarget(), 'SKILL.md'), 'utf8')).toBe('existing');
+  });
+
+  it('replaces an older version at the flat path (outcome updated)', async () => {
+    mkdirSync(fullSlugTarget(), { recursive: true });
+    writeSkillMeta(fullSlugTarget(), meta({ slug: FULL_SLUG, provider: NS, version: '1.0.0' }));
+    writeFileSync(path.join(fullSlugTarget(), 'legacy.txt'), 'old content');
+    const svc = makeService();
+
+    const result = await svc.install({ slug: FULL_SLUG, baseDir });
+
+    expect(result.outcome).toBe('updated');
+    expect(existsSync(path.join(fullSlugTarget(), 'legacy.txt'))).toBe(false);
+    expect(readFileSync(path.join(fullSlugTarget(), 'SKILL.md'), 'utf8')).toBe('# Skill');
+    const written = JSON.parse(readFileSync(skillMetaPath(fullSlugTarget()), 'utf8'));
+    expect(written.version).toBe('1.2.0');
+    assertNoStagingLeftover(baseDir);
+  });
+});
+
+describe('SkillsInstallService — unmanaged conflict at the flat path', () => {
+  it('aborts with UNMANAGED_CONFLICT before any download for an unmanaged full-slug directory', async () => {
+    const target = fullSlugTarget();
+    mkdirSync(target, { recursive: true });
+    writeFileSync(path.join(target, 'user-file.txt'), 'precious');
+    const svc = makeService();
+
+    await expect(svc.install({ slug: FULL_SLUG, baseDir })).rejects.toMatchObject({
+      code: 'UNMANAGED_CONFLICT',
+      exitCode: 1,
+    });
+
+    expect(calls.download).toBe(0);
+    expect(fetchCount.count).toBe(0);
+    expect(readFileSync(path.join(target, 'user-file.txt'), 'utf8')).toBe('precious');
+    assertNoStagingLeftover(baseDir);
+  });
+});
+
+describe('SkillsInstallService — §10 slug conflict detection', () => {
+  it('precheckSlugConflict returns null when the target directory is absent', () => {
+    const svc = makeService();
+
+    const conflict = svc.precheckSlugConflict(FULL_SLUG, baseDir);
+
+    expect(conflict).toBeNull();
+  });
+
+  it('precheckSlugConflict returns null when the target directory has the same slug', () => {
+    mkdirSync(targetDir);
+    writeSkillMeta(targetDir, meta({ slug: FULL_SLUG, provider: NS }));
+    const svc = makeService();
+
+    const conflict = svc.precheckSlugConflict(FULL_SLUG, baseDir);
+
+    expect(conflict).toBeNull();
+  });
+
+  it('precheckSlugConflict returns conflict info when target dir has a different slug', () => {
+    mkdirSync(targetDir);
+    writeSkillMeta(
+      targetDir,
+      meta({ slug: '@other/pdf-extractor', provider: '@other', version: '0.5.0' }),
+    );
+    const svc = makeService();
+
+    const conflict = svc.precheckSlugConflict(FULL_SLUG, baseDir);
+
+    expect(conflict).not.toBeNull();
+    expect(conflict).toMatchObject({
+      existingSlug: '@other/pdf-extractor',
+      existingVersion: '0.5.0',
+      targetDir,
+    });
+  });
+
+  it('install() with allowSlugOverwrite succeeds and returns overwrite info', async () => {
+    mkdirSync(targetDir);
+    writeSkillMeta(
+      targetDir,
+      meta({ slug: '@other/pdf-extractor', provider: '@other', version: '0.5.0' }),
+    );
+    const zip = goodZip();
+    const svc = makeService(makeDetail(), zip);
+
+    const result = await svc.install({ slug: FULL_SLUG, baseDir, allowSlugOverwrite: true });
+
+    expect(result.outcome).toBe('installed');
+    expect(result.overwritten).toBe(true);
+    expect(result.previousSlug).toBe('@other/pdf-extractor');
+    expect(result.previousVersion).toBe('0.5.0');
+    expect(result.slug).toBe(FULL_SLUG);
+    assertNoStagingLeftover(baseDir);
+  });
+
+  it('install() without allowSlugOverwrite throws SLUG_CONFLICT when conflict exists', async () => {
+    mkdirSync(targetDir);
+    writeSkillMeta(
+      targetDir,
+      meta({ slug: '@other/pdf-extractor', provider: '@other', version: '0.5.0' }),
+    );
+    const svc = makeService();
+
+    await expect(svc.install({ slug: FULL_SLUG, baseDir })).rejects.toMatchObject({
+      code: 'SLUG_CONFLICT',
+      exitCode: 1,
+    });
+    assertNoStagingLeftover(baseDir);
+  });
+
+  it('installMember() with allowSlugOverwrite succeeds when conflict exists', async () => {
+    mkdirSync(targetDir);
+    writeSkillMeta(
+      targetDir,
+      meta({ slug: '@other/pdf-extractor', provider: '@other', version: '0.5.0' }),
+    );
+    const zip = goodZip();
+    const svc = makeService(makeDetail(), zip);
+
+    const result = await svc.installMember({
+      provider: NS,
+      skillName: SLUG,
+      version: '1.2.0',
+      zipBuffer: zip,
+      baseDir,
+      allowSlugOverwrite: true,
+    });
+
+    expect(result.targetDir).toBe(targetDir);
+    assertNoStagingLeftover(baseDir);
+  });
+
+  it('installMember() without allowSlugOverwrite throws SLUG_CONFLICT when conflict exists', async () => {
+    mkdirSync(targetDir);
+    writeSkillMeta(
+      targetDir,
+      meta({ slug: '@other/pdf-extractor', provider: '@other', version: '0.5.0' }),
+    );
+    const svc = makeService();
+
+    await expect(
+      svc.installMember({
+        provider: NS,
+        skillName: SLUG,
+        version: '1.2.0',
+        zipBuffer: goodZip(),
+        baseDir,
+      }),
+    ).rejects.toMatchObject({
+      code: 'SLUG_CONFLICT',
+      exitCode: 1,
+    });
+    assertNoStagingLeftover(baseDir);
+  });
+});
+
+describe('SkillsInstallService — bare-to-full slug upgrade equivalence', () => {
+  it('precheckSlugConflict returns null when existing meta has bare slug and new install uses full slug', () => {
+    mkdirSync(targetDir);
+    writeSkillMeta(targetDir, meta({ slug: SLUG, version: '1.0.0' }));
+    const svc = makeService();
+
+    const conflict = svc.precheckSlugConflict(FULL_SLUG, baseDir);
+
+    expect(conflict).toBeNull();
+  });
+
+  it('precheckSlugConflict returns null when existing meta has full slug and new install uses bare slug with server provider', () => {
+    mkdirSync(targetDir);
+    writeSkillMeta(targetDir, meta({ slug: FULL_SLUG, provider: NS, version: '1.0.0' }));
+    const svc = makeService();
+
+    const conflict = svc.precheckSlugConflict(SLUG, baseDir, NS);
+
+    expect(conflict).toBeNull();
+  });
+
+  it('precheckSlugConflict still returns conflict for truly different skills sharing a directory name', () => {
+    mkdirSync(targetDir);
+    writeSkillMeta(
+      targetDir,
+      meta({ slug: '@other/totally-different', provider: '@other', version: '0.5.0' }),
+    );
+    const svc = makeService();
+
+    const conflict = svc.precheckSlugConflict(FULL_SLUG, baseDir);
+
+    expect(conflict).not.toBeNull();
+    expect(conflict).toMatchObject({
+      existingSlug: '@other/totally-different',
+    });
+  });
+
+  it('install() upgrades bare slug meta to full slug (outcome updated, meta migrated)', async () => {
+    mkdirSync(targetDir);
+    writeSkillMeta(targetDir, meta({ slug: SLUG, version: '1.0.0' }));
+    writeFileSync(path.join(targetDir, 'SKILL.md'), 'old');
+    const zip = goodZip();
+    const svc = makeService(makeDetail({ provider: NS }), zip);
+
+    const result = await svc.install({ slug: FULL_SLUG, baseDir });
+
+    expect(result.outcome).toBe('updated');
+    expect(result.slug).toBe(FULL_SLUG);
+    expect(result.overwritten).toBeUndefined();
+    // Meta should now carry the canonical full slug and provider.
+    const written = JSON.parse(readFileSync(skillMetaPath(targetDir), 'utf8'));
+    expect(written.slug).toBe(FULL_SLUG);
+    expect(written.provider).toBe(NS);
+    expect(written.version).toBe('1.2.0');
+    assertNoStagingLeftover(baseDir);
+  });
+
+  it('install() returns noop when bare slug meta has the same version as the hub', async () => {
+    mkdirSync(targetDir);
+    writeSkillMeta(targetDir, meta({ slug: SLUG, version: '1.2.0' }));
+    writeFileSync(path.join(targetDir, 'SKILL.md'), 'existing');
+    const svc = makeService(makeDetail({ provider: NS }));
+
+    const result = await svc.install({ slug: FULL_SLUG, baseDir });
+
+    // Same version but different slug form: noop because version matches.
+    expect(result.outcome).toBe('noop');
+    expect(calls.download).toBe(0);
+  });
+
+  it('installMember() succeeds without conflict when existing meta has bare slug', async () => {
+    mkdirSync(targetDir);
+    writeSkillMeta(targetDir, meta({ slug: SLUG, version: '1.0.0' }));
+    writeFileSync(path.join(targetDir, 'SKILL.md'), 'old');
+    const zip = goodZip();
+    const svc = makeService(makeDetail({ provider: NS }), zip);
+
+    const result = await svc.installMember({
+      provider: NS,
+      skillName: SLUG,
+      version: '1.2.0',
+      zipBuffer: zip,
+      baseDir,
+    });
+
+    expect(result.targetDir).toBe(targetDir);
+    // Meta should be migrated to full slug.
+    const written = JSON.parse(readFileSync(skillMetaPath(targetDir), 'utf8'));
+    expect(written.slug).toBe(FULL_SLUG);
+    expect(written.provider).toBe(NS);
     assertNoStagingLeftover(baseDir);
   });
 });

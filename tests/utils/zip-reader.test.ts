@@ -289,6 +289,37 @@ describe('extractZipTo — extraction behaviour', () => {
     expect(readFileSync(path.join(dest, 'exists.txt'), 'utf8')).toBe('already here');
   });
 
+  it('extracts a DEFLATE 0-byte file without errors', () => {
+    const zip = buildZip([{ path: 'pkg/__init__.py', data: Buffer.alloc(0), method: 8 }]);
+
+    extractZipTo(zip, dest);
+
+    const out = readFileSync(path.join(dest, 'pkg', '__init__.py'));
+    expect(out.length).toBe(0);
+  });
+
+  it('extracts a STORE 0-byte file without errors', () => {
+    const zip = buildZip([{ path: 'empty.txt', data: Buffer.alloc(0), method: 0 }]);
+
+    extractZipTo(zip, dest);
+
+    const out = readFileSync(path.join(dest, 'empty.txt'));
+    expect(out.length).toBe(0);
+  });
+
+  it('extracts a mixed archive with 0-byte and normal files', () => {
+    const zip = buildZip([
+      { path: 'src/__init__.py', data: Buffer.alloc(0), method: 8 },
+      { path: 'src/main.py', data: 'print("hello")', method: 8 },
+    ]);
+
+    extractZipTo(zip, dest);
+
+    const empty = readFileSync(path.join(dest, 'src', '__init__.py'));
+    expect(empty.length).toBe(0);
+    expect(readFileSync(path.join(dest, 'src', 'main.py'), 'utf8')).toBe('print("hello")');
+  });
+
   it('fails on undecompressable deflate data', () => {
     const zip = buildZip([{ path: 'junk.bin', data: 'not really deflate' }]);
     // Flip the method to deflate after building: raw stored bytes are not a
