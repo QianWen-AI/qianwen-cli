@@ -53,6 +53,9 @@ export function parsePeriod(period: string): { from: string; to: string } {
       if (match) {
         const year = parseInt(match[1]);
         const month = parseInt(match[2]);
+        if (month < 1 || month > 12) {
+          throw new Error(`Invalid period: '${period}'. Month must be between 01 and 12`);
+        }
         const from = `${year}-${String(month).padStart(2, '0')}-01`;
         const last = new Date(year, month, 0);
         return { from, to: formatDate(last) };

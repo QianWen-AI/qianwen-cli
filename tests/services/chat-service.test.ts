@@ -537,3 +537,35 @@ describe('ChatService.createStream', () => {
     expect(seen).toEqual(events);
   });
 });
+
+describe('ChatService.lastDeprecationNotice', () => {
+  it('stores the notice when the deprecation guard fires', async () => {
+    const guard = {
+      notifyIfDeprecated: vi.fn().mockResolvedValue('model retiring soon'),
+    };
+    const svc = new ChatService(makeService({ deprecationGuard: guard }));
+
+    await svc.buildRequest({ prompt: 'hi' });
+
+    expect(svc.lastDeprecationNotice).toBe('model retiring soon');
+  });
+
+  it('stays null when the guard returns null', async () => {
+    const guard = {
+      notifyIfDeprecated: vi.fn().mockResolvedValue(null),
+    };
+    const svc = new ChatService(makeService({ deprecationGuard: guard }));
+
+    await svc.buildRequest({ prompt: 'hi' });
+
+    expect(svc.lastDeprecationNotice).toBeNull();
+  });
+
+  it('stays null when no deprecation guard is provided', async () => {
+    const svc = new ChatService(makeService({ deprecationGuard: undefined }));
+
+    await svc.buildRequest({ prompt: 'hi' });
+
+    expect(svc.lastDeprecationNotice).toBeNull();
+  });
+});

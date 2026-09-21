@@ -4,6 +4,7 @@ import { MappingRegistry, type MappingKey } from '../api/providers/mapping-regis
 import type { RequestPayloadParser } from './request-payload-parser.js';
 import type { LayerConflictDetector } from './layer-conflict-detector.js';
 import type { DefaultModelResolver } from './default-model-resolver.js';
+import type { ModelDeprecationGuard } from './model-deprecation-guard.js';
 import type { AssetPolicy } from './asset-policy.js';
 import type { TaskService } from './task-service.js';
 import { finalizeTaskEnvelope } from './task-service.js';
@@ -52,6 +53,7 @@ export interface Model3dServiceDeps {
   downloader: ImageDownloader;
   guard: SiteAvailabilityGuard;
   context: () => { site: string; account: string };
+  deprecationGuard?: ModelDeprecationGuard;
 }
 
 export function registerModel3dMappings(registry: MappingRegistry): void {
@@ -149,6 +151,7 @@ export class Model3dService {
       input.model ?? existingModel,
     );
     body.model = model;
+    await this.deps.deprecationGuard?.notifyIfDeprecated(model);
     this.deps.conflictDetector.assertNoConflict(this.layer2Assignments(input), body);
     let extraHeaders: Record<string, string> | undefined;
     if (hasPrompt) {

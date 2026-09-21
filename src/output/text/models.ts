@@ -6,7 +6,12 @@
 
 import type { ModelsListViewModel, ModelDetailViewModel } from '../../view-models/models.js';
 import { formatTextTable } from '../text.js';
-import { MODEL_LIST_COLUMNS } from '../../commands/models/shared.js';
+import {
+  MODEL_LIST_COLUMNS,
+  RETIRING_LEGEND,
+  RETIRING_PREFIX,
+  NORMAL_PREFIX,
+} from '../../commands/models/shared.js';
 
 // ── Models List Text Renderer ────────────────────────────────────────
 
@@ -14,10 +19,19 @@ export function renderTextModelsList(vm: ModelsListViewModel): void {
   const headers = MODEL_LIST_COLUMNS.map((c) => c.header);
   const rows = vm.rows.map((row) => {
     const r = row as unknown as Record<string, string>;
-    return MODEL_LIST_COLUMNS.map((c) => r[c.key] ?? '');
+    return MODEL_LIST_COLUMNS.map((c) => {
+      if (c.key === 'id') {
+        if (!vm.hasRetiring) return row.id;
+        return `${row.retiring ? RETIRING_PREFIX : NORMAL_PREFIX}${row.id}`;
+      }
+      return r[c.key] ?? '';
+    });
   });
 
   console.log(formatTextTable(headers, rows));
+  if (vm.hasRetiring) {
+    console.log(`  ${RETIRING_LEGEND}`);
+  }
   console.log(`  ${vm.total} models`);
 }
 
@@ -135,7 +149,17 @@ export function renderTextModelDetail(vm: ModelDetailViewModel): void {
   lines.push(
     `  Version    ${vm.metadata.version}    Open Source  ${vm.metadata.openSource}    Updated  ${vm.metadata.updated}`,
   );
+  if (vm.lifecycle) {
+    lines.push(`  Lifecycle  ${vm.lifecycle}`);
+  }
   lines.push('');
+
+  // Notices — retirement schedule
+  if (vm.notice) {
+    lines.push('  ── Notices ──');
+    lines.push(`  ${vm.notice}`);
+    lines.push('');
+  }
 
   console.log(lines.join('\n'));
 }

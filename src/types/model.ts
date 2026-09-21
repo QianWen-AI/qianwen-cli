@@ -152,6 +152,12 @@ export interface ModelMetadata {
   snapshot?: string; // EquivalentSnapshot pinned version ID
 }
 
+export interface ModelLifecycle {
+  status: 'retiring';
+  offline_time: string;
+  announcement_url?: string;
+}
+
 // Model list item (for models list command).
 // `features` and `context` are populated for free by the API mapper — Agents
 // rely on them to filter candidates without an extra `models info` round-trip.
@@ -163,6 +169,7 @@ export interface Model {
   pricing?: Pricing;
   features?: string[];
   context?: Context;
+  lifecycle?: ModelLifecycle;
 }
 
 // Full model detail (for models info command)

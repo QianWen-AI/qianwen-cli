@@ -12,10 +12,12 @@ import {
   parsePaginationOptions,
   printPaginationFooter,
   buildModelRows,
+  RETIRING_LEGEND,
 } from './shared.js';
 import { buildModelsUiData, renderModelsTableInk } from '../../ui/ModelsTable.js';
 import { renderTextModelsList } from '../../output/text/models.js';
 import { withSpinner } from '../../ui/spinner.js';
+import { isModelRetiring } from '../../services/model-lifecycle.js';
 
 export interface ModelsSearchOptions {
   format?: string;
@@ -137,6 +139,8 @@ export async function modelsSearchAction(
       // Pre-load first page so initial render shows content immediately without loading state
       const initialRows = await loadPage(page);
 
+      const anyRetiring = allModelsWithQuota.some((m) => isModelRetiring(m));
+
       await renderInteractive(
         React.createElement(InteractiveTable, {
           columns: MODEL_LIST_COLUMNS,
@@ -147,6 +151,7 @@ export async function modelsSearchAction(
           initialRows,
           title: 'Models',
           subtitle: `Search: "${query}"`,
+          note: anyRetiring ? RETIRING_LEGEND : undefined,
         }),
       );
       return;

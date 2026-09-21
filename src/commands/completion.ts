@@ -402,7 +402,7 @@ ${fnName}() {
             _arguments \\
               '--from[Start date]:date:()' \\
               '--to[End date]:date:()' \\
-              '--period[Period preset]:period:(today yesterday week month last-month quarter year)' \\
+              '--period[Period preset]:period:(today yesterday week)' \\
               '--model[Model ID]:model:()' \\
               '--status[Status filter]:status:(0 2xx 4xx 5xx)' \\
               '--request-id[Request ID]:id:()' \\
@@ -618,7 +618,7 @@ ${fnName}() {
     skills)
       if (( CURRENT == 3 )); then
         local -a subs
-        subs=('search:Search SkillHub' 'install:Install a skill')
+        subs=('search:Search SkillHub' 'install:Install a skill' 'pack-install:Install all skills from a skill pack')
         _describe -t commands 'skills subcommand' subs
       else
         case "\${words[3]}" in
@@ -632,6 +632,12 @@ ${fnName}() {
           install)
             _arguments \\
               '1:slug:()' \\
+              '--dir[Directory to install into]:dir:_files -/' \\
+              '--format[Output format]:format:(table json text)' \\
+              '(-h --help)'{-h,--help}'[Show help]'
+            ;;
+          pack-install)
+            _arguments \\
               '--dir[Directory to install into]:dir:_files -/' \\
               '--format[Output format]:format:(table json text)' \\
               '(-h --help)'{-h,--help}'[Show help]'
@@ -898,6 +904,7 @@ function generateBashCompletion(): string {
         case "$sub" in
           search)  COMPREPLY=( $(compgen -W "--limit --format -h --help" -- "$cur") ); return 0 ;;
           install) COMPREPLY=( $(compgen -W "--dir --format -h --help" -- "$cur") ); return 0 ;;
+          pack-install) COMPREPLY=( $(compgen -W "--dir --format -h --help" -- "$cur") ); return 0 ;;
         esac ;;
       yunqi)
         case "$sub" in
@@ -936,7 +943,7 @@ function generateBashCompletion(): string {
       workspace)  COMPREPLY=( $(compgen -W "list limit" -- "$cur") ); return 0 ;;
       support)    COMPREPLY=( $(compgen -W "list view create reply close rate" -- "$cur") ); return 0 ;;
       docs)       COMPREPLY=( $(compgen -W "search view" -- "$cur") ); return 0 ;;
-      skills)     COMPREPLY=( $(compgen -W "search install" -- "$cur") ); return 0 ;;
+      skills)     COMPREPLY=( $(compgen -W "search install pack-install" -- "$cur") ); return 0 ;;
       config)     COMPREPLY=( $(compgen -W "list get set unset" -- "$cur") ); return 0 ;;
       completion) COMPREPLY=( $(compgen -W "install generate" -- "$cur") ); return 0 ;;
       yunqi)      COMPREPLY=( $(compgen -W "list subscribe unsubscribe" -- "$cur") ); return 0 ;;
@@ -1174,8 +1181,9 @@ complete -c ${cli} -n '__fish_seen_subcommand_from usage; and not __fish_seen_su
 
 complete -c ${cli} -n '__fish_seen_subcommand_from summary free-tier payg breakdown logs' -l from   -d 'Start date (YYYY-MM-DD)'
 complete -c ${cli} -n '__fish_seen_subcommand_from summary free-tier payg breakdown logs' -l to     -d 'End date (YYYY-MM-DD)'
-complete -c ${cli} -n '__fish_seen_subcommand_from summary free-tier payg breakdown logs' -l period -d 'Period preset' -a 'today yesterday week month last-month quarter year'
-complete -c ${cli} -n '__fish_seen_subcommand_from payg breakdown logs'                  -l days   -d 'Days to look back'
+complete -c ${cli} -n '__fish_seen_subcommand_from summary free-tier payg breakdown' -l period -d 'Period preset' -a 'today yesterday week month last-month quarter year'
+complete -c ${cli} -n '__fish_seen_subcommand_from logs'                                 -l period -d 'Period preset' -a 'today yesterday week'
+complete -c ${cli} -n '__fish_seen_subcommand_from payg breakdown'                       -l days   -d 'Days to look back'
 complete -c ${cli} -n '__fish_seen_subcommand_from breakdown'                       -l model       -d 'Model ID (required)'
 complete -c ${cli} -n '__fish_seen_subcommand_from breakdown'                       -l granularity -d 'Time granularity' -a 'day month quarter'
 complete -c ${cli} -n '__fish_seen_subcommand_from logs' -l model -d 'Model ID'
@@ -1310,13 +1318,16 @@ complete -c ${cli} -n '__fish_seen_subcommand_from docs search' -l format -d 'Ou
 complete -c ${cli} -n '__fish_seen_subcommand_from docs view' -l format -d 'Output format' -a 'table json text'
 
 # ── skills subcommands ────────────────────────────────────────────────────────
-complete -c ${cli} -n '__fish_seen_subcommand_from skills; and not __fish_seen_subcommand_from search install' -f
-complete -c ${cli} -n '__fish_seen_subcommand_from skills; and not __fish_seen_subcommand_from search install' -a search  -d 'Search SkillHub'
-complete -c ${cli} -n '__fish_seen_subcommand_from skills; and not __fish_seen_subcommand_from search install' -a install -d 'Install a skill'
+complete -c ${cli} -n '__fish_seen_subcommand_from skills; and not __fish_seen_subcommand_from search install pack-install' -f
+complete -c ${cli} -n '__fish_seen_subcommand_from skills; and not __fish_seen_subcommand_from search install pack-install' -a search       -d 'Search SkillHub'
+complete -c ${cli} -n '__fish_seen_subcommand_from skills; and not __fish_seen_subcommand_from search install pack-install' -a install      -d 'Install a skill'
+complete -c ${cli} -n '__fish_seen_subcommand_from skills; and not __fish_seen_subcommand_from search install pack-install' -a pack-install -d 'Install all skills from a skill pack'
 complete -c ${cli} -n '__fish_seen_subcommand_from skills; and __fish_seen_subcommand_from search' -l limit  -d 'Page size'
 complete -c ${cli} -n '__fish_seen_subcommand_from skills; and __fish_seen_subcommand_from search' -l format -d 'Output format' -a 'table json text'
 complete -c ${cli} -n '__fish_seen_subcommand_from skills; and __fish_seen_subcommand_from install' -l dir    -d 'Directory to install into' -r
 complete -c ${cli} -n '__fish_seen_subcommand_from skills; and __fish_seen_subcommand_from install' -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '__fish_seen_subcommand_from skills; and __fish_seen_subcommand_from pack-install' -l dir    -d 'Directory to install into' -r
+complete -c ${cli} -n '__fish_seen_subcommand_from skills; and __fish_seen_subcommand_from pack-install' -l format -d 'Output format' -a 'table json text'
 
 # ── yunqi subcommands ────────────────────────────────────────────────────────
 complete -c ${cli} -n '__fish_seen_subcommand_from yunqi; and not __fish_seen_subcommand_from list subscribe unsubscribe' -f

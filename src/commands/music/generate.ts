@@ -4,7 +4,6 @@ import { resolveFormatFromCommand } from '../../output/format.js';
 import { mediaView, renderInvocation } from '../../output/invocation-view.js';
 import { handleError, CliError } from '../../utils/errors.js';
 import { EXIT_CODES } from '../../utils/exit-codes.js';
-import { ensureAuthenticated } from '../../auth/credentials.js';
 import { preflightOutPath } from '../../utils/out-path.js';
 import { createMusicService } from '../../services/music-runtime.js';
 import type { MusicGenerateInput } from '../../services/music-service.js';
@@ -44,7 +43,6 @@ export function musicGenerateAction(
       if (typeof options.timeout === 'string') input.timeoutMs = coerceTimeout(options.timeout);
       if (options.stream === false) input.stream = false;
       preflightOutPath(input.out);
-      ensureAuthenticated();
       const runtimeOptions: { apiKey?: string } = {};
       if (typeof options.apiKey === 'string') runtimeOptions.apiKey = options.apiKey;
       const service = createMusicService(runtimeOptions);

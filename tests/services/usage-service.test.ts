@@ -14,6 +14,7 @@ import type {
   FreeTierUsage,
   UsageBreakdownResponse,
 } from '../../src/types/usage.js';
+import type { GetSeatSubscriptionSummaryResponse } from '../../src/types/api-models.js';
 
 // ────────────────────────────────────────────────────────────────────
 // Stub factories — only the surfaces UsageService consumes
@@ -188,5 +189,81 @@ describe('UsageService.getUsageBreakdown', () => {
       granularity: 'day',
       modelFilter: 'qwen-plus',
     });
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// resolveTokenPlan (via getUsageSummary — private method)
+// ────────────────────────────────────────────────────────────────────
+
+describe('UsageService.resolveTokenPlan — resetDate from NextCycleFlushTime', () => {
+  function buildServiceWithSeatMock(
+    seatResponse: GetSeatSubscriptionSummaryResponse | null,
+    tokenPlan: TokenPlan = { subscribed: true },
+  ) {
+    const apiClient = makeMockApiClient({
+      flat: async () => seatResponse,
+    });
+    const billing = makeStubBilling();
+    const freetier = makeStubFreetier();
+    const tokenplan = makeStubTokenplan(tokenPlan);
+    const svc = new UsageService(
+      apiClient,
+      billing as unknown as BillingService,
+      freetier as unknown as FreetierService,
+      tokenplan as unknown as TokenplanService,
+      makeMockCachedFetcher(),
+    );
+    return svc;
+  }
+
+  it('overrides resetDate with numeric NextCycleFlushTime', async () => {
+    const ts = 1700000000000;
+    const svc = buildServiceWithSeatMock({
+      Data: {
+        SubscriptionGroupList: [
+          { SpecType: 'standard', NextCycleFlushTime: ts, EquityList: [{ TotalValue: '100', SurplusValue: '50' }] },
+        ],
+      },
+    } as GetSeatSubscriptionSummaryResponse);
+
+    const out = await svc.getUsageSummary({ from: '2026-01-01', to: '2026-01-31' });
+    expect(out.token_plan.resetDate).toBe(new Date(ts).toISOString());
+  });
+
+  it('overrides resetDate with string NextCycleFlushTime', async () => {
+    const svc = buildServiceWithSeatMock({
+      Data: {
+        SubscriptionGroupList: [
+          { SpecType: 'standard', NextCycleFlushTime: '2026-10-01T00:00:00Z', EquityList: [{ TotalValue: '100', SurplusValue: '50' }] },
+        ],
+      },
+    } as GetSeatSubscriptionSummaryResponse);
+
+    const out = await svc.getUsageSummary({ from: '2026-01-01', to: '2026-01-31' });
+    expect(out.token_plan.resetDate).toBe('2026-10-01T00:00:00Z');
+  });
+
+  it('omits resetDate when NextCycleFlushTime is absent', async () => {
+    const svc = buildServiceWithSeatMock({
+      Data: {
+        SubscriptionGroupList: [
+          { SpecType: 'standard', EquityList: [{ TotalValue: '100', SurplusValue: '50' }] },
+        ],
+      },
+    } as GetSeatSubscriptionSummaryResponse);
+
+    const out = await svc.getUsageSummary({ from: '2026-01-01', to: '2026-01-31' });
+    expect(out.token_plan.resetDate).toBeUndefined();
+  });
+
+  it('falls back to tokenPlan when seat summary is null', async () => {
+    const svc = buildServiceWithSeatMock(null, {
+      subscribed: true,
+    });
+
+    const out = await svc.getUsageSummary({ from: '2026-01-01', to: '2026-01-31' });
+    expect(out.token_plan.subscribed).toBe(true);
+    expect(out.token_plan.resetDate).toBeUndefined();
   });
 });

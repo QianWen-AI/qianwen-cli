@@ -7,6 +7,7 @@ import type {
   TokenPlanStatusFooter,
 } from '../../types/tokenplan-subscription.js';
 import { NA, PARTIAL_FAILURE_NOTE_TEMPLATE } from './shared.js';
+import { formatDate as toLocalDate } from '../../utils/date.js';
 
 /** Build view model for the tokenplan status command. */
 export function buildTokenPlanStatusViewModel(
@@ -148,8 +149,7 @@ function buildFooter(
 
 function formatDate(iso: string): string {
   if (!iso) return NA;
-  const match = iso.match(/^(\d{4}-\d{2}-\d{2})/);
-  return match ? match[1] : iso;
+  return toLocalDate(new Date(iso));
 }
 
 function formatAmount(value: string): string {

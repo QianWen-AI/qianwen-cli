@@ -59,6 +59,7 @@ export const site = {
     enableTokenPlan: true,
     customHeaders: {},
     cdnBaseUrl: 'https://alioth.alicdn.com/model-mapping',
+    modelOfflineUrl: 'https://alioth.alicdn.com/model/prod/model-offline.json',
     tokenPlanCommodityCodes: {
       teams: 'sfm_tokenplanteams_dp_cn',
       personal: 'sfm_tokenplanpersonal_dp_cn',

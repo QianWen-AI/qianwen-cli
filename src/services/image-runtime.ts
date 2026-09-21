@@ -23,6 +23,7 @@ import {
 } from './invocation-credential-resolver.js';
 import { EndpointResolver } from './endpoint-resolver.js';
 import { ImageService, registerImageMappings } from './image-service.js';
+import { createModelDeprecationGuard } from './model-deprecation-guard.js';
 import { CliError } from '../utils/errors.js';
 import { EXIT_CODES } from '../utils/exit-codes.js';
 
@@ -31,6 +32,7 @@ const DEFAULT_IMAGE_MODEL = 'qwen-image-3.0-pro';
 export interface ImageRuntimeOptions {
   apiKey?: string;
   endpoint?: string;
+  silentGuard?: boolean;
 }
 
 export function createImageService(options: ImageRuntimeOptions = {}): ImageService {
@@ -127,5 +129,6 @@ export function createImageService(options: ImageRuntimeOptions = {}): ImageServ
     downloader,
     taskService,
     context: () => ({ site: site.key, account: API_KEY_ENV_NAME }),
+    deprecationGuard: createModelDeprecationGuard({ silent: options.silentGuard }),
   });
 }

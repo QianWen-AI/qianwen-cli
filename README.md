@@ -6,7 +6,7 @@
 
 > 千问AI平台官方命令行工具。在终端或 AI Agent 运行时中，发现模型、查看用量、管理认证与诊断本地环境。
 
-![Version](https://img.shields.io/badge/version-1.8.0-blue)
+![Version](https://img.shields.io/badge/version-1.9.0-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
@@ -45,10 +45,10 @@ qianwen version
 
 若出现 `command not found: qianwen`，说明 npm 全局 bin 目录未加入 PATH。执行对应 shell 的命令即可：
 
-| Shell | 命令 |
-|---|---|
-| bash | `echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc` |
-| zsh | `echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc` |
+| Shell | 命令                                                                                       |
+| ----- | ------------------------------------------------------------------------------------------ |
+| bash  | `echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc` |
+| zsh   | `echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc`   |
 
 ### 从源码构建
 
@@ -144,23 +144,23 @@ qianwen auth login --complete --format json
 
 ## 命令
 
-| 领域 | 命令 | 常用标志 |
-|---|---|---|
-| 模型调用 | `chat create`, `image generate`, `video generate`, `audio transcribe`, `audio speech`, `model3d generate`, `music generate`, `task get` | `--model`, `--stream`, `--size`, `--image`, `--voice`, `--out`, `--no-wait`, `--timeout`, `--request`, `--api-key`, `--format` |
-| 认证 | `auth login`, `auth logout`, `auth status` | `--init-only`, `--complete`, `--timeout`, `--format` |
-| 模型 | `models list`, `models info`, `models search` | `--input`, `--output`, `--all`, `--verbose`, `--page`, `--per-page`, `--format` |
-| 用量 | `usage summary`, `usage breakdown`, `usage free-tier`, `usage payg`, `usage logs` | `--period`, `--from`, `--to`, `--days`, `--model`, `--granularity`, `--format` |
-| 账单 | `billing summary`, `billing breakdown`, `billing limit`, `billing balance summary`, `billing balance recharge`, `billing balance recharge-history` | `--from`, `--to`, `--period`, `--group-by`, `--granularity`, `--channel`, `--amount`, `--range`, `--start-time`, `--end-time`, `--page`, `--page-size`, `--format` |
-| 业务空间 | `workspace list`, `workspace limit` | `--format` |
-| 订阅 | `subscription status`, `subscription orders`, `subscription tokenplan status`, `subscription tokenplan seats` | `--format` |
-| 云栖大会 | `yunqi list forums`, `yunqi list exhibitors`, `yunqi list subscriptions`, `yunqi list summaries`, `yunqi subscribe forum`, `yunqi unsubscribe forum` | `--page`, `--page-size`, `--forum-id`, `--keyword`, `--format` |
-| 文档 | `docs search`, `docs view` | `--format` |
-| 技能 | `skills search`, `skills install`, `skills pack-install` | `--limit`, `--dir`, `--format` |
-| 工单 | `support list`, `support view`, `support create`, `support reply`, `support close`, `support rate` | `--format` |
-| 配置 | `config list`, `config get`, `config set`, `config unset` | `--format` |
-| 诊断 | `doctor` | `--format` |
-| Shell | `completion install`, `completion generate` | `--shell` |
-| 版本 | `version` | `--check` |
+| 领域     | 命令                                                                                                                                                 | 常用标志                                                                                                                                                           |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 模型调用 | `chat create`, `image generate`, `video generate`, `audio transcribe`, `audio speech`, `model3d generate`, `music generate`, `task get`              | `--model`, `--stream`, `--size`, `--image`, `--voice`, `--out`, `--no-wait`, `--timeout`, `--request`, `--api-key`, `--format`                                     |
+| 认证     | `auth login`, `auth logout`, `auth status`                                                                                                           | `--init-only`, `--complete`, `--timeout`, `--format`                                                                                                               |
+| 模型     | `models list`, `models info`, `models search`                                                                                                        | `--input`, `--output`, `--all`, `--verbose`, `--page`, `--per-page`, `--format`                                                                                    |
+| 用量     | `usage summary`, `usage breakdown`, `usage free-tier`, `usage payg`, `usage logs`                                                                    | `--period`, `--from`, `--to`, `--days`, `--model`, `--granularity`, `--format`                                                                                     |
+| 账单     | `billing summary`, `billing breakdown`, `billing limit`, `billing balance summary`, `billing balance recharge`, `billing balance recharge-history`   | `--from`, `--to`, `--period`, `--group-by`, `--granularity`, `--channel`, `--amount`, `--range`, `--start-time`, `--end-time`, `--page`, `--page-size`, `--format` |
+| 业务空间 | `workspace list`, `workspace limit`                                                                                                                  | `--format`                                                                                                                                                         |
+| 订阅     | `subscription status`, `subscription orders`, `subscription tokenplan status`, `subscription tokenplan seats`                                        | `--format`                                                                                                                                                         |
+| 云栖大会 | `yunqi list forums`, `yunqi list exhibitors`, `yunqi list subscriptions`, `yunqi list summaries`, `yunqi subscribe forum`, `yunqi unsubscribe forum` | `--page`, `--page-size`, `--forum-id`, `--keyword`, `--format`                                                                                                     |
+| 文档     | `docs search`, `docs view`                                                                                                                           | `--format`                                                                                                                                                         |
+| 技能     | `skills search`, `skills install`, `skills pack-install`                                                                                             | `--limit`, `--dir`, `--format`                                                                                                                                     |
+| 工单     | `support list`, `support view`, `support create`, `support reply`, `support close`, `support rate`                                                   | `--format`                                                                                                                                                         |
+| 配置     | `config list`, `config get`, `config set`, `config unset`                                                                                            | `--format`                                                                                                                                                         |
+| 诊断     | `doctor`                                                                                                                                             | `--format`                                                                                                                                                         |
+| Shell    | `completion install`, `completion generate`                                                                                                          | `--shell`                                                                                                                                                          |
+| 版本     | `version`                                                                                                                                            | `--check`                                                                                                                                                          |
 
 使用帮助查看完整语法：
 
@@ -189,14 +189,14 @@ qianwen --quiet doctor
 
 退出码：
 
-| 代码 | 含义 |
-|---:|---|
-| `0` | 成功 |
-| `1` | 通用错误或用法错误 |
-| `2` | 认证错误 |
-| `3` | 网络错误 |
-| `4` | 配置错误 |
-| `130` | 中断 |
+|  代码 | 含义               |
+| ----: | ------------------ |
+|   `0` | 成功               |
+|   `1` | 通用错误或用法错误 |
+|   `2` | 认证错误           |
+|   `3` | 网络错误           |
+|   `4` | 配置错误           |
+| `130` | 中断               |
 
 JSON 错误遵循稳定格式：
 
@@ -286,8 +286,8 @@ QianWen CLI 使用一个全局配置文件：
 
 公开配置项：
 
-| 键 | 值 | 默认 |
-|---|---|---|
+| 键              | 值                              | 默认   |
+| --------------- | ------------------------------- | ------ |
 | `output.format` | `auto`, `table`, `json`, `text` | `auto` |
 
 ```bash

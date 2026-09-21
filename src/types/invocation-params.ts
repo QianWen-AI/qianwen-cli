@@ -21,7 +21,12 @@ export interface SuccessEnvelope {
   // `model` echoes the model that actually served the request; `usage` is
   // modality-specific (chat reports *_tokens, image reports image_count/size,
   // TTS reports characters) so it stays an open record here.
-  meta: { request_id?: string; model?: string; usage?: Record<string, unknown> };
+  meta: {
+    request_id?: string;
+    model?: string;
+    usage?: Record<string, unknown>;
+    model_offline_warning?: string;
+  };
   data: Record<string, unknown>;
 }
 

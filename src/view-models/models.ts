@@ -3,6 +3,12 @@ import { humanizeNumber, humanizeWithUnit, formatAmount } from '../output/humani
 import { abbreviateModality } from '../utils/modality.js';
 import { splitPrice } from '../utils/formatting.js';
 import { site } from '../site.js';
+import {
+  isModelRetiring,
+  modelRetireDateLong,
+  resolveAnnouncementUrl,
+} from '../services/model-lifecycle.js';
+import { formatDate } from '../utils/date.js';
 
 /** Currency symbol resolved from site config. */
 const CUR = site.features.currency === 'CNY' ? '¥' : '$';
@@ -173,18 +179,20 @@ export interface ModelRowViewModel {
   freeTierExpired?: boolean; // true when quota status is 'expire'
   price: string; // "¥0.50-2.00" (amount only)
   priceUnit: string; // "/1M tok" | "/img" | "/sec" | ""
+  retiring?: boolean; // true when the model is scheduled to retire
 }
 
 export interface ModelsListViewModel {
   rows: ModelRowViewModel[];
   total: number;
+  hasRetiring: boolean; // any row scheduled to retire — drives the legend line
 }
 
 /**
  * Build list view model from API response.
  */
 export function buildModelListViewModel(response: ModelsListResponse): ModelsListViewModel {
-  return buildModelListViewModelFromModels(response.models);
+  return buildModelListViewModelFromModels(response.models, undefined);
 }
 
 /**
@@ -223,10 +231,11 @@ export function buildModelListViewModelFromModels(
       freeTierExpired: ftExpired,
       price: priceAmt,
       priceUnit,
+      retiring: isModelRetiring(model),
     };
   });
 
-  return { rows, total: models.length };
+  return { rows, total: models.length, hasRetiring: rows.some((r) => r.retiring) };
 }
 
 // ── Model Detail ViewModel ────────────────────────────────────────────
@@ -266,6 +275,12 @@ export interface ModelDetailViewModel {
     openSource: string;
     updated: string;
   };
+
+  // Lifecycle: `RETIRING · <date>` for a scheduled model; absent otherwise.
+  lifecycle?: string;
+
+  // Retirement notice shown under the card; present only when retiring.
+  notice?: string;
 }
 
 export interface PricingLineViewModel {
@@ -297,6 +312,8 @@ export function buildModelDetailViewModel(detail: ModelDetail): ModelDetailViewM
   const pricingType = inferPricingType(detail);
   const pricingLines = buildPricingLines(detail.pricing);
 
+  const retireDate = modelRetireDateLong(detail);
+
   const vm: ModelDetailViewModel = {
     id: detail.id,
     description: detail.description,
@@ -313,9 +330,14 @@ export function buildModelDetailViewModel(detail: ModelDetail): ModelDetailViewM
       version: detail.metadata.version_tag,
       snapshot: detail.metadata.snapshot,
       openSource: detail.metadata.open_source ? 'Yes' : 'No',
-      updated: detail.metadata.updated,
+      updated: detail.metadata.updated.split('T')[0] || detail.metadata.updated,
     },
   };
+
+  if (retireDate) {
+    vm.lifecycle = `RETIRING · ${retireDate}`;
+    vm.notice = `This model will be retired on ${retireDate}, learn more at Announcement: ${resolveAnnouncementUrl()}`;
+  }
 
   // Context (LLM only)
   if (detail.context) {
@@ -345,7 +367,7 @@ export function buildModelDetailViewModel(detail: ModelDetail): ModelDetailViewM
       remainingPct: q.status === 'expire' ? 0 : pct,
       // Display layer wants a compact YYYY-MM-DD; the JSON layer keeps the
       // full ISO timestamp from FreeTierQuota.
-      resetDate: q.resetDate ? q.resetDate.slice(0, 10) : undefined,
+      resetDate: q.resetDate ? formatDate(new Date(q.resetDate)) : undefined,
       statusLabel,
     };
   } else if (detail.free_tier.mode === 'standard') {

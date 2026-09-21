@@ -13,6 +13,7 @@ import { withFieldRejectionHint } from './invocation-envelope.js';
 import type { ASRClient } from '../api/providers/dashscope/asr-client.js';
 import type { Layer2Assignment, SuccessEnvelope, FilePolicy } from '../types/invocation-params.js';
 import type { TranscriptFetcher } from './transcript.js';
+import type { ModelDeprecationGuard } from './model-deprecation-guard.js';
 
 const ASR_COMMAND = 'audio transcribe';
 const ASR_TASK_MODE = 'asr';
@@ -98,6 +99,7 @@ export interface ASRServiceDeps {
   envelope: InvocationEnvelope;
   context: () => { site: string; account: string };
   transcriptFetcher: TranscriptFetcher;
+  deprecationGuard?: ModelDeprecationGuard;
 }
 
 export interface AudioTranscribeOutcome {
@@ -134,6 +136,9 @@ function modelFamily(model: string): string {
 }
 
 export class ASRService {
+  /** Populated after `buildRequest`; non-null when the model has a retirement notice. */
+  lastDeprecationNotice: string | null = null;
+
   constructor(private readonly deps: ASRServiceDeps) {}
 
   private mappingKey(model: string): MappingKey {
@@ -192,6 +197,9 @@ export class ASRService {
       input.model ?? existingModel,
     );
     body.model = model;
+
+    this.lastDeprecationNotice =
+      (await this.deps.deprecationGuard?.notifyIfDeprecated(model)) ?? null;
 
     const qwen = isQwenFamily(model);
 

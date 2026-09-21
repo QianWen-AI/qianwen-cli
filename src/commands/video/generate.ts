@@ -2,7 +2,7 @@
 
 import type { Command } from 'commander';
 import { getEffectiveConfig } from '../../config/manager.js';
-import { resolveFormatFromCommand } from '../../output/format.js';
+import { resolveFormatFromCommand, resolveExplicitFormat } from '../../output/format.js';
 import {
   detail,
   expiryNote,
@@ -16,7 +16,6 @@ import {
   title,
 } from '../../output/invocation-view.js';
 import { handleError, CliError, HandledError } from '../../utils/errors.js';
-import { ensureAuthenticated } from '../../auth/credentials.js';
 import { preflightOutPath } from '../../utils/out-path.js';
 import { EXIT_CODES } from '../../utils/exit-codes.js';
 import { createVideoService } from '../../services/video-runtime.js';
@@ -59,12 +58,16 @@ export function videoGenerateAction(
       if (typeof options.request === 'string') input.request = options.request;
 
       preflightOutPath(input.out);
-      ensureAuthenticated();
-      const runtimeOptions: { apiKey?: string } = {};
+      const runtimeOptions: { apiKey?: string; silentGuard?: boolean } = {
+        silentGuard: resolveExplicitFormat(this ?? cmd) === 'json',
+      };
       if (typeof options.apiKey === 'string') runtimeOptions.apiKey = options.apiKey;
       const service = createVideoService(runtimeOptions);
       const label = input.wait === false ? '提交视频生成任务' : '视频生成中';
       const outcome = await withSpinner(label, () => service.generate(input), format);
+      if (service.lastDeprecationNotice) {
+        outcome.envelope.meta.model_offline_warning = service.lastDeprecationNotice;
+      }
       renderVideo(outcome.envelope, format, outcome.completed);
 
       // A wait timeout is a non-success exit, while an intentional --no-wait

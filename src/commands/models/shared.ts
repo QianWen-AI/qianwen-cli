@@ -4,8 +4,16 @@ import { abbreviateModality } from '../../utils/modality.js';
 import type { Model, ModelDetail } from '../../types/model.js';
 import { splitPrice } from '../../utils/formatting.js';
 import { formatFreeTierSplit, formatPriceFromPricing } from '../../view-models/models.js';
+import { isModelRetiring } from '../../services/model-lifecycle.js';
 
 export { formatFreeTier, formatPriceFromPricing } from '../../view-models/models.js';
+
+/** Marker prefixed to a retiring model's id cell. */
+export const RETIRING_PREFIX = '! ';
+/** Blank prefix keeping non-retiring ids aligned under the marker column. */
+export const NORMAL_PREFIX = '  ';
+/** Legend rendered under the header when any listed model is retiring. */
+export const RETIRING_LEGEND = '! indicates that the model is scheduled for retirement (RETIRING).';
 
 /**
  * Column definitions for model list/search tables.
@@ -84,6 +92,9 @@ export function buildModelRows(
   modelsWithQuota: Model[],
   details: (ModelDetail | null)[],
 ): Record<string, string>[] {
+  // The marker column only appears when a retiring model is present, so a
+  // catalog with none stays byte-for-byte identical to the unmarked layout.
+  const anyRetiring = modelsWithQuota.some((m) => isModelRetiring(m));
   return modelsWithQuota.map((model, i) => {
     const detail = details[i];
     const pricing = detail?.pricing ?? model.pricing;
@@ -115,8 +126,10 @@ export function buildModelRows(
     const freeTierAmt = ftExpired ? theme.muted(ftAmt) : ftAmt;
     const freeTierUnit = ftExpired ? theme.muted(ftUnit) : ftUnit;
 
+    const retiring = isModelRetiring(model);
+
     return {
-      id: model.id,
+      id: anyRetiring ? `${retiring ? RETIRING_PREFIX : NORMAL_PREFIX}${model.id}` : model.id,
       modalityInput: model.modality.input.map((t) => abbreviateModality(t as any)).join('+'),
       modalityOutput: model.modality.output.map((t) => abbreviateModality(t as any)).join('+'),
       canTry: model.can_try ? 'Yes' : 'No',

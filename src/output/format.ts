@@ -68,19 +68,21 @@ function rejectInvalidFormat(value: string): never {
  * This handles cases like: `qianwen --format json usage summary`
  */
 export function resolveFormatFromCommand(cmd: Command, config: ConfigSchema): ResolvedFormat {
-  // Walk up parent chain to find --format flag
-  let formatFlag: string | undefined;
+  const formatFlag = resolveExplicitFormat(cmd);
+  return resolveFormat(formatFlag, config['output.format']);
+}
+
+/** Walk up the parent chain to find an explicit `--format` flag value, or undefined when auto-detect. */
+export function resolveExplicitFormat(cmd: Command): string | undefined {
   let current: Command | null = cmd;
   while (current) {
     const opts = current.opts();
     if (opts.format && typeof opts.format === 'string') {
-      formatFlag = opts.format;
-      break;
+      return opts.format;
     }
     current = current.parent ?? null;
   }
-
-  return resolveFormat(formatFlag, config['output.format']);
+  return undefined;
 }
 
 function detectTTYFormat(): ResolvedFormat {

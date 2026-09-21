@@ -28,6 +28,7 @@ import {
   registerModel3dMappings,
   DEFAULT_MODEL3D_MODEL,
 } from './model3d-service.js';
+import { createModelDeprecationGuard } from './model-deprecation-guard.js';
 import { CliError } from '../utils/errors.js';
 import { EXIT_CODES } from '../utils/exit-codes.js';
 
@@ -137,5 +138,6 @@ export function createModel3dService(options: Model3dRuntimeOptions = {}): Model
     downloader,
     guard,
     context: () => ({ site: site.key, account: API_KEY_ENV_NAME }),
+    deprecationGuard: createModelDeprecationGuard(),
   });
 }

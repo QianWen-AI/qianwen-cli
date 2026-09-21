@@ -28,12 +28,14 @@ import {
   DEFAULT_T2V_MODEL,
   DEFAULT_I2V_MODEL,
 } from './video-service.js';
+import { createModelDeprecationGuard } from './model-deprecation-guard.js';
 import { CliError } from '../utils/errors.js';
 import { EXIT_CODES } from '../utils/exit-codes.js';
 
 export interface VideoRuntimeOptions {
   apiKey?: string;
   endpoint?: string;
+  silentGuard?: boolean;
 }
 
 export function createVideoService(options: VideoRuntimeOptions = {}): VideoService {
@@ -133,5 +135,6 @@ export function createVideoService(options: VideoRuntimeOptions = {}): VideoServ
     client,
     downloader,
     context: () => ({ site: site.key, account: API_KEY_ENV_NAME }),
+    deprecationGuard: createModelDeprecationGuard({ silent: options.silentGuard }),
   });
 }

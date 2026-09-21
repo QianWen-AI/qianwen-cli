@@ -1,8 +1,14 @@
 import React from 'react';
+import { Text } from 'ink';
 import { Table } from './Table.js';
 import { Section } from './Section.js';
-import { theme, buildProgressBar } from './theme.js';
-import { MODEL_LIST_COLUMNS } from '../commands/models/shared.js';
+import { theme, colors, buildProgressBar } from './theme.js';
+import {
+  MODEL_LIST_COLUMNS,
+  RETIRING_PREFIX,
+  NORMAL_PREFIX,
+  RETIRING_LEGEND,
+} from '../commands/models/shared.js';
 import { renderWithInk } from './render.js';
 import {
   buildModelListViewModelFromModels,
@@ -20,6 +26,7 @@ export interface ModelsListUiData {
   rows: ModelRowUiData[];
   total: number;
   hasQuota: boolean;
+  hasRetiring: boolean;
 }
 
 /**
@@ -51,6 +58,7 @@ export function buildModelsUiData(
     rows,
     total: vm.total,
     hasQuota: models.some((m) => m.free_tier.quota != null),
+    hasRetiring: vm.hasRetiring,
   };
 }
 
@@ -87,7 +95,9 @@ export function ModelsTableInk({ uiData, title, subtitle, footer }: ModelsTableI
     const freeTierUnit = row.freeTierExpired ? theme.muted(row.freeTierUnit) : row.freeTierUnit;
 
     return {
-      id: row.id,
+      id: uiData.hasRetiring
+        ? `${row.retiring ? RETIRING_PREFIX : NORMAL_PREFIX}${row.id}`
+        : row.id,
       modalityInput: row.modalityInput,
       modalityOutput: row.modalityOutput,
       freeTierAmt,
@@ -100,6 +110,7 @@ export function ModelsTableInk({ uiData, title, subtitle, footer }: ModelsTableI
 
   return (
     <Section title={sectionTitle} subtitle={subtitle} footer={sectionFooter}>
+      {uiData.hasRetiring && <Text color={colors.warning}>{RETIRING_LEGEND}</Text>}
       <Table columns={MODEL_LIST_COLUMNS} data={tableData} paddingLeft={0} />
     </Section>
   );

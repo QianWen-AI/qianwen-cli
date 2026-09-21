@@ -6,6 +6,7 @@ import { MappingRegistry } from '../api/providers/mapping-registry.js';
 import type { RequestPayloadParser } from './request-payload-parser.js';
 import type { LayerConflictDetector } from './layer-conflict-detector.js';
 import type { DefaultModelResolver } from './default-model-resolver.js';
+import type { ModelDeprecationGuard } from './model-deprecation-guard.js';
 import type { InvocationEnvelope } from './invocation-envelope.js';
 import { withFieldRejectionHint } from './invocation-envelope.js';
 import type { TTSClient } from '../api/providers/dashscope/tts-client.js';
@@ -48,6 +49,7 @@ export interface TTSServiceDeps {
   wsClient: TtsWebSocketClient;
   downloader: ImageDownloader;
   context: () => { site: string; account: string };
+  deprecationGuard?: ModelDeprecationGuard;
 }
 
 /** Register the DashScope-native speech-synthesis entry into a mapping registry. */
@@ -122,6 +124,9 @@ function audioExtensionFromUrl(url: string): string {
 }
 
 export class TTSService {
+  /** Populated after `buildRequest`/`buildWebSocketRequest`; non-null when the model has a retirement notice. */
+  lastDeprecationNotice: string | null = null;
+
   constructor(private readonly deps: TTSServiceDeps) {}
 
   private layer2Assignments(input: AudioSpeechInput): Layer2Assignment[] {
@@ -164,6 +169,8 @@ export class TTSService {
       input.model ?? existingModel,
     );
     body.model = model;
+    this.lastDeprecationNotice =
+      (await this.deps.deprecationGuard?.notifyIfDeprecated(model)) ?? null;
 
     if (isMultimodalChatModel(model)) {
       throw invalidArg(

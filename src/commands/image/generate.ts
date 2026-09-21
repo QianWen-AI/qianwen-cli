@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import { getEffectiveConfig } from '../../config/manager.js';
-import { resolveFormatFromCommand } from '../../output/format.js';
+import { resolveFormatFromCommand, resolveExplicitFormat } from '../../output/format.js';
 import {
   detail,
   expiryNote,
@@ -17,7 +17,6 @@ import {
 import type { SuccessEnvelope } from '../../types/invocation-params.js';
 import type { ResolvedFormat } from '../../types/config.js';
 import { handleError, CliError } from '../../utils/errors.js';
-import { ensureAuthenticated } from '../../auth/credentials.js';
 import { preflightOutPath } from '../../utils/out-path.js';
 import { EXIT_CODES } from '../../utils/exit-codes.js';
 import { createImageService } from '../../services/image-runtime.js';
@@ -72,11 +71,15 @@ export function imageGenerateAction(
       if (typeof options.timeout === 'string') input.timeoutMs = coerceTimeout(options.timeout);
       if (options.wait === false) input.wait = false;
       preflightOutPath(input.out);
-      ensureAuthenticated();
-      const runtimeOptions: { apiKey?: string } = {};
+      const runtimeOptions: { apiKey?: string; silentGuard?: boolean } = {
+        silentGuard: resolveExplicitFormat(this ?? cmd) === 'json',
+      };
       if (typeof options.apiKey === 'string') runtimeOptions.apiKey = options.apiKey;
       const service = createImageService(runtimeOptions);
       const envelope = await withSpinner('图片生成中', () => service.generate(input), format);
+      if (service.lastDeprecationNotice) {
+        envelope.meta.model_offline_warning = service.lastDeprecationNotice;
+      }
       renderImage(envelope, format);
     } catch (error) {
       handleError(error, format);

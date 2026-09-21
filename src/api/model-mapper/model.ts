@@ -3,7 +3,15 @@
 // free-tier metadata. Also exposes the flatten helper for paginated groups.
 
 import type { ApiModelItem } from '../../types/api-models.js';
-import type { Model, ModelDetail, FreeTierQuota, LLMPricing, Context } from '../../types/model.js';
+import type {
+  Model,
+  ModelDetail,
+  ModelLifecycle,
+  FreeTierQuota,
+  LLMPricing,
+  Context,
+} from '../../types/model.js';
+import { ANNOUNCEMENT_URL } from '../../services/model-deprecation-source.js';
 import { mapModality, mapRateLimits, mapBuiltInTools } from './attributes.js';
 import { mapPrices } from './pricing-mapper.js';
 import { attachPricingSummary } from './pricing-summary.js';
@@ -44,6 +52,7 @@ export function mapApiModelToModel(
     pricing: attachPricingSummary(mapPrices(apiItem.Prices, apiItem.MultiPrices)),
     ...(apiItem.Features && apiItem.Features.length > 0 ? { features: apiItem.Features } : {}),
     ...(context ? { context } : {}),
+    ...mapOfflineInfo(apiItem),
   };
 }
 
@@ -97,10 +106,11 @@ export function mapApiModelToModelDetail(
     metadata: {
       version_tag: apiItem.VersionTag,
       open_source: apiItem.OpenSource,
-      updated: (apiItem.UpdateAt ?? '').split('T')[0] || '',
+      updated: apiItem.UpdateAt ?? '',
       category: apiItem.Category || undefined,
       snapshot: apiItem.EquivalentSnapshot || undefined,
     },
+    ...mapOfflineInfo(apiItem),
   };
 }
 
@@ -109,4 +119,22 @@ export function mapApiModelToModelDetail(
  */
 export function flattenApiModels(groups: Array<{ Items: ApiModelItem[] }>): ApiModelItem[] {
   return groups.flatMap((group) => group.Items);
+}
+
+/**
+ * Read the optional retirement schedule off an item. Extra/unknown fields are
+ * ignored; a missing or malformed `offlineInfo` yields no retirement markers.
+ */
+function mapOfflineInfo(apiItem: ApiModelItem): { lifecycle?: ModelLifecycle } {
+  const inference = apiItem.OfflineInfo?.Inference;
+  if (!inference) return {};
+  const offlineTime = inference.OfflineTime;
+  if (typeof offlineTime !== 'string' || !offlineTime.trim()) return {};
+  return {
+    lifecycle: {
+      status: 'retiring',
+      offline_time: offlineTime,
+      announcement_url: ANNOUNCEMENT_URL,
+    },
+  };
 }

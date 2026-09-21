@@ -16,7 +16,6 @@ import {
 } from '../../output/invocation-view.js';
 import { handleError, HandledError } from '../../utils/errors.js';
 import { EXIT_CODES } from '../../utils/exit-codes.js';
-import { ensureAuthenticated } from '../../auth/credentials.js';
 import { preflightOutPath } from '../../utils/out-path.js';
 import { createTaskService } from '../../services/task-runtime.js';
 import { theme } from '../../ui/theme.js';
@@ -31,7 +30,6 @@ export function taskGetAction(
     const format = resolveFormatFromCommand(this ?? cmd, config);
 
     try {
-      ensureAuthenticated();
       const out = typeof options.out === 'string' ? options.out : undefined;
       if (out !== undefined) preflightOutPath(out);
       const runtimeOptions: { apiKey?: string } = {};

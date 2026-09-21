@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { resolveFormat, resolveFormatFromCommand } from '../../src/output/format.js';
+import {
+  resolveFormat,
+  resolveFormatFromCommand,
+  resolveExplicitFormat,
+} from '../../src/output/format.js';
 import { Command } from 'commander';
 
 describe('resolveFormat', () => {
@@ -85,5 +89,29 @@ describe('resolveFormatFromCommand', () => {
 
     const result = resolveFormatFromCommand(cmd, { 'output.format': 'text' } as any);
     expect(result).toBe('text');
+  });
+});
+
+describe('resolveExplicitFormat', () => {
+  it('returns the format value when explicitly set on the command', () => {
+    const cmd = new Command();
+    cmd.option('--format <fmt>');
+    (cmd as any)._optionValues = { format: 'json' };
+
+    expect(resolveExplicitFormat(cmd)).toBe('json');
+  });
+
+  it('walks up the parent chain to find --format', () => {
+    const program = new Command();
+    program.option('--format <fmt>');
+    (program as any)._optionValues = { format: 'text' };
+    const sub = program.command('usage');
+
+    expect(resolveExplicitFormat(sub)).toBe('text');
+  });
+
+  it('returns undefined when no explicit --format is set', () => {
+    const cmd = new Command();
+    expect(resolveExplicitFormat(cmd)).toBeUndefined();
   });
 });
