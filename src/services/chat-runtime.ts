@@ -19,12 +19,14 @@ import {
 } from './invocation-credential-resolver.js';
 import { EndpointResolver } from './endpoint-resolver.js';
 import { ChatService, registerChatMappings } from './chat-service.js';
+import { createModelDeprecationGuard } from './model-deprecation-guard.js';
 
 const DEFAULT_CHAT_MODEL = 'qwen3.8-max';
 
 export interface ChatRuntimeOptions {
   apiKey?: string;
   endpoint?: string;
+  silentGuard?: boolean;
 }
 
 export function createChatService(options: ChatRuntimeOptions = {}): ChatService {
@@ -96,5 +98,6 @@ export function createChatService(options: ChatRuntimeOptions = {}): ChatService
     envelope: new InvocationEnvelope(),
     client,
     context: () => ({ site: site.key, account: API_KEY_ENV_NAME }),
+    deprecationGuard: createModelDeprecationGuard({ silent: options.silentGuard }),
   });
 }

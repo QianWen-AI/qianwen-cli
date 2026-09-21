@@ -281,8 +281,8 @@ export function registerSkillsPackInstallCommand(parent: Command): Command {
     .option('--format <fmt>', 'Output format: table, json, text (default: auto)');
 
   addExamples(packInstall, [
-    formatCmd('skills pack-install qianwenai-skills-pack'),
-    formatCmd('skills pack-install qianwenai-skills-pack --dir ./skills --format json'),
+    formatCmd('skills pack-install qianwen-forge-pack'),
+    formatCmd('skills pack-install qianwen-forge-pack --dir ./skills --format json'),
   ]);
 
   packInstall.action(skillsPackInstallAction(packInstall));

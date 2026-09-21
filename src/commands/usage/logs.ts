@@ -4,8 +4,8 @@
  * Resolves the time range, dispatches to UsageService through the ApiClient
  * (`createClient` composes the ServiceContainer), then
  * fans out to the three rendering modes (TUI / TEXT / JSON). Filter flags
- * (`--model`, `--status`) are repeatable; `--request-id` short-circuits the
- * other filters to mimic the upstream exact-match contract.
+ * (`--model`, `--status`) are repeatable; `--request-id` can be combined
+ * with other filters for intersection queries.
  */
 
 import React from 'react';
@@ -28,7 +28,7 @@ import { EXIT_CODES } from '../../utils/exit-codes.js';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
-const MAX_PAGE_SIZE = 100;
+const MAX_PAGE_SIZE = 50;
 const MAX_RANGE_DAYS = 14;
 
 /**

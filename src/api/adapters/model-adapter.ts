@@ -44,19 +44,10 @@ export function transformModelList(groups: ApiModelGroup[]): ModelsListResponse 
 // ────────────────────────────────────────────────────────────────────
 
 /**
- * Map a single ApiModelItem to a ModelDetail. The base mapper truncates the
- * UpdateAt timestamp to a YYYY-MM-DD prefix for list-view display; the
- * adapter overrides this so callers receive the original ISO 8601 string.
+ * Map a single ApiModelItem to a ModelDetail.
  */
 export function transformModelDetail(item: ApiModelItem): ModelDetail {
-  const base = mapApiModelToModelDetail(item, false);
-  return {
-    ...base,
-    metadata: {
-      ...base.metadata,
-      updated: item.UpdateAt ?? '',
-    },
-  };
+  return mapApiModelToModelDetail(item, false);
 }
 
 // ────────────────────────────────────────────────────────────────────

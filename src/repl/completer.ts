@@ -320,6 +320,9 @@ export const COMMAND_FLAG_VALUES: Record<string, Record<string, string[]>> = {
     '--group-by': ['model', 'api-key'],
     '--granularity': ['day', 'month'],
   },
+  'usage logs': {
+    '--period': ['today', 'yesterday', 'week'],
+  },
 };
 
 /** Resolve flag values with command-specific overrides. */

@@ -107,10 +107,11 @@ describe('parseBillingItem', () => {
     expect(out?.isFree).toBe(true);
   });
 
-  it('falls back modelId through Model → JobId → MaasTypeName → Other', () => {
+  it('falls back modelId through BaseModel → ModelName → Model → JobId → Other', () => {
+    expect(parseBillingItem({ BaseModel: 'B' })?.modelId).toBe('B');
+    expect(parseBillingItem({ ModelName: 'MN' })?.modelId).toBe('MN');
     expect(parseBillingItem({ Model: 'M' })?.modelId).toBe('M');
     expect(parseBillingItem({ JobId: 'J' })?.modelId).toBe('J');
-    expect(parseBillingItem({ MaasTypeName: 'T' })?.modelId).toBe('T');
     expect(parseBillingItem({})?.modelId).toBe('Other');
   });
 

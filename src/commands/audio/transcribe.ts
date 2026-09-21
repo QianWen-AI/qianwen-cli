@@ -2,7 +2,7 @@
 
 import type { Command } from 'commander';
 import { getEffectiveConfig } from '../../config/manager.js';
-import { resolveFormatFromCommand } from '../../output/format.js';
+import { resolveFormatFromCommand, resolveExplicitFormat } from '../../output/format.js';
 import {
   detail,
   expiryNote,
@@ -13,7 +13,6 @@ import {
   title,
 } from '../../output/invocation-view.js';
 import { handleError, CliError, HandledError } from '../../utils/errors.js';
-import { ensureAuthenticated } from '../../auth/credentials.js';
 import { EXIT_CODES } from '../../utils/exit-codes.js';
 import { createASRService } from '../../services/asr-runtime.js';
 import type { AudioTranscribeInput } from '../../services/asr-service.js';
@@ -53,12 +52,16 @@ export function audioTranscribeAction(
       if (typeof options.timeout === 'string') input.timeoutMs = coerceTimeout(options.timeout);
       if (typeof options.request === 'string') input.request = options.request;
 
-      ensureAuthenticated();
-      const runtimeOptions: { apiKey?: string } = {};
+      const runtimeOptions: { apiKey?: string; silentGuard?: boolean } = {
+        silentGuard: resolveExplicitFormat(this ?? cmd) === 'json',
+      };
       if (typeof options.apiKey === 'string') runtimeOptions.apiKey = options.apiKey;
       const service = createASRService(runtimeOptions);
       const label = input.wait === false ? '提交语音转写任务' : '语音转写中';
       const outcome = await withSpinner(label, () => service.generate(input), format);
+      if (service.lastDeprecationNotice) {
+        outcome.envelope.meta.model_offline_warning = service.lastDeprecationNotice;
+      }
       renderTranscribe(outcome.envelope, format, outcome.completed);
 
       // A wait timeout is a non-success exit, while an intentional --no-wait

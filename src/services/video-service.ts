@@ -6,6 +6,7 @@ import { MappingRegistry, type MappingKey } from '../api/providers/mapping-regis
 import type { RequestPayloadParser } from './request-payload-parser.js';
 import type { LayerConflictDetector } from './layer-conflict-detector.js';
 import type { DefaultModelResolver } from './default-model-resolver.js';
+import type { ModelDeprecationGuard } from './model-deprecation-guard.js';
 import type { AssetPolicy } from './asset-policy.js';
 import type { TaskService } from './task-service.js';
 import { finalizeTaskEnvelope } from './task-service.js';
@@ -49,6 +50,7 @@ export interface VideoServiceDeps {
   client: VideoClient;
   downloader: ImageDownloader;
   context: () => { site: string; account: string };
+  deprecationGuard?: ModelDeprecationGuard;
 }
 
 export interface VideoGenerateOutcome {
@@ -113,6 +115,9 @@ function usesMediaFirstFrame(model: string): boolean {
 }
 
 export class VideoService {
+  /** Populated after `buildRequest`; non-null when the model has a retirement notice. */
+  lastDeprecationNotice: string | null = null;
+
   constructor(private readonly deps: VideoServiceDeps) {}
 
   private mappingKey(model: string, taskMode: string): MappingKey {
@@ -169,6 +174,8 @@ export class VideoService {
       input.model ?? existingModel,
     );
     body.model = model;
+    this.lastDeprecationNotice =
+      (await this.deps.deprecationGuard?.notifyIfDeprecated(model)) ?? null;
 
     this.deps.conflictDetector.assertNoConflict(this.layer2Assignments(input), body);
 

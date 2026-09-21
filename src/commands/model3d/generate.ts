@@ -15,7 +15,6 @@ import {
   title,
 } from '../../output/invocation-view.js';
 import { handleError, CliError, HandledError } from '../../utils/errors.js';
-import { ensureAuthenticated } from '../../auth/credentials.js';
 import { preflightOutPath } from '../../utils/out-path.js';
 import { EXIT_CODES } from '../../utils/exit-codes.js';
 import { createModel3dService } from '../../services/model3d-runtime.js';
@@ -59,7 +58,6 @@ export function model3dGenerateAction(
       if (typeof options.request === 'string') input.request = options.request;
 
       preflightOutPath(input.out);
-      ensureAuthenticated();
       const runtimeOptions: { apiKey?: string } = {};
       if (typeof options.apiKey === 'string') runtimeOptions.apiKey = options.apiKey;
       const service = createModel3dService(runtimeOptions);

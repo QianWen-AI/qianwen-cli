@@ -2,7 +2,7 @@
 
 import type { Command } from 'commander';
 import { getEffectiveConfig } from '../../config/manager.js';
-import { resolveFormatFromCommand } from '../../output/format.js';
+import { resolveFormatFromCommand, resolveExplicitFormat } from '../../output/format.js';
 import {
   mediaView,
   readNumber,
@@ -10,7 +10,6 @@ import {
   renderInvocation,
 } from '../../output/invocation-view.js';
 import { handleError } from '../../utils/errors.js';
-import { ensureAuthenticated } from '../../auth/credentials.js';
 import { preflightOutPath } from '../../utils/out-path.js';
 import { createTTSService } from '../../services/tts-runtime.js';
 import type { AudioSpeechInput } from '../../services/tts-service.js';
@@ -38,11 +37,15 @@ export function audioSpeechAction(
       if (typeof options.request === 'string') input.request = options.request;
 
       preflightOutPath(input.out);
-      ensureAuthenticated();
-      const runtimeOptions: { apiKey?: string } = {};
+      const runtimeOptions: { apiKey?: string; silentGuard?: boolean } = {
+        silentGuard: resolveExplicitFormat(this ?? cmd) === 'json',
+      };
       if (typeof options.apiKey === 'string') runtimeOptions.apiKey = options.apiKey;
       const service = createTTSService(runtimeOptions);
       const envelope = await withSpinner('语音合成中', () => service.generate(input), format);
+      if (service.lastDeprecationNotice) {
+        envelope.meta.model_offline_warning = service.lastDeprecationNotice;
+      }
       renderSpeech(envelope, format, typeof options.voice === 'string' ? options.voice : undefined);
     } catch (error) {
       handleError(error, format);

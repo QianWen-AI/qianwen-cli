@@ -84,6 +84,11 @@ export function ModelInfoInk({ vm }: ModelInfoInkProps) {
         <CardLine width={w}>
           <Text>{kv('Updated', vm.metadata.updated, 13)}</Text>
         </CardLine>
+        {vm.lifecycle && (
+          <CardLine width={w}>
+            <Text>{kv('Lifecycle', vm.lifecycle, 13)}</Text>
+          </CardLine>
+        )}
       </CardSection>
 
       {/* Description */}
@@ -151,6 +156,13 @@ export function ModelInfoInk({ vm }: ModelInfoInkProps) {
       {vm.freeTier && (
         <CardSection title="Free Tier" width={w}>
           <FreeTierContent vm={vm} width={w} />
+        </CardSection>
+      )}
+
+      {/* Notices — retirement schedule */}
+      {vm.notice && (
+        <CardSection title="Notices" width={w}>
+          <CardLine width={w} lines={wrapTextWithIndent(vm.notice, innerWidth)} />
         </CardSection>
       )}
     </Card>

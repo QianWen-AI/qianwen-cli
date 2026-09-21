@@ -58,6 +58,15 @@ export interface ApiModelPermissions {
   Inference: boolean;
 }
 
+export interface ApiModelOfflineInference {
+  AnnounceUrl?: string;
+  OfflineTime?: string;
+}
+
+export interface ApiModelOfflineInfo {
+  Inference?: ApiModelOfflineInference;
+}
+
 export interface ApiSampleCodeV2 {
   Openai?: Record<string, unknown>;
 }
@@ -125,6 +134,8 @@ export interface ApiModelItem {
 
   SampleCodeV2: ApiSampleCodeV2;
   ApplyType: number;
+
+  OfflineInfo?: ApiModelOfflineInfo;
 }
 
 export interface ApiModelGroup {
@@ -189,6 +200,7 @@ export interface ConsumeSummaryLineItem {
   BillingMonth?: string;
   ModelName?: string;
   Model?: string;
+  BaseModel?: string;
   JobId?: string;
   MaasTypeName?: string;
   BillQuantity?: number;

@@ -168,5 +168,26 @@ describe('NdjsonWriter', () => {
 
       expect(parseRecords(lines)).toEqual([{ meta: { usage: zero } }]);
     });
+
+    it('includes model_offline_warning in the trailer when present', () => {
+      const { deps, lines } = makeSink();
+
+      new NdjsonWriter(deps).writeTrailer({
+        request_id: 'req-1',
+        model_offline_warning: 'model retiring soon',
+      });
+
+      const meta = (parseRecords(lines)[0] as { meta: Record<string, unknown> }).meta;
+      expect(meta.model_offline_warning).toBe('model retiring soon');
+    });
+
+    it('omits model_offline_warning when undefined', () => {
+      const { deps, lines } = makeSink();
+
+      new NdjsonWriter(deps).writeTrailer({ request_id: 'req-1' });
+
+      const meta = (parseRecords(lines)[0] as { meta: Record<string, unknown> }).meta;
+      expect('model_offline_warning' in meta).toBe(false);
+    });
   });
 });

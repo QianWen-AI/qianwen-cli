@@ -151,6 +151,7 @@ export const CacheKeys = {
   MODELS_RAW_LIST: 'models:raw_list',
   MODEL_MAPPING: 'models:mapping',
   DEFAULT_MODEL_MAPPING: 'models:default_mapping',
+  MODELS_DEPRECATIONS: 'models:deprecations',
 } as const;
 
 export type CacheKey = (typeof CacheKeys)[keyof typeof CacheKeys];
@@ -163,6 +164,7 @@ export const CacheFileNames: Record<CacheKey, string> = {
   [CacheKeys.MODELS_RAW_LIST]: 'models-raw-list.json',
   [CacheKeys.MODEL_MAPPING]: 'model-mapping.json',
   [CacheKeys.DEFAULT_MODEL_MAPPING]: 'default-model-mapping.json',
+  [CacheKeys.MODELS_DEPRECATIONS]: 'model-deprecations.json',
 };
 
 // ============================================================

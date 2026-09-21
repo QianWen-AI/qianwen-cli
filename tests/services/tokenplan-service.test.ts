@@ -159,7 +159,7 @@ describe('TokenplanService.fetchTokenPlan', () => {
     expect(out.remainingCredits).toBe(300_000);
     expect(out.usedPct).toBeCloseTo(70, 5);
     expect(out.status).toBe('valid');
-    expect(out.resetDate).toBe(new Date('2026-01-01T00:00:00Z').toISOString());
+    expect(out.resetDate).toBeUndefined();
   });
 
   it('falls back to the first non-valid instance when none are valid', async () => {
@@ -293,7 +293,7 @@ describe('TokenplanService.fetchTokenPlan', () => {
     expect(out.addonRemaining).toBeUndefined();
   });
 
-  it('omits resetDate when EndTime is missing', async () => {
+  it('never sets resetDate in legacy path (EndTime is not a cycle-reset source)', async () => {
     const apiClient = makeMockApiClient({
       flat: dispatcherByCommodity({
         [CODES.teams]: [],
@@ -302,7 +302,6 @@ describe('TokenplanService.fetchTokenPlan', () => {
             Status: 'valid',
             InitCapacityBaseValue: '100',
             CurrCapacityBaseValue: '50',
-            EndTime: undefined,
           }),
         ],
         [CODES.addon]: [],

@@ -18,12 +18,14 @@ import {
 } from './invocation-credential-resolver.js';
 import { EndpointResolver } from './endpoint-resolver.js';
 import { TTSService, registerTTSMappings, DEFAULT_TTS_MODEL } from './tts-service.js';
+import { createModelDeprecationGuard } from './model-deprecation-guard.js';
 import { CliError } from '../utils/errors.js';
 import { EXIT_CODES } from '../utils/exit-codes.js';
 
 export interface TTSRuntimeOptions {
   apiKey?: string;
   endpoint?: string;
+  silentGuard?: boolean;
 }
 
 export function createTTSService(options: TTSRuntimeOptions = {}): TTSService {
@@ -101,5 +103,6 @@ export function createTTSService(options: TTSRuntimeOptions = {}): TTSService {
     wsClient,
     downloader,
     context: () => ({ site: site.key, account: API_KEY_ENV_NAME }),
+    deprecationGuard: createModelDeprecationGuard({ silent: options.silentGuard }),
   });
 }

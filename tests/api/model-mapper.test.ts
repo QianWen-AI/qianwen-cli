@@ -7,6 +7,7 @@ import {
 } from '../../src/api/model-mapper/index.js';
 import type { ApiModelItem, ApiModelGroup, FqInstanceItem } from '../../src/types/api-models.js';
 import { site } from '../../src/site.js';
+import { ANNOUNCEMENT_URL } from '../../src/services/model-deprecation-source.js';
 
 const s = {
   ...site,
@@ -181,6 +182,28 @@ describe('mapApiModelToModel', () => {
     expect(mapApiModelToModel(makeApiItem(), false).features).toBeUndefined();
     const m = mapApiModelToModel(makeApiItem({ Features: ['cache', 'tool-call'] }), false);
     expect(m.features).toEqual(['cache', 'tool-call']);
+  });
+
+  it('maps offlineInfo.inference to lifecycle object with default announcement URL', () => {
+    const m = mapApiModelToModel(
+      makeApiItem({
+        OfflineInfo: {
+          Inference: {
+            OfflineTime: '2026-10-10T23:59:59+08:00',
+            AnnounceUrl: 'https://mock-announce.test.qianwenai.com/custom',
+          },
+        },
+      }),
+      false,
+    );
+    expect(m.lifecycle?.status).toBe('retiring');
+    expect(m.lifecycle?.offline_time).toBe('2026-10-10T23:59:59+08:00');
+    expect(m.lifecycle?.announcement_url).toBe(ANNOUNCEMENT_URL);
+  });
+
+  it('leaves lifecycle absent when offlineInfo is empty', () => {
+    const m = mapApiModelToModel(makeApiItem(), false);
+    expect(m.lifecycle).toBeUndefined();
   });
 });
 
@@ -607,7 +630,7 @@ describe('mapApiModelToModelDetail', () => {
     expect((d.pricing as any).built_in_tools).toBeUndefined();
   });
 
-  it('parses metadata: version, open_source, updated (date only), category, snapshot', () => {
+  it('parses metadata: version, open_source, updated (full timestamp), category, snapshot', () => {
     const item = makeApiItem({
       VersionTag: 'MAJOR',
       OpenSource: true,
@@ -619,7 +642,7 @@ describe('mapApiModelToModelDetail', () => {
     expect(d.metadata).toEqual({
       version_tag: 'MAJOR',
       open_source: true,
-      updated: '2026-04-15',
+      updated: '2026-04-15T12:34:56Z',
       category: 'Flagship',
       snapshot: 'v3.6.0',
     });

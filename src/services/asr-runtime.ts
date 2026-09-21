@@ -23,10 +23,12 @@ import {
 import { EndpointResolver } from './endpoint-resolver.js';
 import { ASRService, registerASRMappings, DEFAULT_ASR_MODEL } from './asr-service.js';
 import { TranscriptFetcher } from './transcript.js';
+import { createModelDeprecationGuard } from './model-deprecation-guard.js';
 
 export interface ASRRuntimeOptions {
   apiKey?: string;
   endpoint?: string;
+  silentGuard?: boolean;
 }
 
 export function createASRService(options: ASRRuntimeOptions = {}): ASRService {
@@ -112,5 +114,6 @@ export function createASRService(options: ASRRuntimeOptions = {}): ASRService {
         return res.text();
       },
     }),
+    deprecationGuard: createModelDeprecationGuard({ silent: options.silentGuard }),
   });
 }

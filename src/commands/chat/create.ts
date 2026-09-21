@@ -2,7 +2,7 @@
 
 import type { Command } from 'commander';
 import { getEffectiveConfig } from '../../config/manager.js';
-import { resolveFormatFromCommand } from '../../output/format.js';
+import { resolveFormatFromCommand, resolveExplicitFormat } from '../../output/format.js';
 import {
   metaFooter,
   readString,
@@ -12,7 +12,6 @@ import {
 } from '../../output/invocation-view.js';
 import { NdjsonWriter } from '../../output/ndjson.js';
 import { handleError, CliError } from '../../utils/errors.js';
-import { ensureAuthenticated } from '../../auth/credentials.js';
 import { EXIT_CODES } from '../../utils/exit-codes.js';
 import { createChatService } from '../../services/chat-runtime.js';
 import type { ChatCreateInput } from '../../services/chat-service.js';
@@ -72,8 +71,9 @@ export function chatCreateAction(
       if (typeof options.video === 'string') input.video = options.video;
       if (typeof options.request === 'string') input.request = options.request;
 
-      ensureAuthenticated();
-      const runtimeOptions: { apiKey?: string } = {};
+      const runtimeOptions: { apiKey?: string; silentGuard?: boolean } = {
+        silentGuard: resolveExplicitFormat(this ?? cmd) === 'json',
+      };
       if (typeof options.apiKey === 'string') runtimeOptions.apiKey = options.apiKey;
       const service = createChatService(runtimeOptions);
 
@@ -83,6 +83,9 @@ export function chatCreateAction(
       }
 
       const envelope = await service.create(input);
+      if (service.lastDeprecationNotice) {
+        envelope.meta.model_offline_warning = service.lastDeprecationNotice;
+      }
       renderEnvelope(envelope, format, options.thinking === true);
     } catch (error) {
       handleError(error, format);
@@ -184,11 +187,15 @@ async function runStream(
       model?: string;
       finish_reason?: string;
       usage?: Record<string, unknown>;
+      model_offline_warning?: string;
     } = {};
     if (requestId !== undefined) trailer.request_id = requestId;
     if (model !== undefined) trailer.model = model;
     if (finishReason !== undefined) trailer.finish_reason = finishReason;
     if (usage !== undefined) trailer.usage = usage;
+    if (service.lastDeprecationNotice) {
+      trailer.model_offline_warning = service.lastDeprecationNotice;
+    }
     writer.writeTrailer(trailer);
     return;
   }

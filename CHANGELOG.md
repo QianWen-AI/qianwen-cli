@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-09-21
+
+### Changed
+
+- Unified model retirement info into `lifecycle` nested field in `models list`/`models info` JSON output
+- Added `model_offline_warning` in `meta` for model invocation JSON outputs when the model is scheduled for retirement
+- Model invocation commands no longer require a prior login
+
+### Fixed
+
+- Corrected tokenplan subscription date display and reset date source
+- Corrected input time parameter parsing
+
 ## [1.8.0] - 2026-09-19
 
 ### Added

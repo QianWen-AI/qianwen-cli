@@ -1,24 +1,11 @@
 /**
- * Login-gate tests (per architecture design §2.7-L).
- *
- * Verify that every model-invocation command enforces an authentication
- * pre-check BEFORE resolving credentials or constructing its service. The
- * gate must:
- *   - reject with exit 2 + "Not authenticated" when unauthenticated,
- *   - reject even when a Key is supplied via --api-key (gate precedes Key
- *     resolution, so the "Missing API key" path is never reached),
- *   - reject with exit 2 + "Token expired" when the token is expired,
- *   - allow the command through (service factory invoked) once authenticated.
- *
- * The ordering assertion (service factory NOT invoked while unauthenticated)
- * is the falsifiable core: an implementation that authenticates AFTER building
- * the service would invoke the factory and turn these red.
+ * Model-invocation commands do not require login. Each command resolves its
+ * credential from --api-key / env / config and constructs its service without
+ * consulting the login boundary.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { runCommand } from '../helpers/run-command.js';
-import { authRequiredError, tokenExpiredError } from '../../src/utils/errors.js';
 
-// ── Auth boundary (external dependency of every command action) ──────
 const authHolder: { fn: ReturnType<typeof vi.fn> } = { fn: vi.fn() };
 vi.mock('../../src/auth/credentials.js', () => ({
   ensureAuthenticated: () => authHolder.fn(),
@@ -159,55 +146,11 @@ beforeEach(() => {
   for (const k of Object.keys(factory)) factory[k] = vi.fn();
 });
 
-describe('login gate — unauthenticated is rejected before service construction', () => {
+describe('model invocation — no login required', () => {
   for (const c of COMMANDS) {
-    it(`${c.name}: exit 2 + "Not authenticated", factory not invoked`, async () => {
-      authHolder.fn = vi.fn(() => {
-        throw authRequiredError();
-      });
-      const result = await runCommand((p) => c.register(p), c.argv);
-      expect(result.exitCode).toBe(2);
-      expect(result.stderr).toContain('Not authenticated');
-      expect(factory[c.factoryKey]).not.toHaveBeenCalled();
-    });
-  }
-});
-
-describe('login gate — precedes Key resolution (--api-key does not bypass)', () => {
-  for (const c of COMMANDS) {
-    it(`${c.name}: unauthenticated + --api-key still exit 2, no "Missing API key"`, async () => {
-      authHolder.fn = vi.fn(() => {
-        throw authRequiredError();
-      });
+    it(`${c.name}: reaches the service with --api-key, without consulting login`, async () => {
       const result = await runCommand((p) => c.register(p), [...c.argv, '--api-key', 'sk-mock']);
-      expect(result.exitCode).toBe(2);
-      expect(result.stderr).toContain('Not authenticated');
-      expect(result.stderr).not.toContain('Missing API key');
-      expect(factory[c.factoryKey]).not.toHaveBeenCalled();
-    });
-  }
-});
-
-describe('login gate — expired token is rejected before service construction', () => {
-  for (const c of COMMANDS) {
-    it(`${c.name}: exit 2 + "Token expired", factory not invoked`, async () => {
-      authHolder.fn = vi.fn(() => {
-        throw tokenExpiredError();
-      });
-      const result = await runCommand((p) => c.register(p), c.argv);
-      expect(result.exitCode).toBe(2);
-      expect(result.stderr).toContain('Token expired');
-      expect(factory[c.factoryKey]).not.toHaveBeenCalled();
-    });
-  }
-});
-
-describe('login gate — authenticated is allowed through to the service', () => {
-  for (const c of COMMANDS) {
-    it(`${c.name}: ensureAuthenticated called, factory invoked, not exit 2`, async () => {
-      authHolder.fn = vi.fn(() => ({}));
-      const result = await runCommand((p) => c.register(p), c.argv);
-      expect(authHolder.fn).toHaveBeenCalled();
+      expect(authHolder.fn).not.toHaveBeenCalled();
       expect(factory[c.factoryKey]).toHaveBeenCalled();
       expect(result.exitCode).not.toBe(2);
     });

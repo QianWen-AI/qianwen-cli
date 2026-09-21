@@ -13,6 +13,7 @@ import {
   renderQuotaBarFor,
   type ViewContext,
 } from './shared.js';
+import { formatDate as toLocalDate } from '../../utils/date.js';
 import { buildProgressBar, theme } from '../../ui/theme.js';
 import { ORDER_STATUS_COLOR, ORDER_STATUS_LABEL, TYPE_LABEL } from './orders.js';
 import type { OrderStatusColor } from './orders.js';
@@ -139,7 +140,7 @@ function isPeriodActive(period: SubscriptionPeriod | null): boolean | null {
 
 function formatExpires(period: SubscriptionPeriod | null, remainingDays: number | null): string {
   if (!period?.end) return NA;
-  const datePart = period.end.length >= 10 ? period.end.slice(0, 10) : period.end;
+  const datePart = period.end ? toLocalDate(new Date(period.end)) : period.end;
   if (remainingDays === null) return datePart;
   return `${datePart} (${remainingDays}d)`;
 }
@@ -189,7 +190,7 @@ function buildCreditPackSection(data: SubscriptionStatus): CreditPackSectionView
       id: p.instanceId || NA,
       remaining: `${formatInteger(p.remainingCredits)} / ${formatInteger(p.totalCredits)}`,
       bar,
-      expires: p.expiresAt ? p.expiresAt.slice(0, 10) : NA,
+      expires: p.expiresAt ? toLocalDate(new Date(p.expiresAt)) : NA,
     };
   });
   return {
@@ -202,7 +203,7 @@ function buildCreditPackSection(data: SubscriptionStatus): CreditPackSectionView
 function buildRecentOrdersSection(data: SubscriptionStatus): RecentOrdersSectionViewModel | null {
   if (!data.recentOrders || data.recentOrders.length === 0) return null;
   const orders: RecentOrderEntryViewModel[] = data.recentOrders.map((o) => {
-    const date = o.orderTime ? o.orderTime.slice(0, 10) : NA;
+    const date = o.orderTime ? toLocalDate(new Date(o.orderTime)) : NA;
     const amountStr = o.amount ?? '';
     const display =
       amountStr && CURRENCY_SYMBOL && !amountStr.startsWith(CURRENCY_SYMBOL)
@@ -250,7 +251,12 @@ export function buildSubscriptionStatusViewModel(
     { label: 'Plan', value: data.plan ?? NA },
     {
       label: 'Period',
-      value: data.period ? formatPeriod(data.period.start, data.period.end) : NA,
+      value: data.period
+        ? formatPeriod(
+            data.period.start ? toLocalDate(new Date(data.period.start)) : '',
+            data.period.end ? toLocalDate(new Date(data.period.end)) : '',
+          )
+        : NA,
     },
     { label: 'Auto-Renew', value: formatBool(data.autoRenew) },
     { label: 'Renewable', value: formatBool(data.renewable) },

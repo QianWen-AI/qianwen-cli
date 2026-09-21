@@ -97,7 +97,6 @@ export class TokenplanService {
         ? Number(instance.periodCapacityBaseValue || instance.CurrCapacityBaseValue || 0)
         : Number(instance.CurrCapacityBaseValue || 0);
     const usedPct = totalCredits > 0 ? ((totalCredits - remainingCredits) / totalCredits) * 100 : 0;
-    const resetDate = instance.EndTime ? new Date(instance.EndTime).toISOString() : undefined;
 
     const dto: TokenPlan = {
       subscribed: statusCode === 'valid',
@@ -107,7 +106,6 @@ export class TokenplanService {
       remainingCredits,
       usedPct,
     };
-    if (resetDate) dto.resetDate = resetDate;
     if (addonRemaining > 0) dto.addonRemaining = addonRemaining;
     return dto;
   }

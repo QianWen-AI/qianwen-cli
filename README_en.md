@@ -6,7 +6,7 @@
 
 > Official command-line tool for [QianWen](https://www.qianwenai.com/). Discover models, check usage, manage authentication, and diagnose local setup from a terminal or an AI agent runtime.
 
-![Version](https://img.shields.io/badge/version-1.8.0-blue)
+![Version](https://img.shields.io/badge/version-1.9.0-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
@@ -47,10 +47,10 @@ qianwen version
 
 If you see `command not found: qianwen` after installation, the npm global bin directory is not in your PATH. Run the command for your shell:
 
-| Shell | Command |
-|---|---|
-| bash | `echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc` |
-| zsh | `echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc` |
+| Shell | Command                                                                                    |
+| ----- | ------------------------------------------------------------------------------------------ |
+| bash  | `echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc` |
+| zsh   | `echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc`   |
 
 ### Build from Source
 
@@ -146,23 +146,23 @@ Run diagnostics to verify authentication, network access, configuration, and she
 
 ## Commands
 
-| Area | Commands | Common flags |
-|---|---|---|
-| Model invocation | `chat create`, `image generate`, `video generate`, `audio transcribe`, `audio speech`, `model3d generate`, `music generate`, `task get` | `--model`, `--stream`, `--size`, `--image`, `--voice`, `--out`, `--no-wait`, `--timeout`, `--request`, `--api-key`, `--format` |
-| Auth | `auth login`, `auth logout`, `auth status` | `--init-only`, `--complete`, `--timeout`, `--format` |
-| Models | `models list`, `models info`, `models search` | `--input`, `--output`, `--all`, `--verbose`, `--page`, `--per-page`, `--format` |
-| Usage | `usage summary`, `usage breakdown`, `usage free-tier`, `usage payg`, `usage logs` | `--period`, `--from`, `--to`, `--days`, `--model`, `--granularity`, `--format` |
-| Billing | `billing summary`, `billing breakdown`, `billing limit`, `billing balance summary`, `billing balance recharge`, `billing balance recharge-history` | `--from`, `--to`, `--period`, `--group-by`, `--granularity`, `--channel`, `--amount`, `--range`, `--start-time`, `--end-time`, `--page`, `--page-size`, `--format` |
-| Workspace | `workspace list`, `workspace limit` | `--format` |
-| Subscription | `subscription status`, `subscription orders`, `subscription tokenplan status`, `subscription tokenplan seats` | `--format` |
-| Yunqi Conference | `yunqi list forums`, `yunqi list exhibitors`, `yunqi list subscriptions`, `yunqi list summaries`, `yunqi subscribe forum`, `yunqi unsubscribe forum` | `--page`, `--page-size`, `--forum-id`, `--keyword`, `--format` |
-| Docs | `docs search`, `docs view` | `--format` |
-| Skills | `skills search`, `skills install`, `skills pack-install` | `--limit`, `--dir`, `--format` |
-| Support | `support list`, `support view`, `support create`, `support reply`, `support close`, `support rate` | `--format` |
-| Config | `config list`, `config get`, `config set`, `config unset` | `--format` |
-| Diagnostics | `doctor` | `--format` |
-| Shell | `completion install`, `completion generate` | `--shell` |
-| Version | `version` | `--check` |
+| Area             | Commands                                                                                                                                             | Common flags                                                                                                                                                       |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Model invocation | `chat create`, `image generate`, `video generate`, `audio transcribe`, `audio speech`, `model3d generate`, `music generate`, `task get`              | `--model`, `--stream`, `--size`, `--image`, `--voice`, `--out`, `--no-wait`, `--timeout`, `--request`, `--api-key`, `--format`                                     |
+| Auth             | `auth login`, `auth logout`, `auth status`                                                                                                           | `--init-only`, `--complete`, `--timeout`, `--format`                                                                                                               |
+| Models           | `models list`, `models info`, `models search`                                                                                                        | `--input`, `--output`, `--all`, `--verbose`, `--page`, `--per-page`, `--format`                                                                                    |
+| Usage            | `usage summary`, `usage breakdown`, `usage free-tier`, `usage payg`, `usage logs`                                                                    | `--period`, `--from`, `--to`, `--days`, `--model`, `--granularity`, `--format`                                                                                     |
+| Billing          | `billing summary`, `billing breakdown`, `billing limit`, `billing balance summary`, `billing balance recharge`, `billing balance recharge-history`   | `--from`, `--to`, `--period`, `--group-by`, `--granularity`, `--channel`, `--amount`, `--range`, `--start-time`, `--end-time`, `--page`, `--page-size`, `--format` |
+| Workspace        | `workspace list`, `workspace limit`                                                                                                                  | `--format`                                                                                                                                                         |
+| Subscription     | `subscription status`, `subscription orders`, `subscription tokenplan status`, `subscription tokenplan seats`                                        | `--format`                                                                                                                                                         |
+| Yunqi Conference | `yunqi list forums`, `yunqi list exhibitors`, `yunqi list subscriptions`, `yunqi list summaries`, `yunqi subscribe forum`, `yunqi unsubscribe forum` | `--page`, `--page-size`, `--forum-id`, `--keyword`, `--format`                                                                                                     |
+| Docs             | `docs search`, `docs view`                                                                                                                           | `--format`                                                                                                                                                         |
+| Skills           | `skills search`, `skills install`, `skills pack-install`                                                                                             | `--limit`, `--dir`, `--format`                                                                                                                                     |
+| Support          | `support list`, `support view`, `support create`, `support reply`, `support close`, `support rate`                                                   | `--format`                                                                                                                                                         |
+| Config           | `config list`, `config get`, `config set`, `config unset`                                                                                            | `--format`                                                                                                                                                         |
+| Diagnostics      | `doctor`                                                                                                                                             | `--format`                                                                                                                                                         |
+| Shell            | `completion install`, `completion generate`                                                                                                          | `--shell`                                                                                                                                                          |
+| Version          | `version`                                                                                                                                            | `--check`                                                                                                                                                          |
 
 Use help for exact syntax:
 
@@ -191,14 +191,14 @@ qianwen --quiet doctor
 
 Exit codes:
 
-| Code | Meaning |
-|---:|---|
-| `0` | Success |
-| `1` | General or usage error |
-| `2` | Authentication error |
-| `3` | Network error |
-| `4` | Configuration error |
-| `130` | Interrupted |
+|  Code | Meaning                |
+| ----: | ---------------------- |
+|   `0` | Success                |
+|   `1` | General or usage error |
+|   `2` | Authentication error   |
+|   `3` | Network error          |
+|   `4` | Configuration error    |
+| `130` | Interrupted            |
 
 JSON errors follow a stable shape:
 
@@ -288,9 +288,9 @@ QianWen CLI uses one global config file:
 
 Public configuration keys:
 
-| Key | Values | Default |
-|---|---|---|
-| `output.format` | `auto`, `table`, `json`, `text` | `auto` |
+| Key             | Values                          | Default |
+| --------------- | ------------------------------- | ------- |
+| `output.format` | `auto`, `table`, `json`, `text` | `auto`  |
 
 ```bash
 qianwen config set output.format json

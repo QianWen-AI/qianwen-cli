@@ -143,13 +143,13 @@ describe('UsageService.getUsageLogs', () => {
       expect(arg.data.skip).toBe(0);
     });
 
-    it('clamps pageSize to the documented upper bound (100)', async () => {
+    it('clamps pageSize to the documented upper bound (50)', async () => {
       apiClient.callEnvelopeApi.mockResolvedValue(makeRawEnvelopeBody([]));
 
       await service.getUsageLogs({ from: '2026-05-22', to: '2026-05-23', pageSize: 500 });
 
       const arg = apiClient.callEnvelopeApi.mock.calls[0][0] as { data: Record<string, unknown> };
-      expect(arg.data.maxResults).toBe(100);
+      expect(arg.data.maxResults).toBe(50);
       expect(arg.data.skip).toBe(0);
     });
   });

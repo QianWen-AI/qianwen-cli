@@ -4,6 +4,7 @@ import { MappingRegistry } from '../api/providers/mapping-registry.js';
 import type { RequestPayloadParser } from './request-payload-parser.js';
 import type { LayerConflictDetector } from './layer-conflict-detector.js';
 import type { DefaultModelResolver } from './default-model-resolver.js';
+import type { ModelDeprecationGuard } from './model-deprecation-guard.js';
 import type { InvocationEnvelope } from './invocation-envelope.js';
 import { withFieldRejectionHint } from './invocation-envelope.js';
 import type { MusicClient } from '../api/providers/dashscope/music-client.js';
@@ -44,6 +45,7 @@ export interface MusicServiceDeps {
   downloader: ImageDownloader;
   guard: SiteAvailabilityGuard;
   context: () => { site: string; account: string };
+  deprecationGuard?: ModelDeprecationGuard;
 }
 
 export function registerMusicMappings(registry: MappingRegistry): void {
@@ -102,6 +104,7 @@ export class MusicService {
       input.model ?? existingModel,
     );
     body.model = model;
+    await this.deps.deprecationGuard?.notifyIfDeprecated(model);
 
     if (hasPrompt) {
       body.input = { prompt: input.prompt as string };

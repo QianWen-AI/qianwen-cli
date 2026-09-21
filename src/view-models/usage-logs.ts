@@ -111,10 +111,10 @@ function buildPeriodLabel(from: string | undefined, to: string | undefined): str
 function formatRangeBoundary(value: string): string {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  const yyyy = d.getUTCFullYear();
-  const mm = pad2(d.getUTCMonth() + 1);
-  const dd = pad2(d.getUTCDate());
-  const hh = pad2(d.getUTCHours());
-  const mi = pad2(d.getUTCMinutes());
+  const yyyy = d.getFullYear();
+  const mm = pad2(d.getMonth() + 1);
+  const dd = pad2(d.getDate());
+  const hh = pad2(d.getHours());
+  const mi = pad2(d.getMinutes());
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 }

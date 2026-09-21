@@ -188,7 +188,7 @@ describe('buildModelDetailViewModel', () => {
     metadata: {
       version_tag: 'MAJOR',
       open_source: false,
-      updated: '2026-04-01',
+      updated: '2026-04-01T00:00:00Z',
       category: 'Flagship',
       snapshot: 'v3.6.0',
     },
@@ -227,7 +227,7 @@ describe('buildModelDetailViewModel', () => {
     expect(vm.rateLimits).toContain('15K');
     expect(vm.rateLimits).toContain('5M');
 
-    // Metadata now includes category and snapshot
+    // Metadata: updated is truncated to date-only by view-model
     expect(vm.metadata).toEqual({
       category: 'Flagship',
       version: 'MAJOR',
@@ -295,7 +295,7 @@ describe('buildModelDetailViewModel', () => {
       metadata: {
         version_tag: 'v1',
         open_source: true,
-        updated: '2026-01-01',
+        updated: '2026-01-01T00:00:00Z',
       },
     };
     const vm = buildModelDetailViewModel(detail);

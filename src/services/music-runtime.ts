@@ -18,6 +18,7 @@ import {
 } from './invocation-credential-resolver.js';
 import { EndpointResolver } from './endpoint-resolver.js';
 import { MusicService, registerMusicMappings, DEFAULT_MUSIC_MODEL } from './music-service.js';
+import { createModelDeprecationGuard } from './model-deprecation-guard.js';
 import { CliError } from '../utils/errors.js';
 import { EXIT_CODES } from '../utils/exit-codes.js';
 
@@ -102,5 +103,6 @@ export function createMusicService(options: MusicRuntimeOptions = {}): MusicServ
     downloader,
     guard,
     context: () => ({ site: site.key, account: API_KEY_ENV_NAME }),
+    deprecationGuard: createModelDeprecationGuard(),
   });
 }

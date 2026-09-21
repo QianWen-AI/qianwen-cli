@@ -75,7 +75,7 @@ function firstOfThisMonthUtc(): string {
 const LIST_MODEL_LOGS_API = 'zeldaEasy.bailian-telemetry.platform-model.listModelLogs';
 const USAGE_LOGS_DEFAULT_PAGE = 1;
 const USAGE_LOGS_DEFAULT_PAGE_SIZE = 20;
-const USAGE_LOGS_MAX_PAGE_SIZE = 100;
+const USAGE_LOGS_MAX_PAGE_SIZE = 50;
 
 interface RawOriginLog {
   request_id?: string | null;
@@ -200,12 +200,22 @@ export class UsageService {
 
     const usedPct = ((totalCredits - remainingCredits) / totalCredits) * 100;
 
+    // Override resetDate with NextCycleFlushTime when available.
+    const rawFlush = groups[0]?.NextCycleFlushTime;
+    const resetDate =
+      typeof rawFlush === 'number' && rawFlush > 0
+        ? new Date(rawFlush).toISOString()
+        : typeof rawFlush === 'string' && rawFlush.length > 0
+          ? rawFlush
+          : undefined;
+
     return {
       ...tokenPlan,
       subscribed: tokenPlan.subscribed,
       totalCredits,
       remainingCredits,
       usedPct,
+      resetDate,
     };
   }
 
@@ -229,8 +239,8 @@ export class UsageService {
 
   /**
    * Paginated call-log query. Time range is mapped to ms epoch on the wire;
-   * `modelRequestId` short-circuits the other filters to mimic the upstream
-   * exact-match contract.
+   * `modelRequestId` can be combined with other filters for intersection
+   * queries, matching the upstream web console behavior.
    */
   async getUsageLogs(options: UsageLogsOptions): Promise<UsageLogsResponse> {
     const page = clampUsageLogsPage(options.page);
@@ -245,13 +255,12 @@ export class UsageService {
 
     if (options.modelRequestId) {
       requestPayload.modelRequestId = options.modelRequestId;
-    } else {
-      if (options.models && options.models.length > 0) {
-        requestPayload.models = options.models;
-      }
-      if (options.statusCodeTypes && options.statusCodeTypes.length > 0) {
-        requestPayload.statusCodeTypes = options.statusCodeTypes;
-      }
+    }
+    if (options.models && options.models.length > 0) {
+      requestPayload.models = options.models;
+    }
+    if (options.statusCodeTypes && options.statusCodeTypes.length > 0) {
+      requestPayload.statusCodeTypes = options.statusCodeTypes;
     }
 
     const raw = await this.apiClient.callEnvelopeApi<RawUsageLogsResponse | null>({

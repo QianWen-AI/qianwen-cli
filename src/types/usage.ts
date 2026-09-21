@@ -25,7 +25,7 @@ export interface TokenPlan {
   totalCredits?: number; // InitCapacityBaseValue
   remainingCredits?: number; // CurrCapacityBaseValue (or periodMonthlyShift)
   usedPct?: number; // computed: (total - remaining) / total * 100
-  resetDate?: string; // ISO date derived from EndTime ms timestamp
+  resetDate?: string; // ISO date: NextCycleFlushTime (seat summary) or EndTime (legacy)
   addonRemaining?: number; // sum of all addon CurrCapacityBaseValue
 }
 

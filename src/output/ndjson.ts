@@ -9,6 +9,7 @@ export interface NdjsonTrailer {
   model?: string;
   finish_reason?: string;
   usage?: Record<string, unknown>;
+  model_offline_warning?: string;
 }
 
 export class NdjsonWriter {
@@ -25,6 +26,8 @@ export class NdjsonWriter {
     if (meta.model !== undefined) trailer.model = meta.model;
     if (meta.finish_reason !== undefined) trailer.finish_reason = meta.finish_reason;
     if (meta.usage !== undefined) trailer.usage = meta.usage;
+    if (meta.model_offline_warning !== undefined)
+      trailer.model_offline_warning = meta.model_offline_warning;
     this.deps.write(JSON.stringify({ meta: trailer }) + '\n');
   }
 }

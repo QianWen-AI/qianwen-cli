@@ -540,16 +540,16 @@ function registerUsageCommandsWithMeta(program: Command): void {
     .description('Browse paginated call logs filtered by time, model, and status')
     .option('--from <date>', 'Start date (YYYY-MM-DD or RFC3339)')
     .option('--to <date>', 'End date (YYYY-MM-DD or RFC3339)')
-    .option('--period <preset>', 'Period preset: 1h, 24h, 7d, today, yesterday, week, month, ...')
+    .option('--period <preset>', 'Period preset: today, yesterday, week, 1h, 24h, 7d, 14d')
     .option('--model <id>', 'Model id (repeatable)', collectRepeatable)
     .option(
       '--status <type>',
       'Status filter: 0 (cancel), 2xx (success), 4xx (client error), 5xx (server error). Repeatable',
       collectRepeatable,
     )
-    .option('--request-id <id>', 'Exact request id; ignores other filters when set')
+    .option('--request-id <id>', 'Filter by exact request id')
     .option('--page <n>', 'Page number', (v) => parseInt(v, 10), 1)
-    .option('--page-size <n>', 'Page size (1..100)', (v) => parseInt(v, 10), 20)
+    .option('--page-size <n>', 'Page size (1..50)', (v) => parseInt(v, 10), 20)
     .option('--format <fmt>', 'Output format: table, json, text (default: auto)');
 
   addExamples(logsCmd, [
