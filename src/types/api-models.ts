@@ -241,6 +241,31 @@ export interface FrInstanceResponse {
   Data: FrInstanceItem[];
 }
 
+export interface AvailableInstanceItem {
+  InstanceID?: string;
+  ProductCode?: string;
+  ProductType?: string;
+  Status?: string;
+  SubStatus?: string;
+  RenewStatus?: string;
+  RenewalDurationUnit?: string;
+  SubscriptionType?: string;
+  CreateTime?: string;
+  EndTime?: string;
+}
+
+export interface QueryAvailableInstancesResponse {
+  Success?: boolean;
+  Code?: string;
+  RequestId?: string;
+  Data?: {
+    InstanceList?: AvailableInstanceItem[];
+    PageNum?: number;
+    PageSize?: number;
+    TotalCount?: number;
+  };
+}
+
 export interface ApiModelDetailResponse {
   requestId: string;
   code: string;

@@ -4,6 +4,7 @@ import { Section } from './Section.js';
 import { Table } from './Table.js';
 import { renderWithInk } from './render.js';
 import { colors, theme } from './theme.js';
+import { useTerminalSize } from './useTerminalSize.js';
 import type { SeatStatusColor, TokenPlanSeatsViewModel } from '../types/tokenplan-subscription.js';
 
 export interface SubscriptionTokenPlanSeatsInkProps {
@@ -34,12 +35,18 @@ function colorizeStatus(label: string, color: SeatStatusColor): string {
 }
 
 export function SubscriptionTokenPlanSeatsInk({ vm }: SubscriptionTokenPlanSeatsInkProps) {
+  const { columns } = useTerminalSize();
+  const tableWidth = Math.max(1, columns - 4);
   const headerLine = vm.header ? `Total: ${vm.header.total}   Filter: ${vm.header.filter}` : '';
   const footerLine = vm.footer ? `${vm.footer.pagination}   ${vm.footer.total}` : undefined;
 
   if (!vm.rows || vm.rows.length === 0) {
     return (
-      <Section title="Token Plan Seats" footer={footerLine ?? vm.footnote ?? undefined}>
+      <Section
+        title="Token Plan Seats"
+        footer={footerLine ?? vm.footnote ?? undefined}
+        maxWidth={columns}
+      >
         <Box flexDirection="column" paddingLeft={2}>
           {headerLine && <Text>{headerLine}</Text>}
           <Text color={colors.muted}>{vm.emptyPlaceholder ?? 'No seats found.'}</Text>
@@ -69,11 +76,21 @@ export function SubscriptionTokenPlanSeatsInk({ vm }: SubscriptionTokenPlanSeats
   }));
 
   return (
-    <Section title="Token Plan Seats" footer={footerLine ?? vm.footnote ?? undefined}>
+    <Section
+      title="Token Plan Seats"
+      footer={footerLine ?? vm.footnote ?? undefined}
+      maxWidth={columns}
+    >
       <Box flexDirection="column" paddingLeft={2}>
         {headerLine && <Text>{headerLine}</Text>}
         <Text> </Text>
-        <Table columns={COLUMNS} data={tableData} paddingLeft={0} />
+        <Table
+          columns={COLUMNS}
+          data={tableData}
+          paddingLeft={0}
+          truncate
+          maxTotalWidth={tableWidth}
+        />
         {vm.warnings && vm.warnings.length > 0 && (
           <>
             <Text> </Text>

@@ -4,6 +4,14 @@ export interface Credentials {
   user: UserInfo;
 }
 
+export interface CsDataContext {
+  issuer: string;
+  gateway: string;
+  environment: string;
+  region: string;
+  site: string;
+}
+
 export interface UserInfo {
   id?: number;
   email: string; // kept for internal use, not displayed in auth status

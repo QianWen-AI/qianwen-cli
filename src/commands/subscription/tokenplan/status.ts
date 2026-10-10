@@ -1,24 +1,62 @@
 import type { Command } from 'commander';
-import { resolveFormatFromCommand, outputJSON } from '../../../output/format.js';
+import { resolveFormatFromCommand, outputJSON, formatTextTable } from '../../../output/format.js';
 import { getEffectiveConfig } from '../../../config/manager.js';
 import { ensureAuthenticated } from '../../../auth/credentials.js';
 import { withSpinner } from '../../../ui/spinner.js';
 import { createServices } from '../../../services/index.js';
 import { buildTokenPlanStatusViewModel } from '../../../view-models/subscription/tokenplan-status.js';
+import { formatSubscriptionStatusJson } from '../../../view-models/subscription/shared.js';
 import { renderSubscriptionTokenPlanStatusInk } from '../../../ui/SubscriptionTokenPlanStatus.js';
-import { handleError, HandledError } from '../../../utils/errors.js';
+import { formatTokenPlanSeatDetails } from '../../../output/text/tokenplan-seat-details.js';
+import { CliError, handleError, HandledError } from '../../../utils/errors.js';
+import type { SubscriptionDiagnostic } from '../../../types/subscription.js';
 import type {
   TokenPlanStatusViewModel,
   TokenPlanStatusResult,
 } from '../../../types/tokenplan-subscription.js';
 
 function isTotalFailure(result: TokenPlanStatusResult): boolean {
+  const hasKnownEdition = [result.individual, result.team].some(
+    (edition) => edition?.status === 'active' || edition?.status === 'not_subscribed',
+  );
   return (
+    !hasKnownEdition &&
     result.seatSummary === null &&
     result.period === null &&
     result.autoRenew === null &&
     result.renewable === null
   );
+}
+
+function totalFailureError(diagnostics: SubscriptionDiagnostic[]): CliError {
+  const codes = new Set(diagnostics.map((diagnostic) => diagnostic.errorCode));
+  if (codes.has('CONFIG_ERROR') || codes.has('PROTOCOL_ERROR'))
+    return new CliError({
+      code: 'CONFIG_ERROR',
+      message: 'Token Plan status configuration or response protocol is invalid.',
+      exitCode: 4,
+    });
+  if (
+    codes.has('AUTH_REQUIRED') ||
+    codes.has('TOKEN_EXPIRED') ||
+    codes.has('CS_DATA_AUTH_REQUIRED')
+  )
+    return new CliError({
+      code: 'AUTH_REQUIRED',
+      message: 'Token Plan status authentication failed. Run: qianwen auth login',
+      exitCode: 2,
+    });
+  if (codes.has('NETWORK_ERROR') || codes.has('Timeout'))
+    return new CliError({
+      code: 'NETWORK_ERROR',
+      message: 'Token Plan status requests failed. Check your network connection.',
+      exitCode: 3,
+    });
+  return new CliError({
+    code: 'TOKENPLAN_STATUS_UNAVAILABLE',
+    message: 'No Token Plan subscription status could be confirmed.',
+    exitCode: 1,
+  });
 }
 
 export function subscriptionTokenPlanStatusAction(cmd: Command) {
@@ -38,6 +76,8 @@ export function subscriptionTokenPlanStatusAction(cmd: Command) {
       if (format === 'json') {
         const vm = buildTokenPlanStatusViewModel(result, 'json');
         const jsonOutput = {
+          individual: vm.individual,
+          team: vm.team,
           product: vm.product,
           period: vm.period,
           autoRenew: vm.autoRenew,
@@ -45,11 +85,8 @@ export function subscriptionTokenPlanStatusAction(cmd: Command) {
           seatSummary: vm.seatSummary,
           diagnostics: vm.diagnostics,
         };
-        outputJSON(jsonOutput);
-        if (isTotalFailure(result)) {
-          process.exitCode = 1;
-          throw new HandledError(1);
-        }
+        outputJSON(formatSubscriptionStatusJson(jsonOutput));
+        if (isTotalFailure(result)) handleError(totalFailureError(result.diagnostics), format);
         return;
       }
 
@@ -61,10 +98,7 @@ export function subscriptionTokenPlanStatusAction(cmd: Command) {
       } else {
         await renderSubscriptionTokenPlanStatusInk(vm);
       }
-      if (isTotalFailure(result)) {
-        process.exitCode = 1;
-        throw new HandledError(1);
-      }
+      if (isTotalFailure(result)) handleError(totalFailureError(result.diagnostics), format);
     } catch (error) {
       if (error instanceof HandledError) throw error;
       handleError(error, format);
@@ -74,6 +108,10 @@ export function subscriptionTokenPlanStatusAction(cmd: Command) {
 
 function renderTextTokenPlanStatus(vm: TokenPlanStatusViewModel): void {
   console.log('Token Plan Subscription');
+  for (const section of vm.editionSections) {
+    console.log(`  ${section.title}`);
+    for (const field of section.fields) console.log(`    ${field.label.padEnd(18)}${field.value}`);
+  }
   if (vm.header) {
     console.log(`  ${'Product:'.padEnd(14)}${vm.header.product}`);
     console.log(`  ${'Period:'.padEnd(14)}${vm.header.period}`);
@@ -83,17 +121,22 @@ function renderTextTokenPlanStatus(vm: TokenPlanStatusViewModel): void {
 
   if (vm.seatLines && vm.seatLines.length > 0) {
     console.log('');
-    console.log('Seat Summary');
-    for (const row of vm.seatLines) {
-      console.log(
-        `  ${row.specType.padEnd(12)}${row.seats} seats   ${row.totalValue} Credits   ${row.surplusValue} surplus   next ${row.nextCycleFlushTime}`,
-      );
-    }
-    if (vm.totalLine) {
-      console.log(
-        `  ${vm.totalLine.specType.padEnd(12)}${vm.totalLine.seats} seats   ${vm.totalLine.totalValue} Credits   ${vm.totalLine.surplusValue} surplus`,
-      );
-    }
+    console.log('SEAT SUMMARY');
+    console.log('');
+    console.log(
+      formatTextTable(
+        ['SEAT TYPE', 'QUANTITY'],
+        vm.seatLines.map((row) => [row.specType, row.seats]),
+        0,
+      ),
+    );
+  }
+
+  if (vm.seatDetails) {
+    console.log('');
+    console.log(vm.seatDetails.title);
+    console.log('');
+    console.log(formatTokenPlanSeatDetails(vm.seatDetails, process.stdout.columns ?? 80));
   }
 
   if (vm.warnings && vm.warnings.length > 0) {

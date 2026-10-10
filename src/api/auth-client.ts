@@ -10,6 +10,7 @@ import {
 import { getOrCreateClientId } from '../auth/client-id.js';
 import { getEffectiveConfig } from '../config/manager.js';
 import { site } from '../site.js';
+import { redactPaymentData } from '../utils/strings.js';
 import type {
   AuthStatus,
   Credentials,
@@ -426,12 +427,16 @@ export function createAuthClient(opts?: CreateAuthClientOptions): AuthClient {
         response = await fetch(url, {
           method: 'GET',
           headers: { Authorization: `Bearer ${accessToken}` },
+          redirect: 'error',
           signal: controller.signal,
         });
         clearTimeout(timer);
       } catch (err) {
         clearTimeout(timer);
-        const message = err instanceof Error ? err.message : String(err);
+        const { message } = redactPaymentData({
+          access_token: accessToken,
+          message: err instanceof Error ? err.message : String(err),
+        }) as { message: string };
         return {
           authenticated: true,
           server_verified: false,

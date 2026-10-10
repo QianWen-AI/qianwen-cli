@@ -37,7 +37,14 @@ export function didYouMean(input: string, candidates: string[]): string | null {
 const PAYMENT_REDACTION = '[REDACTED]';
 declare const __NODE_ENV__: string;
 
-const PAYMENT_FIELD_NAMES = new Set(['nbid']);
+/**
+ * Structural redaction targets payment credential fields only.
+ * Generic "token"-named business fields (e.g. nextPageToken, refreshToken used as
+ * pagination cursors or non-credential context) are intentionally excluded to avoid
+ * masking diagnostically useful data. Text-level redaction (redactPaymentText) still
+ * catches Bearer tokens and access_token patterns in raw strings.
+ */
+const PAYMENT_FIELD_NAMES = new Set(['nbid', 'accesstoken', 'cliaccesstoken', 'authorization']);
 /** Exact payment hosts accepted by URL validation. */
 export const PAYMENT_URL_HOSTS: readonly string[] = [
   'account.qianwenai.com',
@@ -101,7 +108,7 @@ function hasAsciiControlCharacter(value: string): boolean {
 }
 
 /**
- * Recursively redact Nbid values from a value before it is written to a
+ * Recursively redact Nbid and credential values from a value before it is written to a
  * diagnostic, HTTP debug or error sink. Recharge order IDs and payment URLs
  * remain visible because they are user-facing payment results.
  *
@@ -197,6 +204,11 @@ function collectPaymentSecrets(
 function collectSecretsFromText(text: string, secrets: Set<string>, seen: WeakSet<object>): void {
   for (const match of text.matchAll(LABELED_PAYMENT_VALUE_PATTERN)) {
     if (match[1]) addSecret(secrets, match[1]);
+  }
+  for (const match of text.matchAll(
+    /\b(?:Bearer\s+|(?:cli[_-]?)?access[_-]?token["']?\s*[:=]\s*["']?)([^\s;&,"'<>}\]]+)/giu,
+  )) {
+    addSecret(secrets, match[1]);
   }
   const trimmed = text.trim();
   if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return;

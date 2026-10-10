@@ -10,6 +10,7 @@ import { site } from '../site.js';
 
 export const KEYCHAIN_SERVICE = site.keychainService;
 export const KEYCHAIN_ACCOUNT = site.keychainAccount;
+const KEYCHAIN_COMMAND_TIMEOUT_MS = 5_000;
 
 // Environment variable opt-out
 const ENV_KEYRING = `${site.envPrefix}_KEYRING`;
@@ -37,7 +38,11 @@ export function readFromKeychain(): string | null {
       const result = spawnSync(
         'security',
         ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', KEYCHAIN_ACCOUNT, '-w'],
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+        {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: KEYCHAIN_COMMAND_TIMEOUT_MS,
+        },
       );
       if (result.status !== 0) return null;
       const value = (result.stdout ?? '').trim();
@@ -50,7 +55,11 @@ export function readFromKeychain(): string | null {
       const result = spawnSync(
         'secret-tool',
         ['lookup', 'service', KEYCHAIN_SERVICE, 'account', KEYCHAIN_ACCOUNT],
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+        {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: KEYCHAIN_COMMAND_TIMEOUT_MS,
+        },
       );
       if (result.status !== 0) return null;
       const value = (result.stdout ?? '').trim();
@@ -64,6 +73,7 @@ export function readFromKeychain(): string | null {
       const result = spawnSync('powershell', ['-NoProfile', '-Command', script], {
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: KEYCHAIN_COMMAND_TIMEOUT_MS,
       });
       if (result.status !== 0) return null;
       const value = (result.stdout ?? '').trim();
@@ -92,13 +102,21 @@ export function writeToKeychain(json: string): boolean {
       spawnSync(
         'security',
         ['delete-generic-password', '-s', KEYCHAIN_SERVICE, '-a', KEYCHAIN_ACCOUNT],
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+        {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: KEYCHAIN_COMMAND_TIMEOUT_MS,
+        },
       );
       // Use spawnSync to avoid shell injection risks; pass JSON as a separate argument
       const result = spawnSync(
         'security',
         ['add-generic-password', '-s', KEYCHAIN_SERVICE, '-a', KEYCHAIN_ACCOUNT, '-w', json],
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+        {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: KEYCHAIN_COMMAND_TIMEOUT_MS,
+        },
       );
       return result.status === 0;
     }
@@ -116,7 +134,12 @@ export function writeToKeychain(json: string): boolean {
           'account',
           KEYCHAIN_ACCOUNT,
         ],
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], input: json },
+        {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          input: json,
+          timeout: KEYCHAIN_COMMAND_TIMEOUT_MS,
+        },
       );
       return result.status === 0;
     }
@@ -134,6 +157,7 @@ export function writeToKeychain(json: string): boolean {
         encoding: 'utf-8',
         input: json,
         stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: KEYCHAIN_COMMAND_TIMEOUT_MS,
       });
       return result.status === 0;
     }
@@ -157,7 +181,11 @@ export function deleteFromKeychain(): boolean {
       const result = spawnSync(
         'security',
         ['delete-generic-password', '-s', KEYCHAIN_SERVICE, '-a', KEYCHAIN_ACCOUNT],
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+        {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: KEYCHAIN_COMMAND_TIMEOUT_MS,
+        },
       );
       return result.status === 0;
     }
@@ -166,7 +194,11 @@ export function deleteFromKeychain(): boolean {
       const result = spawnSync(
         'secret-tool',
         ['clear', 'service', KEYCHAIN_SERVICE, 'account', KEYCHAIN_ACCOUNT],
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+        {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: KEYCHAIN_COMMAND_TIMEOUT_MS,
+        },
       );
       return result.status === 0;
     }
@@ -176,6 +208,7 @@ export function deleteFromKeychain(): boolean {
       const result = spawnSync('powershell', ['-NoProfile', '-Command', script], {
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: KEYCHAIN_COMMAND_TIMEOUT_MS,
       });
       return result.status === 0;
     }
@@ -197,6 +230,7 @@ function linuxSecretServiceAvailable(): boolean {
   const versionResult = spawnSync('secret-tool', ['--version'], {
     encoding: 'utf-8',
     stdio: ['pipe', 'pipe', 'pipe'],
+    timeout: KEYCHAIN_COMMAND_TIMEOUT_MS,
   });
   if (versionResult.status !== 0) return false;
 
@@ -257,6 +291,7 @@ export function isKeychainAvailable(): boolean {
       const helpResult = spawnSync('security', ['-h'], {
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: KEYCHAIN_COMMAND_TIMEOUT_MS,
       });
       // `security -h` prints usage to stderr and may exit non-zero on some
       // macOS versions; treat "spawn succeeded" (no error) as "command exists".
@@ -278,7 +313,11 @@ export function isKeychainAvailable(): boolean {
           '-Command',
           'Get-Command Get-StoredCredential -ErrorAction SilentlyContinue',
         ],
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+        {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+          timeout: KEYCHAIN_COMMAND_TIMEOUT_MS,
+        },
       );
       // Get-Command returns non-zero (or empty stdout) when the cmdlet is missing.
       const found = result.status === 0 && (result.stdout ?? '').trim().length > 0;

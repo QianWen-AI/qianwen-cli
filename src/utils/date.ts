@@ -156,6 +156,47 @@ export function formatDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+/**
+ * Format a date string or epoch milliseconds as a Shanghai date, datetime, or UTC+08:00 ISO value.
+ * Date output tolerates invalid source values; datetime and ISO output require a valid instant.
+ */
+export function formatAsiaShanghaiDate(
+  value: string | number,
+  format: 'date' | 'datetime' | 'iso' = 'date',
+): string {
+  if (format === 'date' && typeof value === 'string') {
+    if (!value) return '—';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  }
+
+  if (format !== 'date') {
+    const timestamp = typeof value === 'number' ? value : Date.parse(value);
+    const shanghai = new Date(timestamp + SHANGHAI_OFFSET_MS).toISOString();
+    return format === 'iso'
+      ? shanghai.replace('Z', '+08:00')
+      : shanghai.slice(0, -5).replace('T', ' ');
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    const raw = String(value);
+    const prefix = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    return prefix?.[1] ?? raw;
+  }
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const part = (type: 'year' | 'month' | 'day'): string =>
+    parts.find((candidate) => candidate.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
 /** Options accepted by the recharge-history Shanghai-time range parser. */
 export interface RechargeHistoryRangeOptions {
   range?: '1d' | '3d' | '7d' | '30d';
@@ -164,13 +205,7 @@ export interface RechargeHistoryRangeOptions {
   now?: Date;
 }
 
-const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** Format an epoch timestamp as an ISO-8601 Shanghai wall-clock time. */
-export function formatShanghaiDateTime(timestamp: number): string {
-  return new Date(timestamp + SHANGHAI_OFFSET_MS).toISOString().replace('Z', '+08:00');
-}
 
 /**
  * Format an ISO-like Shanghai time for human-readable output without timezone or milliseconds.

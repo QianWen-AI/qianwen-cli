@@ -6,7 +6,7 @@
 
 > 千问AI平台官方命令行工具。在终端或 AI Agent 运行时中，发现模型、查看用量、管理认证与诊断本地环境。
 
-![Version](https://img.shields.io/badge/version-1.9.0-blue)
+![Version](https://img.shields.io/badge/version-1.10.0-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
@@ -152,7 +152,7 @@ qianwen auth login --complete --format json
 | 用量     | `usage summary`, `usage breakdown`, `usage free-tier`, `usage payg`, `usage logs`                                                                    | `--period`, `--from`, `--to`, `--days`, `--model`, `--granularity`, `--format`                                                                                     |
 | 账单     | `billing summary`, `billing breakdown`, `billing limit`, `billing balance summary`, `billing balance recharge`, `billing balance recharge-history`   | `--from`, `--to`, `--period`, `--group-by`, `--granularity`, `--channel`, `--amount`, `--range`, `--start-time`, `--end-time`, `--page`, `--page-size`, `--format` |
 | 业务空间 | `workspace list`, `workspace limit`                                                                                                                  | `--format`                                                                                                                                                         |
-| 订阅     | `subscription status`, `subscription orders`, `subscription tokenplan status`, `subscription tokenplan seats`                                        | `--format`                                                                                                                                                         |
+| 订阅     | `subscription status`, `subscription orders`, `subscription tokenplan list`, `subscription tokenplan purchase`, `subscription tokenplan status`, `subscription tokenplan seats` | `--edition`, `--billing-cycle`, `--channel`, `--standard-seat-count`, `--pro-seat-count`, `--max-seat-count`, `--auto-renew`, `--no-auto-renew`, `--format` |
 | 云栖大会 | `yunqi list forums`, `yunqi list exhibitors`, `yunqi list subscriptions`, `yunqi list summaries`, `yunqi subscribe forum`, `yunqi unsubscribe forum` | `--page`, `--page-size`, `--forum-id`, `--keyword`, `--format`                                                                                                     |
 | 文档     | `docs search`, `docs view`                                                                                                                           | `--format`                                                                                                                                                         |
 | 技能     | `skills search`, `skills install`, `skills pack-install`                                                                                             | `--limit`, `--dir`, `--format`                                                                                                                                     |
@@ -168,6 +168,8 @@ qianwen auth login --complete --format json
 qianwen --help
 qianwen models --help
 qianwen usage breakdown --help
+qianwen subscription tokenplan --help
+qianwen subscription tokenplan purchase --help
 ```
 
 ---

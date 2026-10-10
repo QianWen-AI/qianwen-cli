@@ -35,7 +35,11 @@ import { collectRepeatable } from './commands/usage/logs.js';
 import { registerUpdateCommand, registerVersionCommand } from './commands/version.js';
 import { registerWorkspaceCommands } from './commands/workspace/index.js';
 import { registerYunqiCommands } from './commands/yunqi/index.js';
-import { getCommandErrorSupplement, setCommandHelpMetadata } from './utils/commander-helpers.js';
+import {
+  getCommandErrorSupplement,
+  setCommandHelpMetadata,
+  styleHelpSectionTitle,
+} from './utils/commander-helpers.js';
 import { isHelpRequest } from './utils/cli-help.js';
 
 // ---------------------------------------------------------------------------
@@ -85,11 +89,10 @@ function formatHelpEntry(
   );
 }
 
-// Help styling helpers — only emit ANSI in REPL mode, matching upstream
-// behavior. Plain-pipe / one-shot output stays free of escape codes so
-// downstream consumers (grep, agent stdout parsers) see clean text.
+// Section titles are styled in any interactive terminal. Richer group/name
+// styling remains REPL-only, and redirected output stays free of escape codes.
 function styleSectionTitle(text: string): string {
-  return isReplMode() ? theme.help.sectionTitle(text) : text;
+  return styleHelpSectionTitle(text);
 }
 
 function styleGroupTitle(text: string): string {
@@ -368,9 +371,11 @@ function addExamples(cmd: Command, examples: string[]): void {
 // ---------------------------------------------------------------------------
 
 function applyCustomHelp(cmd: Command): void {
-  cmd.configureHelp({
-    formatHelp: (_command, helper) => formatHelp(cmd, helper),
-  });
+  if (!cmd.configureHelp().formatHelp) {
+    cmd.configureHelp({
+      formatHelp: (_command, helper) => formatHelp(cmd, helper),
+    });
+  }
   cmd.helpOption('-h, --help', 'Show this help');
   for (const sub of cmd.commands) {
     applyCustomHelp(sub);
@@ -384,7 +389,7 @@ function applyCustomHelp(cmd: Command): void {
 function applyExitOverride(cmd: Command): void {
   cmd.exitOverride((error: CommanderError) => {
     const supplement = getCommandErrorSupplement(cmd, error);
-    if (supplement) error.message += `. ${supplement}`;
+    if (supplement) error.message += supplement.startsWith('\n') ? supplement : `. ${supplement}`;
 
     // Keep Commander's default exitOverride behavior after enriching the message.
     if (error.code !== 'commander.executeSubCommandAsync') throw error;

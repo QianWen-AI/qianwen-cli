@@ -1,3 +1,9 @@
+import {
+  attemptTerminalCleanup,
+  captureStdinState,
+  isolateTerminalListeners,
+} from './stdin-control.js';
+
 /** Result of stdin suppression setup: restore, abort detection, and abort promise. */
 export interface StdinSuppression {
   restore: () => void;
@@ -11,23 +17,10 @@ export function suppressStdin(): StdinSuppression {
     return { restore: () => {}, aborted: () => false, onAbort: new Promise(() => {}) };
   }
 
-  const wasRaw = process.stdin.isRaw ?? false;
-  const savedDataListeners = process.stdin.rawListeners('data').slice();
-  const savedKeypressListeners = process.stdin.rawListeners('keypress').slice();
-
-  process.stdin.removeAllListeners('data');
-  process.stdin.removeAllListeners('keypress');
-
-  try {
-    process.stdin.setRawMode(true);
-  } catch {
-    // some environments may not support raw mode
-  }
-
-  process.stdin.resume();
-
-  let _aborted = false;
-  let resolveAbort: () => void;
+  const restoreState = captureStdinState();
+  let restoreListeners: (() => void) | undefined;
+  let aborted = false;
+  let resolveAbort: () => void = () => {};
   const onAbort = new Promise<void>((resolve) => {
     resolveAbort = resolve;
   });
@@ -37,39 +30,29 @@ export function suppressStdin(): StdinSuppression {
   const restore = (): void => {
     if (restored) return;
     restored = true;
-    process.stdin.removeListener('data', tempHandler);
-
-    try {
-      process.stdin.setRawMode(wasRaw);
-    } catch {
-      // ignore
-    }
-
-    for (const fn of savedDataListeners) {
-      process.stdin.on('data', fn as (...args: unknown[]) => void);
-    }
-    for (const fn of savedKeypressListeners) {
-      process.stdin.on('keypress', fn as (...args: unknown[]) => void);
-    }
-
-    // suppressStdin() always calls resume(), so undo it and unref the handle.
-    // pause() stops data flow but the underlying libuv handle remains ref'd,
-    // which prevents the event loop from draining in one-shot CLI mode.
-    // unref() tells Node.js this handle should not keep the process alive.
-    process.stdin.pause();
-    process.stdin.unref();
+    attemptTerminalCleanup(() => process.stdin.removeListener('data', tempHandler));
+    restoreListeners?.();
+    restoreState();
   };
 
-  const tempHandler = (chunk: Buffer): void => {
-    if (chunk[0] === 0x03) {
+  const tempHandler = (chunk: Buffer | string): void => {
+    if (!restored && !aborted && chunk.includes(String.fromCharCode(3))) {
       // Ctrl+C: signal abort so the polling loop breaks via Promise.race
-      _aborted = true;
+      aborted = true;
       resolveAbort();
     }
     // All other bytes: discard silently
   };
 
-  process.stdin.on('data', tempHandler);
+  try {
+    restoreListeners = isolateTerminalListeners(process.stdin, ['data', 'keypress']);
+    process.stdin.on('data', tempHandler);
+    attemptTerminalCleanup(() => process.stdin.setRawMode(true));
+    attemptTerminalCleanup(() => process.stdin.resume());
+  } catch (error) {
+    restore();
+    throw error;
+  }
 
-  return { restore, aborted: () => _aborted, onAbort };
+  return { restore, aborted: () => aborted, onAbort };
 }

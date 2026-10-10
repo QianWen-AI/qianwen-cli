@@ -126,6 +126,28 @@ describe('redactPaymentData', () => {
     expect(input.nbid).toBe(123456);
   });
 
+  it('redacts explicit credential fields without hiding unrelated token fields', () => {
+    const input = {
+      access_token: 'root-access-secret',
+      cliAccessToken: 'cs-data-access-secret',
+      Authorization: 'Bearer authorization-secret',
+      token: 'page-2',
+      nextPageToken: 'page-3',
+      refreshToken: 'refresh-visible',
+      consoleToken: 'console-visible',
+    };
+
+    expect(redactPaymentData(input)).toEqual({
+      access_token: '[REDACTED]',
+      cliAccessToken: '[REDACTED]',
+      Authorization: '[REDACTED]',
+      token: 'page-2',
+      nextPageToken: 'page-3',
+      refreshToken: 'refresh-visible',
+      consoleToken: 'console-visible',
+    });
+  });
+
   it('keeps Error identity, name, code, stack, and cause unchanged', () => {
     const cause = new Error('inner failure');
     const error = Object.assign(new Error('request failed for account-sensitive'), {

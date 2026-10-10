@@ -13,8 +13,54 @@ import {
   GatewayShapeError,
 } from '../../src/api/request-adapter.js';
 import type { RawApiEnvelope, GatewayEnvelope } from '../../src/types/api-envelope.js';
+import { site } from '../../src/site.js';
+import { buildCsDataRequest } from '../../src/api/adapters/cs-data-adapter.js';
+import {
+  API_TOKENPLAN_SOLO_QUOTA_CONFIG,
+  API_TOKENPLAN_SOLO_SUBSCRIPTION,
+  API_TOKENPLAN_SOLO_USAGE,
+} from '../../src/types/api-routes.js';
 
 const GATEWAY_URL_FRAGMENT = '/data/v2/api.json';
+
+describe('buildCsDataRequest', () => {
+  it('allows the personal usage API only with empty business parameters', () => {
+    const out = buildCsDataRequest({ api: API_TOKENPLAN_SOLO_USAGE });
+    const body = new URLSearchParams(out.body);
+    const params = JSON.parse(body.get('params') ?? '{}') as {
+      Api?: string;
+      Data?: Record<string, unknown>;
+    };
+
+    expect(new URL(out.url).searchParams.get('api')).toBe(API_TOKENPLAN_SOLO_USAGE);
+    expect(new URL(out.url).origin).toBe(site.csDataEndpoint);
+    expect(new URL(out.url).pathname).toBe('/cli/api.json');
+    expect(out.context).toBe('cs-data');
+    expect(params.Api).toBe(API_TOKENPLAN_SOLO_USAGE);
+    expect(params.Data).toEqual({
+      cornerstoneParam: expect.objectContaining({
+        protocol: 'V2',
+        console: 'ONE_CONSOLE',
+        consoleSite: 'QIANWENAI',
+      }),
+    });
+    expect(() =>
+      buildCsDataRequest({ api: API_TOKENPLAN_SOLO_USAGE, data: { commodityCode: 'x' } }),
+    ).toThrow(GatewayShapeError);
+  });
+
+  it('allows anonymous access only for the public personal quota configuration', () => {
+    expect(
+      buildCsDataRequest({ api: API_TOKENPLAN_SOLO_QUOTA_CONFIG, authMode: 'none' }).authMode,
+    ).toBe('none');
+    expect(() =>
+      buildCsDataRequest({ api: API_TOKENPLAN_SOLO_SUBSCRIPTION, authMode: 'none' }),
+    ).toThrow(GatewayShapeError);
+    expect(() => buildCsDataRequest({ api: API_TOKENPLAN_SOLO_USAGE, authMode: 'none' })).toThrow(
+      GatewayShapeError,
+    );
+  });
+});
 
 // ────────────────────────────────────────────────────────────────────
 // flattenParams

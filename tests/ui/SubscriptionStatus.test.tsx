@@ -3,6 +3,8 @@ import { describe, it, expect } from 'vitest';
 import { render } from 'ink-testing-library';
 import stripAnsi from 'strip-ansi';
 import { SubscriptionStatusInk } from '../../src/ui/SubscriptionStatus.js';
+import { SubscriptionTokenPlanStatusInk } from '../../src/ui/SubscriptionTokenPlanStatus.js';
+import { buildTokenPlanStatusViewModel } from '../../src/view-models/subscription/tokenplan-status.js';
 import type { SubscriptionStatusViewModel } from '../../src/view-models/subscription/index.js';
 
 const makeVm = (
@@ -46,6 +48,25 @@ describe('SubscriptionStatusInk', () => {
     expect(out).toContain('Gray');
   });
 
+  it('groups edition sections under Token Plans without a synthetic Account section', () => {
+    const out = frame(
+      makeVm({
+        fields: [],
+        sections: [
+          {
+            id: 'tokenplan-individual',
+            title: 'Individual',
+            fields: [{ label: 'Status', value: 'active' }],
+          },
+        ],
+      }),
+    );
+    expect(out).toContain('Token Plans');
+    expect(out).toContain('Individual');
+    expect(out).not.toContain('Account');
+    expect(out).not.toContain('Gray');
+  });
+
   it('renders the unavailable banner when banner is set', () => {
     const out = frame(
       makeVm({
@@ -56,7 +77,7 @@ describe('SubscriptionStatusInk', () => {
     expect(out).toContain('Subscription unavailable');
   });
 
-  it('lists diagnostics under the banner when available', () => {
+  it('lists safe diagnostic messages without API names or internal codes', () => {
     const out = frame(
       makeVm({
         banner: 'Subscription unavailable',
@@ -70,9 +91,9 @@ describe('SubscriptionStatusInk', () => {
         ],
       }),
     );
-    expect(out).toContain('GetUserPlan');
-    expect(out).toContain('AuthExpired');
     expect(out).toContain('token expired');
+    expect(out).not.toContain('GetUserPlan');
+    expect(out).not.toContain('AuthExpired');
   });
 
   it('renders quota row with display and bar when quota is set', () => {
@@ -106,7 +127,7 @@ describe('SubscriptionStatusInk', () => {
     expect(out).not.toContain('Quota');
   });
 
-  it('renders Recent Orders section with mapped labels', () => {
+  it('renders Team seat usage and scoped recent orders without a duplicate Token Plan summary', () => {
     const vm = makeVm({
       recentOrdersSection: {
         orders: [
@@ -134,14 +155,101 @@ describe('SubscriptionStatusInk', () => {
         status: 'Active',
         autoRenew: 'Yes',
         expires: '2026-12-31',
-        tiers: [],
+        tiers: [
+          {
+            label: 'Standard (2 seats)',
+            bar: '██████████████████████░░ 44,982 / 50,000',
+            remaining: 44_982,
+            total: 50_000,
+            usedPct: 10.036,
+          },
+        ],
       },
+      sections: [
+        {
+          id: 'tokenplan-team',
+          title: 'Team',
+          fields: [{ label: 'Status', value: 'active' }],
+        },
+      ],
     });
     const out = frame(vm);
-    expect(out).toMatch(/═══\s+Recent Orders/);
+    expect(out).toContain('Seat Usage');
+    expect(out).toContain('Standard (2 seats)');
+    expect(out).not.toContain('Expires:');
+    expect(out).toMatch(/═══\s+Recent Token Plan Orders/);
     expect(out).toContain('ord-101');
     expect(out).toContain('Purchase');
     expect(out).toContain('2026-04-15');
     expect(out).toContain('199.00');
+  });
+});
+
+describe('SubscriptionTokenPlanStatusInk', () => {
+  it('shows only seat types and quantities in the dedicated summary', () => {
+    const vm = buildTokenPlanStatusViewModel(
+      {
+        product: 'Token Plan Team Edition',
+        period: null,
+        autoRenew: null,
+        renewable: null,
+        diagnostics: [],
+        seatSummary: {
+          groups: [
+            {
+              specType: 'standard',
+              seats: 1,
+              assigned: null,
+              totalValue: '25000',
+              surplusValue: '25000',
+              unit: 'Credits',
+              nextCycleFlushTime: null,
+            },
+          ],
+          total: null,
+        },
+      },
+      'tui',
+    );
+
+    const out = stripAnsi(render(<SubscriptionTokenPlanStatusInk vm={vm} />).lastFrame() ?? '');
+    expect(out).toContain('SEAT SUMMARY');
+    expect(out).toMatch(/SEAT TYPE\s+QUANTITY/);
+    expect(out).toMatch(/Standard Seat\s+1/);
+    expect(out).not.toMatch(/Total Credits|Remaining Credits|25,000/);
+    expect(out).not.toContain('Next Cycle');
+  });
+
+  it('retains next-cycle data without adding it to the dedicated summary', () => {
+    const vm = buildTokenPlanStatusViewModel(
+      {
+        product: 'Token Plan Team Edition',
+        period: null,
+        autoRenew: null,
+        renewable: null,
+        diagnostics: [],
+        seatSummary: {
+          groups: [
+            {
+              specType: 'standard',
+              seats: 1,
+              assigned: null,
+              totalValue: '25000',
+              surplusValue: '25000',
+              unit: 'Credits',
+              nextCycleFlushTime: '2026-10-16T00:00:00+08:00',
+            },
+          ],
+          total: null,
+        },
+      },
+      'tui',
+    );
+
+    const out = stripAnsi(render(<SubscriptionTokenPlanStatusInk vm={vm} />).lastFrame() ?? '');
+    expect(out).toMatch(/Standard Seat\s+1/);
+    expect(out).not.toContain('Next Cycle');
+    expect(out).not.toContain('2026-10-16');
+    expect(vm.seatSummary?.groups[0].nextCycleFlushTime).toBe('2026-10-16T00:00:00+08:00');
   });
 });

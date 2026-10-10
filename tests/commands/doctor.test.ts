@@ -12,6 +12,7 @@ const s = {
 
 const holder: { client: ApiClient } = { client: makeMockApiClient() };
 const credResolveStub = vi.fn();
+const clearCredentialsCacheStub = vi.fn();
 
 vi.mock('../../src/api/client.js', () => ({
   createClient: async () => holder.client,
@@ -24,6 +25,7 @@ vi.mock('../../src/auth/credentials.js', async () => {
   return {
     ...actual,
     resolveCredentials: () => credResolveStub(),
+    clearCredentialsCache: clearCredentialsCacheStub,
   };
 });
 
@@ -36,6 +38,7 @@ function inFutureIso(hours: number): string {
 beforeEach(() => {
   holder.client = makeMockApiClient();
   credResolveStub.mockReset();
+  clearCredentialsCacheStub.mockReset();
 });
 
 describe('doctor command', () => {
@@ -75,6 +78,7 @@ describe('doctor command', () => {
     expect(payload.exit_code).toBe(0);
     expect(payload.checks.find((c: any) => c.name === 'auth').status).toBe('pass');
     expect(payload.checks.find((c: any) => c.name === 'token').status).toBe('pass');
+    expect(clearCredentialsCacheStub).toHaveBeenCalledOnce();
   });
 
   it('JSON: not authenticated → auth fail, exit code 2', async () => {

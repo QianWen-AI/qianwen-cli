@@ -23,6 +23,7 @@ interface InkRenderOptions {
 }
 
 interface InteractiveRenderOptions {
+  inputMode?: 'default' | 'flowing';
   altScreen?: boolean;
   trailingNewline?: boolean;
   protectStaticContent?: boolean;
@@ -323,6 +324,8 @@ describe('billing balance recharge table flow', () => {
       renderInteractiveSpy.mockImplementation(async (element) => {
         const instance = render(React.createElement(React.Fragment));
         const stdin = instance.stdin as unknown as Record<string, unknown>;
+        stdin.ref = vi.fn();
+        stdin.unref = vi.fn();
         if (typeof stdin.resume !== 'function') stdin.resume = vi.fn();
         const stdout = instance.stdout as unknown as NodeJS.EventEmitter & { columns: number };
         Object.defineProperty(stdout, 'columns', { value: 20, configurable: true });
@@ -573,6 +576,7 @@ describe('billing balance recharge table flow', () => {
     });
     renderInteractiveSpy.mockImplementation(async (element, options) => {
       expect(options).toEqual({
+        inputMode: 'flowing',
         altScreen: false,
         trailingNewline: true,
         protectStaticContent: true,
@@ -580,6 +584,9 @@ describe('billing balance recharge table flow', () => {
       // The waiting frame owns stdin through a flowing-mode 'data' listener, so
       // ink-testing-library's stdin.write() (which emits 'data') drives it.
       const instance = render(React.createElement(React.Fragment));
+      const stdin = instance.stdin as unknown as Record<string, unknown>;
+      stdin.ref = vi.fn();
+      stdin.unref = vi.fn();
       instance.rerender(element);
       await vi.waitFor(() => {
         // The frame attaches its 'data' listener in a passive effect.

@@ -1,7 +1,12 @@
 import { PassThrough } from 'stream';
 import React, { useEffect } from 'react';
 import { render, useApp } from 'ink';
-import { isReplMode } from '../utils/runtime-mode.js';
+import {
+  attemptTerminalCleanup,
+  captureStdinState,
+  isolateTerminalListeners,
+} from '../utils/stdin-control.js';
+import { createFlowingStdin, createGuardedStdin } from './interactive-stdin.js';
 import { CliError } from '../utils/errors.js';
 import { EXIT_CODES } from '../utils/exit-codes.js';
 
@@ -166,7 +171,16 @@ export async function renderWithInk(
 
   // Resolves only after AutoExitWrapper calls app.exit() (or the boundary
   // catches a render error and unmounts).
-  await instance.waitUntilExit();
+  const exitPromise = instance.waitUntilExit();
+  if (capturedError) instance.unmount();
+  try {
+    await exitPromise;
+  } finally {
+    // Release Ink's global instance tracking on success and failure so a
+    // synchronous first-render exception cannot strand the Ink instance.
+    attemptTerminalCleanup(() => instance.unmount());
+    attemptTerminalCleanup(() => instance.cleanup());
+  }
 
   // Surface any render-time crash as a graceful CLI error instead of letting
   // Ink's boundary dump a raw component stack to the terminal.
@@ -184,6 +198,8 @@ export async function renderWithInk(
  * Options for {@link renderInteractive}.
  */
 export interface RenderInteractiveOptions {
+  /** Keep the physical TTY flowing for resize-sensitive waits. Default: direct Ink input. */
+  inputMode?: 'default' | 'flowing';
   /**
    * Whether to switch to the alternative screen buffer for the duration of
    * the render. Defaults to `true`. Set to `false` for inline editors that
@@ -219,18 +235,17 @@ export async function renderInteractive(
   element: React.ReactElement,
   options: RenderInteractiveOptions = {},
 ): Promise<void> {
-  const { altScreen = true, trailingNewline = false, protectStaticContent = false } = options;
-
-  // Save existing stdin listeners registered by readline/REPL,
-  // then remove them so only Ink receives keystrokes during pagination.
-  const savedDataListeners = process.stdin.rawListeners('data').slice();
-  const savedKeypressListeners = process.stdin.rawListeners('keypress').slice();
-  // Isolate stdout 'resize' listeners so readline's terminal-mode handler does
-  // not redraw its prompt inside the alt-screen, which would corrupt Ink's view.
-  const savedResizeListeners = process.stdout.rawListeners('resize').slice();
-  process.stdin.removeAllListeners('data');
-  process.stdin.removeAllListeners('keypress');
-  process.stdout.removeAllListeners('resize');
+  const {
+    altScreen = true,
+    trailingNewline = false,
+    protectStaticContent = false,
+    inputMode = 'default',
+  } = options;
+  const restoreState = captureStdinState();
+  let restoreInputListeners: (() => void) | undefined;
+  let restoreResizeListeners: (() => void) | undefined;
+  let inputSession: ReturnType<typeof createFlowingStdin> | undefined;
+  let instance: ReturnType<typeof render> | undefined;
 
   // Switch to the alternative screen buffer so Ink renders on a clean canvas
   // anchored to the top of the viewport. Resize redraws happen in this buffer
@@ -267,45 +282,55 @@ export async function renderInteractive(
   // height makes Ink's 2J/3J full repaint the resize-stable rendering path.
   const installFilter = useAltScreen || (protectStaticContent && !useAltScreen);
   let restoreWrite: (() => void) | null = null;
-  if (useAltScreen) {
-    process.stdout.write(ENTER_ALT_SCREEN);
-  }
-  if (installFilter) {
-    const originalWrite = process.stdout.write;
-    const boundWrite = originalWrite.bind(process.stdout);
-    const strippingWrite = (
-      chunk: Uint8Array | string,
-      encodingOrCb?: BufferEncoding | ((err?: Error | null) => void),
-      cb?: (err?: Error | null) => void,
-    ): boolean => {
-      // Alt-screen sessions strip scrollback erasure; explicit static-content
-      // protection only suppresses full clear frames.
-      const data =
-        useAltScreen && typeof chunk === 'string' ? chunk.replaceAll(ERASE_SCROLLBACK, '') : chunk;
-      // Drop the whole stale clearTerminal frame (see block comment above).
-      // Known edge: Ink's lastOutput gate still records the suppressed frame,
-      // so a later fresh render producing a byte-identical string would be
-      // skipped at the Ink layer — needs the size to oscillate back with
-      // identical content, negligible in practice.
-      if (typeof data === 'string' && data.includes(CLEAR_VISIBLE)) {
-        if (typeof encodingOrCb === 'function') encodingOrCb(null);
-        else if (typeof cb === 'function') cb(null);
-        return true;
-      }
-      return typeof encodingOrCb === 'function'
-        ? boundWrite(data, encodingOrCb)
-        : boundWrite(data, encodingOrCb, cb);
-    };
-    process.stdout.write = strippingWrite as typeof process.stdout.write;
-    restoreWrite = () => {
-      process.stdout.write = originalWrite;
-    };
-  }
-
+  let enteredScreen = false;
   let capturedError: unknown = null;
   try {
+    restoreInputListeners = isolateTerminalListeners(process.stdin, ['data', 'keypress']);
+    restoreResizeListeners = isolateTerminalListeners(process.stdout, ['resize']);
+    if (useAltScreen) {
+      enteredScreen = true;
+      process.stdout.write(ENTER_ALT_SCREEN);
+    }
+    if (installFilter) {
+      const originalWrite = process.stdout.write;
+      const boundWrite = originalWrite.bind(process.stdout);
+      const strippingWrite = (
+        chunk: Uint8Array | string,
+        encodingOrCb?: BufferEncoding | ((err?: Error | null) => void),
+        cb?: (err?: Error | null) => void,
+      ): boolean => {
+        // Alt-screen sessions strip scrollback erasure; explicit static-content
+        // protection only suppresses full clear frames.
+        const data =
+          useAltScreen && typeof chunk === 'string'
+            ? chunk.replaceAll(ERASE_SCROLLBACK, '')
+            : chunk;
+        // Drop the whole stale clearTerminal frame (see block comment above).
+        // Known edge: Ink's lastOutput gate still records the suppressed frame,
+        // so a later fresh render producing a byte-identical string would be
+        // skipped at the Ink layer — needs the size to oscillate back with
+        // identical content, negligible in practice.
+        if (typeof data === 'string' && data.includes(CLEAR_VISIBLE)) {
+          if (typeof encodingOrCb === 'function') encodingOrCb(null);
+          else if (typeof cb === 'function') cb(null);
+          return true;
+        }
+        return typeof encodingOrCb === 'function'
+          ? boundWrite(data, encodingOrCb)
+          : boundWrite(data, encodingOrCb, cb);
+      };
+      process.stdout.write = strippingWrite as typeof process.stdout.write;
+      restoreWrite = () => {
+        process.stdout.write = originalWrite;
+      };
+    }
+
+    inputSession =
+      inputMode === 'flowing'
+        ? createFlowingStdin(process.stdin, process.stdout)
+        : createGuardedStdin(process.stdin);
     const ctl: { unmount?: () => void } = {};
-    const instance = render(
+    instance = render(
       <InkErrorBoundary
         onError={(e) => {
           capturedError = e;
@@ -316,84 +341,47 @@ export async function renderInteractive(
       </InkErrorBoundary>,
       {
         stdout: process.stdout,
-        stdin: process.stdin,
+        stdin: inputSession.stdin,
         exitOnCtrlC: false,
         patchConsole: false,
       },
     );
     ctl.unmount = instance.unmount;
+    const exitPromise = instance.waitUntilExit();
+    if (capturedError) instance.unmount();
 
-    await instance.waitUntilExit();
-
-    // Drain any residual bytes from stdin buffer
-    await drainStdin();
+    await exitPromise;
   } finally {
+    attemptTerminalCleanup(() => instance?.unmount());
+    attemptTerminalCleanup(() => instance?.cleanup());
+    if (instance) {
+      // Passive effect cleanup must finish before the physical stdin snapshot
+      // is restored, including when waitUntilExit rejected after a render error.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await drainStdin();
+    }
+    inputSession?.restore();
     // Uninstall the \x1b[3J filter before any teardown writes so it can never
     // leak past the session (exceptions included).
-    restoreWrite?.();
-    if (useAltScreen) {
-      process.stdout.write(EXIT_ALT_SCREEN);
+    attemptTerminalCleanup(() => restoreWrite?.());
+    if (enteredScreen) {
+      attemptTerminalCleanup(() => process.stdout.write(EXIT_ALT_SCREEN));
       // Land the shell prompt on a fresh line after the alt-screen restores the
       // main screen (mirrors renderWithInk's trailing newline).
-      process.stdout.write('\n');
+      attemptTerminalCleanup(() => process.stdout.write('\n'));
     } else if (useMainScreenFallback) {
-      process.stdout.write(CLEAR_SCREEN);
+      attemptTerminalCleanup(() => process.stdout.write(CLEAR_SCREEN));
     } else if (trailingNewline) {
       // Inline Ink leaves the cursor at the end of its last painted row. Move
       // subsequent output below that frame instead of appending it horizontally.
-      process.stdout.write('\n');
+      attemptTerminalCleanup(() => process.stdout.write('\n'));
     }
     // Emit a full SGR reset so the parent shell inherits a clean attribute
     // state regardless of which rendering path Ink took.
-    process.stdout.write('\x1b[0m');
-    // Ensure stdin returns to cooked mode before downstream readline runs.
-    // Ink enables raw mode during render and calls setRawMode(false) on
-    // unmount, but event-loop ordering can leave stdin still in raw mode by
-    // the time this finally block executes — causing readline to receive
-    // duplicated keystrokes (e.g. confirmPrompt echoing "yy" for one "y").
-    if (process.stdin.isTTY && typeof process.stdin.setRawMode === 'function') {
-      try {
-        process.stdin.setRawMode(false);
-      } catch {
-        // ignore environments that don't support setRawMode
-      }
-    }
-    // Restore readline's listeners so REPL resumes normal operation
-    for (const fn of savedDataListeners) {
-      process.stdin.on('data', fn as (...args: any[]) => void);
-    }
-    for (const fn of savedKeypressListeners) {
-      process.stdin.on('keypress', fn as (...args: any[]) => void);
-    }
-
-    // Drop any resize listener Ink registered, then restore readline's so the
-    // REPL prompt redraws correctly on the main screen again.
-    process.stdout.removeAllListeners('resize');
-    for (const fn of savedResizeListeners) {
-      process.stdout.on('resize', fn as (...args: unknown[]) => void);
-    }
-
-    if (isReplMode()) {
-      // Ink calls stdin.unref() during cleanup (App.componentWillUnmount),
-      // which allows Node's event loop to exit if no other handles are active.
-      // Re-ref stdin so subsequent readline/confirmPrompt calls keep the
-      // process alive while waiting for user input.
-      process.stdin.ref();
-      // Pair ref() with resume(): unref() alone leaves the handle present but
-      // unobserved on Windows ConHost, where readline can stop pumping data
-      // events until the next keystroke. resume() forces the read pump back on.
-      process.stdin.resume();
-    } else {
-      // One-shot mode: nothing else will read from stdin after this point.
-      // Pause + unref so the underlying handle stops blocking the event loop;
-      // otherwise the shell prompt only re-appears after an extra Enter press.
-      try {
-        process.stdin.pause();
-      } catch {
-        // ignore environments that disallow pausing stdin
-      }
-      process.stdin.unref();
-    }
+    attemptTerminalCleanup(() => process.stdout.write('\x1b[0m'));
+    restoreInputListeners?.();
+    restoreResizeListeners?.();
+    restoreState();
   }
 
   // Re-throw any captured render error AFTER stdin/terminal state is restored,
@@ -418,9 +406,11 @@ function drainStdin(): Promise<void> {
 
     // Read and discard any buffered data
     const flush = () => {
-      while (process.stdin.read() !== null) {
-        // discard
-      }
+      attemptTerminalCleanup(() => {
+        while (process.stdin.read() !== null) {
+          // discard
+        }
+      });
     };
 
     flush();

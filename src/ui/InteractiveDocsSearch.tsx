@@ -80,11 +80,17 @@ function ResultRow({
   selected,
   placeholder,
   maxWidth,
+  showUrl,
+  showSummary,
+  showSpacing,
 }: {
   item: DocsSearchItemViewModel;
   selected: boolean;
   placeholder: string;
   maxWidth?: number;
+  showUrl: boolean;
+  showSummary: boolean;
+  showSpacing: boolean;
 }) {
   const prefix = selected ? '\u25B6 ' : '  ';
   const prefixColor = selected ? colors.brand : colors.muted;
@@ -142,19 +148,19 @@ function ResultRow({
           <HighlightedText value={item.highlightedTitle || item.title} maxWidth={titleBudget} />
         </Text>
       </Box>
-      {item.url ? (
+      {showUrl && item.url ? (
         <Box paddingLeft={2}>
           <Text color={colors.muted} wrap="truncate-end">
             {subBudget != null ? truncateByDisplayWidth(item.url, subBudget) : item.url}
           </Text>
         </Box>
       ) : null}
-      {selected && item.summary ? (
+      {showSummary && selected && item.summary ? (
         <Box paddingLeft={2}>
           <HighlightedText value={item.highlightedSummary || item.summary} maxWidth={subBudget} />
         </Box>
       ) : null}
-      <Text> </Text>
+      {showSpacing && <Text> </Text>}
     </Box>
   );
 }
@@ -305,6 +311,16 @@ export function InteractiveDocsSearch({
   // paddingLeft (2). Recomputed on resize via useTerminalSize so every logical
   // line stays <= terminal columns and never physically wraps.
   const contentWidth = Math.max(1, frameWidth - 4);
+  // Reserve the section header, separator, and footer. Oversized frames enter
+  // Ink's clearTerminal path, which the alternate-screen renderer suppresses.
+  const contentRows = Math.max(1, termRows - (inAltScreen ? 1 : 0) - 3);
+  const showUrl = contentRows >= 2;
+  const showSummary = contentRows >= 3;
+  const showSpacing = contentRows >= 4;
+  const itemRows = 1 + Number(showUrl) + Number(showSpacing);
+  const visibleCount = Math.max(1, Math.floor((contentRows - Number(showSummary)) / itemRows));
+  const visibleStart = Math.max(0, selectedIndex - visibleCount + 1);
+  const visibleItems = vm.items.slice(visibleStart, visibleStart + visibleCount);
 
   if (vm.isEmpty) {
     return (
@@ -347,13 +363,16 @@ export function InteractiveDocsSearch({
           </Box>
         ) : (
           <Box flexDirection="column" paddingLeft={2}>
-            {vm.items.map((item, idx) => (
+            {visibleItems.map((item, idx) => (
               <ResultRow
-                key={idx}
+                key={visibleStart + idx}
                 item={item}
-                selected={idx === selectedIndex}
+                selected={visibleStart + idx === selectedIndex}
                 placeholder={vm.degradedPlaceholder}
                 maxWidth={contentWidth}
+                showUrl={showUrl}
+                showSummary={showSummary}
+                showSpacing={showSpacing}
               />
             ))}
           </Box>

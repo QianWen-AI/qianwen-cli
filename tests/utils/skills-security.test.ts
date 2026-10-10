@@ -17,6 +17,7 @@ import {
   resolveWithinBase,
   isRealPathWithinBase,
 } from '../../src/utils/skills-security.js';
+import { canCreateSymlinks } from '../helpers/symlink-capability.js';
 
 describe('isSafeRelativeEntryPath — zip entry path policy', () => {
   it.each(['file.txt', 'dir/file.txt', 'a/b/c.md', 'dir/', 'a/b/'])('accepts %s', (p) => {
@@ -42,7 +43,10 @@ describe('isSafeRelativeEntryPath — zip entry path policy', () => {
 });
 
 describe('resolveWithinBase — separator-aware boundary', () => {
-  const base = path.join(path.sep, 'base', 'dir');
+  // resolveWithinBase() calls path.resolve(), which turns the drive-relative
+  // '\base\dir' into '<cwd drive>:\base\dir' on Windows; use a fully
+  // qualified absolute base so both platforms resolve identically.
+  const base = process.platform === 'win32' ? 'C:\\base\\dir' : '/base/dir';
 
   it('resolves a normal relative path inside the base', () => {
     expect(resolveWithinBase(base, 'sub/file.txt')).toBe(path.join(base, 'sub', 'file.txt'));
@@ -88,12 +92,17 @@ describe('isRealPathWithinBase — symlink escape detection', () => {
     expect(isRealPathWithinBase(base, path.join(base, 'sub', 'file.txt'))).toBe(true);
   });
 
-  it('detects a symlinked intermediate directory pointing outside the base', () => {
-    symlinkSync(outside, path.join(base, 'link'));
-    expect(isRealPathWithinBase(base, path.join(base, 'link', 'evil.txt'))).toBe(false);
-  });
+  // Symlink creation needs SeCreateSymbolicLinkPrivilege / Developer Mode on
+  // Windows; skip where the scenario cannot be set up at all.
+  it.skipIf(!canCreateSymlinks())(
+    'detects a symlinked intermediate directory pointing outside the base',
+    () => {
+      symlinkSync(outside, path.join(base, 'link'));
+      expect(isRealPathWithinBase(base, path.join(base, 'link', 'evil.txt'))).toBe(false);
+    },
+  );
 
-  it('accepts a symlink that stays inside the base', () => {
+  it.skipIf(!canCreateSymlinks())('accepts a symlink that stays inside the base', () => {
     mkdirSync(path.join(base, 'real'));
     symlinkSync(path.join(base, 'real'), path.join(base, 'link'));
     expect(isRealPathWithinBase(base, path.join(base, 'link', 'ok.txt'))).toBe(true);

@@ -6,6 +6,7 @@
  *   - Auth status retrieval (server check + JWT-claim fallback when offline).
  *   - Logout (best-effort server revocation, always-on local cleanup).
  */
+import { redactPaymentData } from '../utils/strings.js';
 import {
   resolveCredentials,
   isTokenExpired,
@@ -54,7 +55,10 @@ export class AuthService {
     try {
       return await this.authClient.getAuthStatus();
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const { message } = redactPaymentData({
+        access_token: resolved.credentials?.access_token,
+        message: err instanceof Error ? err.message : String(err),
+      }) as { message: string };
       return this.localFallback(resolved.credentials, `Server unreachable: ${message}`);
     }
   }

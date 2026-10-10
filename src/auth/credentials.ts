@@ -86,7 +86,7 @@ function resolveCredentialsUncached(): ResolvedCredential | null {
     if (keychainData) {
       try {
         const parsed = JSON.parse(keychainData);
-        if (parsed.access_token) {
+        if (parsed.access_token && isLegacySessionActive(parsed)) {
           const creds: Credentials = {
             access_token: parsed.access_token,
             expires_at: parsed.expires_at ?? '',
@@ -136,12 +136,22 @@ function resolveCredentialsUncached(): ResolvedCredential | null {
       if (!isEncryptedEnvelope(content)) {
         const creds = validateCredentials(JSON.parse(content));
         if (creds) {
+          if (isPlaintextMode()) {
+            return {
+              source: 'encrypted_file',
+              auth_mode: 'device_flow',
+              access_token: creds.access_token,
+              credentials: creds,
+            };
+          }
           // Migrate to secure storage
           writeCredentials(creds);
-          try {
-            unlinkSync(filePath);
-          } catch {
-            /* ignore */
+          if (existsSync(filePath) && !isEncryptedEnvelope(readFileSync(filePath, 'utf-8'))) {
+            try {
+              unlinkSync(filePath);
+            } catch {
+              /* Already moved to Keychain. */
+            }
           }
           process.stderr.write('  Migrated plaintext credentials to secure storage.\n');
 
@@ -177,12 +187,42 @@ function normalizeUserInfo(raw: Record<string, unknown> | undefined): UserInfo {
   };
 }
 
+/** Respect session invalidation metadata when present. */
+function isLegacySessionActive(data: Record<string, unknown>): boolean {
+  const path = `${getCredentialsPath()}.session`;
+  if (!existsSync(path)) return true;
+  try {
+    const state = JSON.parse(readFileSync(path, 'utf8')) as { sessionId?: unknown };
+    return typeof state.sessionId === 'string' && state.sessionId === data.session_id;
+  } catch {
+    return false;
+  }
+}
+
+/** Successful root login clears session invalidation metadata. */
+function clearLegacySessionState(): void {
+  try {
+    unlinkSync(`${getCredentialsPath()}.session`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+}
+
+/** A root login clears any derived account-scoped credential cache. */
+function clearCsDataCredentialCache(): void {
+  try {
+    unlinkSync(`${getCredentialsPath()}.console`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+}
+
 /**
  * Validate and cast a dict to Credentials.
  * Returns null if required fields are missing.
  */
 function validateCredentials(data: Record<string, unknown>): Credentials | null {
-  if (!data) return null;
+  if (!data || !isLegacySessionActive(data)) return null;
   const access_token = data.access_token as string | undefined;
   const expires_at = data.expires_at as string | undefined;
   const user = data.user as Record<string, unknown> | undefined;
@@ -228,23 +268,27 @@ export function readCredentials(): Credentials | null {
 export function writeCredentials(credentials: Credentials): void {
   // Clear cache to ensure subsequent reads reflect the new credentials
   clearCredentialsCache();
+  clearCsDataCredentialCache();
 
   const payload = JSON.stringify({ ...credentials, auth_mode: 'device_flow' });
 
   // Plaintext mode (debug)
   if (isPlaintextMode()) {
     writePlaintextCredentials({ ...credentials, auth_mode: 'device_flow' }, getCredentialsPath());
+    clearLegacySessionState();
     return;
   }
 
   // Keychain attempt with write-then-readback verification
   if (isKeychainAvailable() && tryWriteToKeychainVerified(payload)) {
+    clearLegacySessionState();
     return;
   }
 
   // Fallback: encrypted file
   const filePath = getCredentialsPath();
   writeEncryptedCredentials({ ...credentials, auth_mode: 'device_flow' }, filePath);
+  clearLegacySessionState();
 }
 
 /**
@@ -275,6 +319,11 @@ export function deleteCredentials(): boolean {
   clearCredentialsCache();
 
   deleteFromKeychain();
+  try {
+    clearCsDataCredentialCache();
+  } catch {
+    /* Optional encrypted cache. */
+  }
 
   const path = getCredentialsPath();
   if (!existsSync(path)) return false;

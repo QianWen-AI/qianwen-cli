@@ -8,7 +8,7 @@ import {
   modelRetireDateLong,
   resolveAnnouncementUrl,
 } from '../services/model-lifecycle.js';
-import { formatDate } from '../utils/date.js';
+import { formatAsiaShanghaiDate } from '../utils/date.js';
 
 /** Currency symbol resolved from site config. */
 const CUR = site.features.currency === 'CNY' ? '¥' : '$';
@@ -367,7 +367,7 @@ export function buildModelDetailViewModel(detail: ModelDetail): ModelDetailViewM
       remainingPct: q.status === 'expire' ? 0 : pct,
       // Display layer wants a compact YYYY-MM-DD; the JSON layer keeps the
       // full ISO timestamp from FreeTierQuota.
-      resetDate: q.resetDate ? formatDate(new Date(q.resetDate)) : undefined,
+      resetDate: q.resetDate ? formatAsiaShanghaiDate(q.resetDate) : undefined,
       statusLabel,
     };
   } else if (detail.free_tier.mode === 'standard') {

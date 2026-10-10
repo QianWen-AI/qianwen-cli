@@ -21,6 +21,7 @@ import { setReplMode } from './utils/runtime-mode.js';
 import { setActivePromptInterface, clearActivePromptInterface } from './utils/confirm.js';
 import chalk from 'chalk';
 import { site } from './site.js';
+import { captureStdinState } from './utils/stdin-control.js';
 import { theme, colors } from './ui/theme.js';
 import { CliError, getErrorVerbosity } from './utils/errors.js';
 import { classifyHttpError } from './utils/api-errors.js';
@@ -339,6 +340,7 @@ export async function startRepl(): Promise<void> {
         },
       });
 
+      const restoreCommandStdin = captureStdinState();
       try {
         executingCommand = true;
         // Execute - prepend dummy argv[0] and argv[1] for Commander
@@ -379,6 +381,7 @@ export async function startRepl(): Promise<void> {
           replErrorDisplay(err);
         }
       } finally {
+        if (!replClosed) restoreCommandStdin();
         flushDebugReport();
         clearDebugBuffer();
       }
@@ -397,7 +400,7 @@ export async function startRepl(): Promise<void> {
     // Reliable fix: use setTimeout to defer prompt restoration until
     // after ALL of Ink's teardown (log-update.done, cliCursor.show,
     // reconciler cleanup) has completed and stdout has been flushed.
-    // Then restore stdin state and call rl.prompt().
+    // The command/session leases have restored stdin; only repaint the prompt.
     await new Promise<void>((resolve) => setTimeout(resolve, 32));
     // If the user typed exit/quit/q (or sent EOF) while this command was still
     // running, the readline interface is already closed. Calling rl.prompt()
@@ -408,13 +411,6 @@ export async function startRepl(): Promise<void> {
       return;
     }
     rl.setPrompt(getPrompt());
-    if (process.stdin.isTTY && process.stdin.setRawMode) {
-      process.stdin.setRawMode(true);
-    }
-    process.stdin.resume();
-    // Re-ref stdin after Ink's unmount calls stdin.unref(), which would
-    // otherwise let the event loop drain and exit the process silently.
-    process.stdin.ref();
     (rl as any).line = '';
     (rl as any).cursor = 0;
     rl.prompt();

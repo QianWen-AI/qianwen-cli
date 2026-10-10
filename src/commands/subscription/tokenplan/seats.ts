@@ -7,7 +7,6 @@ import { createServices } from '../../../services/index.js';
 import { buildTokenPlanSeatsViewModel } from '../../../view-models/subscription/tokenplan-seats.js';
 import { renderSubscriptionTokenPlanSeatsInk } from '../../../ui/SubscriptionTokenPlanSeats.js';
 import { handleError, CliError } from '../../../utils/errors.js';
-import { EXIT_CODES } from '../../../utils/exit-codes.js';
 import type {
   ListTokenPlanSeatsParams,
   TokenPlanSeatsViewModel,
@@ -16,7 +15,7 @@ import type {
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
-const VALID_SPEC_TYPES = ['pro', 'standard'] as const;
+const VALID_SPEC_TYPES = ['standard', 'pro', 'max'] as const;
 
 function parseIntOption(value: string): number {
   const n = parseInt(value, 10);
@@ -42,7 +41,7 @@ function hasOption(cmd: Command, flag: string): boolean {
  */
 function ensureOptions(cmd: Command): void {
   if (!hasOption(cmd, '--spec-type')) {
-    cmd.option('--spec-type <type>', 'Filter by seat spec type: pro, standard');
+    cmd.option('--spec-type <type>', 'Filter by seat spec type: standard, pro, max');
   }
   if (!hasOption(cmd, '--page')) {
     cmd.option('--page <n>', 'Page number (1-based)', parseIntOption);
@@ -92,7 +91,7 @@ export function subscriptionTokenPlanSeatsAction(cmd: Command) {
           new CliError({
             code: 'INVALID_ARGUMENT',
             message: `--spec-type must be one of: ${VALID_SPEC_TYPES.join(', ')}`,
-            exitCode: EXIT_CODES.INVALID_ARGUMENT,
+            exitCode: 1,
           }),
           format,
         );

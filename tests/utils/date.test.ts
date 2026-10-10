@@ -4,14 +4,12 @@ import {
   resolveDateRange,
   validateDateRange,
   formatDate,
-  formatShanghaiDateTime,
+  formatAsiaShanghaiDate,
   formatRelativeTime,
   resolveRechargeHistoryRange,
 } from '../../src/utils/date.js';
 
-// formatDate uses toISOString() which is always UTC.
-// parsePeriod uses local-time constructors (new Date(y,m,d)).
-// To keep tests deterministic we fix the timezone to UTC.
+// Local-calendar helpers depend on the host timezone; fix it for deterministic tests.
 const originalTZ = process.env.TZ;
 beforeAll(() => {
   process.env.TZ = 'UTC';
@@ -192,6 +190,64 @@ describe('formatDate', () => {
   });
 });
 
+describe('formatAsiaShanghaiDate', () => {
+  it('renders empty string as em-dash', () => {
+    expect(formatAsiaShanghaiDate('')).toBe('—');
+  });
+
+  it('short-circuits pure YYYY-MM-DD values', () => {
+    expect(formatAsiaShanghaiDate('2026-01-01')).toBe('2026-01-01');
+  });
+
+  it('rolls UTC timestamps past Shanghai midnight forward', () => {
+    // 2026-10-15T16:00:00Z = 2026-10-16 00:00:00 +08:00
+    expect(formatAsiaShanghaiDate('2026-10-15T16:00:00.000Z')).toBe('2026-10-16');
+  });
+
+  it('keeps UTC timestamps before Shanghai midnight on the same day', () => {
+    // 2026-10-15T15:59:59Z = 2026-10-15 23:59:59 +08:00
+    expect(formatAsiaShanghaiDate('2026-10-15T15:59:59.000Z')).toBe('2026-10-15');
+  });
+
+  it('returns unparseable input unchanged', () => {
+    expect(formatAsiaShanghaiDate('foo')).toBe('foo');
+  });
+
+  it('honors explicit timezone offsets', () => {
+    expect(formatAsiaShanghaiDate('2026-01-01T12:00:00+08:00')).toBe('2026-01-01');
+  });
+
+  it('accepts epoch milliseconds in date mode', () => {
+    expect(formatAsiaShanghaiDate(Date.parse('2026-10-15T16:00:00.000Z'), 'date')).toBe(
+      '2026-10-16',
+    );
+  });
+
+  it('preserves the date prefix when the source timestamp is invalid', () => {
+    expect(formatAsiaShanghaiDate('2026-01-01invalid')).toBe('2026-01-01');
+  });
+
+  it.each([
+    Date.parse('2026-12-31T16:00:00.123Z'),
+    '2026-12-31T16:00:00.123Z',
+    '2027-01-01T00:00:00.123+08:00',
+  ])('formats %s as a Shanghai datetime or an ISO value', (value) => {
+    expect(formatAsiaShanghaiDate(value, 'datetime')).toBe('2027-01-01 00:00:00');
+    expect(formatAsiaShanghaiDate(value, 'iso')).toBe('2027-01-01T00:00:00.123+08:00');
+  });
+
+  it('treats epoch zero as a valid instant in all formats', () => {
+    expect(formatAsiaShanghaiDate(0)).toBe('1970-01-01');
+    expect(formatAsiaShanghaiDate(0, 'datetime')).toBe('1970-01-01 08:00:00');
+    expect(formatAsiaShanghaiDate(0, 'iso')).toBe('1970-01-01T08:00:00.000+08:00');
+  });
+
+  it.each(['', 'foo', NaN, Infinity])('rejects invalid datetime input: %s', (value) => {
+    expect(() => formatAsiaShanghaiDate(value, 'datetime')).toThrow(RangeError);
+    expect(() => formatAsiaShanghaiDate(value, 'iso')).toThrow(RangeError);
+  });
+});
+
 describe('resolveRechargeHistoryRange', () => {
   const now = new Date('2026-08-25T10:30:00.000+08:00');
 
@@ -202,14 +258,14 @@ describe('resolveRechargeHistoryRange', () => {
     ['30d', '2026-07-27T00:00:00.000+08:00'],
   ] as const)('resolves %s by Shanghai calendar days', (range, expectedStart) => {
     const result = resolveRechargeHistoryRange({ range, now });
-    expect(formatShanghaiDateTime(result.startTime)).toBe(expectedStart);
-    expect(formatShanghaiDateTime(result.endTime)).toBe('2026-08-25T23:59:59.999+08:00');
+    expect(formatAsiaShanghaiDate(result.startTime, 'iso')).toBe(expectedStart);
+    expect(formatAsiaShanghaiDate(result.endTime, 'iso')).toBe('2026-08-25T23:59:59.999+08:00');
   });
 
   it('defaults to the latest 30 Shanghai calendar days without arguments', () => {
     const result = resolveRechargeHistoryRange({ now });
-    expect(formatShanghaiDateTime(result.startTime)).toBe('2026-07-27T00:00:00.000+08:00');
-    expect(formatShanghaiDateTime(result.endTime)).toBe('2026-08-25T23:59:59.999+08:00');
+    expect(formatAsiaShanghaiDate(result.startTime, 'iso')).toBe('2026-07-27T00:00:00.000+08:00');
+    expect(formatAsiaShanghaiDate(result.endTime, 'iso')).toBe('2026-08-25T23:59:59.999+08:00');
   });
 
   it('resolves explicit dates to the start and end of Shanghai calendar days', () => {
@@ -217,8 +273,8 @@ describe('resolveRechargeHistoryRange', () => {
       startTime: '2026-08-20',
       endTime: '2026-08-24',
     });
-    expect(formatShanghaiDateTime(result.startTime)).toBe('2026-08-20T00:00:00.000+08:00');
-    expect(formatShanghaiDateTime(result.endTime)).toBe('2026-08-24T23:59:59.999+08:00');
+    expect(formatAsiaShanghaiDate(result.startTime, 'iso')).toBe('2026-08-20T00:00:00.000+08:00');
+    expect(formatAsiaShanghaiDate(result.endTime, 'iso')).toBe('2026-08-24T23:59:59.999+08:00');
   });
 
   it('preserves explicit Shanghai time and milliseconds', () => {
@@ -226,8 +282,8 @@ describe('resolveRechargeHistoryRange', () => {
       startTime: '2026-08-20 10:30:00.1',
       endTime: '2026-08-20T20:00:00.123',
     });
-    expect(formatShanghaiDateTime(result.startTime)).toBe('2026-08-20T10:30:00.100+08:00');
-    expect(formatShanghaiDateTime(result.endTime)).toBe('2026-08-20T20:00:00.123+08:00');
+    expect(formatAsiaShanghaiDate(result.startTime, 'iso')).toBe('2026-08-20T10:30:00.100+08:00');
+    expect(formatAsiaShanghaiDate(result.endTime, 'iso')).toBe('2026-08-20T20:00:00.123+08:00');
   });
 
   it.each([
@@ -242,13 +298,6 @@ describe('resolveRechargeHistoryRange', () => {
     [{ startTime: '2026-08-20T25:00:00', endTime: '2026-08-21' }, 'Invalid Shanghai date/time'],
   ])('rejects invalid recharge history range: %s', (options, message) => {
     expect(() => resolveRechargeHistoryRange(options)).toThrow(message);
-  });
-});
-
-describe('formatShanghaiDateTime', () => {
-  it('formats ISO timestamps with +08:00 instead of UTC Z', () => {
-    const timestamp = Date.parse('2026-08-25T00:00:00.000+08:00');
-    expect(formatShanghaiDateTime(timestamp)).toBe('2026-08-25T00:00:00.000+08:00');
   });
 });
 

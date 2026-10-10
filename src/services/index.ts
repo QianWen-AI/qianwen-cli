@@ -50,6 +50,9 @@ import { DocsService } from './docs-service.js';
 import { WorkspaceService } from './workspace-service.js';
 import { SubscriptionService, type SubscriptionAdapter } from './subscription-service.js';
 import { SubscriptionTokenPlanService } from './subscription-tokenplan-service.js';
+import { TokenPlanListService } from './tokenplan-list-service.js';
+import { TokenPlanPaymentService } from './tokenplan-payment-service.js';
+import { TokenPlanPurchaseService } from './tokenplan-purchase-service.js';
 import { SupportService } from './support-service.js';
 import { SkillsHubService } from './skills-hub-service.js';
 import { SkillsInstallService } from './skills-install-service.js';
@@ -79,6 +82,9 @@ export interface ServiceContainer {
   workspaceService: WorkspaceService;
   subscriptionService: SubscriptionService;
   subscriptionTokenPlanService: SubscriptionTokenPlanService;
+  tokenPlanListService: TokenPlanListService;
+  tokenPlanPaymentService: TokenPlanPaymentService;
+  tokenPlanPurchaseService: TokenPlanPurchaseService;
   supportService: SupportService;
   skillsHubService: SkillsHubService;
   skillsInstallService: SkillsInstallService;
@@ -182,6 +188,9 @@ export function createServices(options: CreateServicesOptions = {}): ServiceCont
     tokenplanService,
   );
   const subscriptionTokenPlanService = new SubscriptionTokenPlanService(apiClient);
+  const tokenPlanListService = new TokenPlanListService(apiClient);
+  const tokenPlanPaymentService = new TokenPlanPaymentService(apiClient);
+  const tokenPlanPurchaseService = new TokenPlanPurchaseService(apiClient);
   const supportService = new SupportService(apiClient);
   const skillsHubService = new SkillsHubService(apiClient);
   const skillsInstallService = new SkillsInstallService(skillsHubService);
@@ -202,6 +211,9 @@ export function createServices(options: CreateServicesOptions = {}): ServiceCont
     workspaceService,
     subscriptionService,
     subscriptionTokenPlanService,
+    tokenPlanListService,
+    tokenPlanPaymentService,
+    tokenPlanPurchaseService,
     supportService,
     skillsHubService,
     skillsInstallService,

@@ -87,7 +87,9 @@ describe('subscription orders command', () => {
     });
     await runCommand(build, ['subscription', 'orders', '--format', 'json']);
     const arg = spy.mock.calls[0][0] as { commodityCodeList?: string };
-    expect(arg.commodityCodeList).toBe('sfm_tokenplanteams_dp_cn,sfm_tokenplanteamsaddon_dp_cn');
+    expect(arg.commodityCodeList).toBe(
+      'sfm_tokenplanteams_dp_cn,sfm_tokenplanteamsaddon_dp_cn,sfm_tokenplansolo_public_cn',
+    );
   });
 
   it('clamps --page-size to MAX (>100 rejected)', async () => {
@@ -99,7 +101,7 @@ describe('subscription orders command', () => {
       '--format',
       'json',
     ]);
-    expect(r.exitCode).toBe(EXIT_CODES.INVALID_ARGUMENT);
+    expect(r.exitCode).toBe(EXIT_CODES.GENERAL_ERROR);
     expect(r.stderr).toContain('page-size');
   });
 
@@ -113,14 +115,28 @@ describe('subscription orders command', () => {
     expect(arg.type).toBe('purchase');
   });
 
-  it('drops invalid --type value', async () => {
+  it('rejects invalid filters before querying orders', async () => {
     const spy = vi.fn(async () => sample);
     holder.services = makeMockServices({
       subscriptionService: { listOrders: spy },
     });
-    await runCommand(build, ['subscription', 'orders', '--type', 'invalid', '--format', 'json']);
-    const arg = spy.mock.calls[0][0] as Record<string, unknown>;
-    expect(arg.type).toBeUndefined();
+    for (const args of [
+      ['--type', 'invalid'],
+      ['--from', 'bad-date'],
+      ['--from', '2026-02-30'],
+      ['--from', '2026-04-02', '--to', '2026-04-01'],
+    ]) {
+      const result = await runCommand(build, [
+        'subscription',
+        'orders',
+        ...args,
+        '--format',
+        'json',
+      ]);
+      expect(result.exitCode).toBe(EXIT_CODES.GENERAL_ERROR);
+      expect(result.stderr).toContain('INVALID_ARGUMENT');
+    }
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('text mode renders without throwing', async () => {

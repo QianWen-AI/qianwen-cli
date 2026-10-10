@@ -11,9 +11,8 @@ vi.mock('../../src/utils/open-browser.js', () => ({
   openBrowser: vi.fn(),
 }));
 
-// resize 重渲染会重跑 ink useInput 的 raw-mode 副作用，而 ink-testing-library 的假
-// stdin 没有 ref()/unref()，会把组件树炸成错误屏。本文件不测键盘交互，按
-// InteractiveTable.test 的同一约定把 useInput 换成空实现。
+// Resize reruns Ink's raw-mode effect, but the test stdin lacks ref()/unref().
+// Disable keyboard handling here to isolate layout assertions from that limitation.
 vi.mock('ink', async () => {
   const actual = await vi.importActual<typeof import('ink')>('ink');
   return {
@@ -88,6 +87,9 @@ describe('DocsViewer alt-screen scrollback safety', () => {
   it('keeps height below the terminal for long docs that fill the viewport', () => {
     // Long documents have the same frame height in both screen modes and stay within
     // termRows - 1, keeping Ink on differential redraws without clearTerminal(\x1b[3J).
+    // The Windows main-screen path intentionally pads to full height (covered by the
+    // dedicated win32 case above), so this cross-mode equality only holds elsewhere.
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
     const longVm = makeContentVm({
       renderedLines: Array.from({ length: 80 }, (_, i) => `paragraph line ${i + 1}`),
       content: 'x',

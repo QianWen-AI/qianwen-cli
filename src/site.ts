@@ -31,6 +31,7 @@ export const site = {
   configDirName: '.qianwen',
   localConfigFile: '.qianwen.json',
   apiEndpoint: 'https://cli.qianwenai.com',
+  csDataEndpoint: 'https://cs-data.qianwenai.com',
   authEndpoint: 'https://t.qianwenai.com',
   dashscopeEndpoint: 'https://dashscope.aliyuncs.com',
   dashscopeEndpointName: 'dashscope',
@@ -63,6 +64,7 @@ export const site = {
     tokenPlanCommodityCodes: {
       teams: 'sfm_tokenplanteams_dp_cn',
       personal: 'sfm_tokenplanpersonal_dp_cn',
+      soloBuy: 'sfm_tokenplansolo_public_cn',
       addon: 'sfm_tokenplanteamsaddon_dp_cn',
     },
     currency: 'CNY',

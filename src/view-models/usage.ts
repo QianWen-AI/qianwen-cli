@@ -7,7 +7,7 @@ import type {
   UsageBreakdownRow,
 } from '../types/usage.js';
 import { humanizeNumber, humanizeWithUnit, formatAmount } from '../output/humanize.js';
-import { formatDate } from '../utils/date.js';
+import { formatAsiaShanghaiDate } from '../utils/date.js';
 import { site } from '../site.js';
 
 /** Currency symbol resolved from site config. */
@@ -156,7 +156,7 @@ function buildTokenPlanSection(tokenPlan: TokenPlan): TokenPlanSectionViewModel 
   const remainingPct = total > 0 ? parseFloat(((remaining / total) * 100).toFixed(2)) : 0;
 
   const resetDate = tokenPlan.resetDate
-    ? formatDate(new Date(tokenPlan.resetDate)) // ISO → local YYYY-MM-DD
+    ? formatAsiaShanghaiDate(tokenPlan.resetDate) // Billing dates follow Asia/Shanghai.
     : '—';
 
   const displayStatus = tokenPlan.status ?? '—';

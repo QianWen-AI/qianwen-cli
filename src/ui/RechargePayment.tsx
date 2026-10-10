@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useApp, useStdin, useStdout } from 'ink';
 import type { RechargeResultFinalViewModel } from '../view-models/billing/recharge.js';
+import { attemptTerminalCleanup } from '../utils/stdin-control.js';
 
 // End-of-text (Ctrl+C) byte, built from its code so no literal control
 // character sits in the source.
@@ -12,7 +13,7 @@ export interface RechargePaymentWaitInkProps {
   readonly onCancel: () => void;
   /** Whether the terminal can hand keystrokes to Ink for cancellation. */
   readonly interactive: boolean;
-  /** Append a previously hidden QR after the terminal becomes wide enough. */
+  /** Append the QR after the terminal becomes wide enough. */
   readonly onWidthChange?: (columns: number) => void;
 }
 
@@ -46,7 +47,7 @@ export function RechargePaymentWaitInk({
   onWidthChange,
 }: RechargePaymentWaitInkProps): React.ReactElement {
   const { exit } = useApp();
-  const { stdin, isRawModeSupported } = useStdin();
+  const { stdin, isRawModeSupported, setRawMode } = useStdin();
   const { stdout } = useStdout();
 
   // The keystroke listener is attached once and never re-bound, so the latest
@@ -58,61 +59,71 @@ export function RechargePaymentWaitInk({
   const exitRef = useRef(exit);
   exitRef.current = exit;
   const onWidthChangeRef = useRef(onWidthChange);
-  onWidthChangeRef.current = onWidthChange;
+  useEffect(() => {
+    onWidthChangeRef.current = onWidthChange;
+  }, [onWidthChange]);
+  const canceledRef = useRef(false);
 
   const handleCtrlC = useCallback(() => {
-    onCancelRef.current();
-    exitRef.current();
+    if (canceledRef.current) return;
+    canceledRef.current = true;
+    try {
+      onCancelRef.current();
+    } finally {
+      exitRef.current();
+    }
   }, []);
 
-  // Own stdin directly rather than through Ink's useInput. Ink reads input from
-  // a paused-mode `readable` listener, which on Windows can withhold the first
-  // keystroke and release it only once the next one arrives — the off-by-one
-  // that made a single Ctrl+C unreliable. A `data` listener puts the TTY in
-  // flowing mode, where every keystroke is delivered the instant it is typed.
-  // Non-TTY waits skip this: Ink rejects raw mode there and no signal reaches
-  // this frame anyway.
+  // The renderer supplies a flowing-input bridge for this frame. Ink manages raw
+  // mode on that bridge while the physical Windows TTY remains free of readable
+  // listeners, so the first keystroke is delivered without delay.
   useEffect(() => {
     if (!interactive) return;
-    const canRawMode = isRawModeSupported && typeof stdin.setRawMode === 'function';
-    if (canRawMode) stdin.setRawMode(true);
+    let active = true;
+    let acquiredRaw = false;
     const onData = (chunk: string | Buffer) => {
+      if (!active) return;
       const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
       if (text.includes(ETX)) handleCtrlC();
     };
-    stdin.on('data', onData);
-
-    // Terminal resize on Windows can knock stdin out of flowing/raw mode
-    // (libuv reinitialises the console input handle when processing
-    // WINDOW_BUFFER_SIZE_EVENT records).  Re-assert raw + flowing after
-    // every resize so the first post-resize Ctrl+C is delivered immediately.
     const onResize = () => {
-      if (canRawMode) stdin.setRawMode(true);
-      stdin.resume();
+      if (!active) return;
       onWidthChangeRef.current?.(stdout.columns ?? 80);
     };
-    stdout.on('resize', onResize);
-    // Cover a resize that happened after the initial static write but before
-    // this effect attached its listener.
-    onWidthChangeRef.current?.(stdout.columns ?? 80);
-
-    return () => {
-      stdin.off('data', onData);
-      stdout.off('resize', onResize);
-      if (canRawMode) stdin.setRawMode(false);
+    const cleanup = () => {
+      active = false;
+      attemptTerminalCleanup(() => stdin.off('data', onData));
+      attemptTerminalCleanup(() => stdout.off('resize', onResize));
+      onWidthChangeRef.current = undefined;
+      if (acquiredRaw) attemptTerminalCleanup(() => setRawMode(false));
     };
-  }, [interactive, stdin, isRawModeSupported, handleCtrlC, stdout]);
+    try {
+      stdin.on('data', onData);
+      stdout.on('resize', onResize);
+      if (isRawModeSupported) {
+        setRawMode(true);
+        acquiredRaw = true;
+      }
+      onResize();
+    } catch (error) {
+      cleanup();
+      throw error;
+    }
+    return cleanup;
+  }, [interactive, stdin, isRawModeSupported, setRawMode, handleCtrlC, stdout]);
 
   useEffect(() => {
     let active = true;
+    let pendingExit: ReturnType<typeof setImmediate> | undefined;
     // Defer one tick so Ink finishes mounting before the renderer is closed,
     // which matters when the promise is already settled.
     const finish = () => {
-      if (active) setImmediate(exit);
+      if (active) pendingExit = setImmediate(() => active && exit());
     };
     void resultPromise.then(finish, finish);
     return () => {
       active = false;
+      if (pendingExit) clearImmediate(pendingExit);
     };
   }, [exit, resultPromise]);
 

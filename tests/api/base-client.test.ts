@@ -95,6 +95,14 @@ describe('BaseClient.request — request building', () => {
     await client.request({ url: URL_OK, method: 'PUT' });
     expect(active.calls[0]?.method).toBe('PUT');
   });
+
+  it('calls onRequestStart exactly once immediately before fetch', async () => {
+    active = mockFetch({ 'api.test.qianwenai.com': { code: '200' } });
+    const onRequestStart = vi.fn(() => expect(active?.calls).toHaveLength(0));
+    await createBaseClient().request({ url: URL_OK, onRequestStart });
+    expect(onRequestStart).toHaveBeenCalledOnce();
+    expect(active.calls).toHaveLength(1);
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────
@@ -126,6 +134,17 @@ describe('BaseClient.request — authMode', () => {
       /Not authenticated/,
     );
     // No fetch should have been issued because the auth check fails first.
+    expect(active.calls).toHaveLength(0);
+  });
+
+  it('does not call onRequestStart when authentication fails before fetch', async () => {
+    credentialState.value = null;
+    active = mockFetch({ 'api.test.qianwenai.com': { code: '200' } });
+    const onRequestStart = vi.fn();
+    await expect(
+      createBaseClient().request({ url: URL_OK, authMode: 'required', onRequestStart }),
+    ).rejects.toThrow(/Not authenticated/);
+    expect(onRequestStart).not.toHaveBeenCalled();
     expect(active.calls).toHaveLength(0);
   });
 

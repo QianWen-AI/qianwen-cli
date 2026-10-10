@@ -8,15 +8,19 @@ import {
   NA,
   PARTIAL_FAILURE_NOTE_TEMPLATE,
   STATUS_UNAVAILABLE_NOTE,
+  buildSubscriptionEditionSections,
   formatBool,
+  formatDiagnosticMessage,
   formatPeriod,
   renderQuotaBarFor,
   type ViewContext,
 } from './shared.js';
-import { formatDate as toLocalDate } from '../../utils/date.js';
+import { formatAsiaShanghaiDate } from '../../utils/date.js';
 import { buildProgressBar, theme } from '../../ui/theme.js';
 import { ORDER_STATUS_COLOR, ORDER_STATUS_LABEL, TYPE_LABEL } from './orders.js';
 import type { OrderStatusColor } from './orders.js';
+import type { TokenPlanSeatDetailsViewModel } from '../../types/tokenplan-subscription.js';
+import { buildTokenPlanSeatDetailsViewModel } from './tokenplan-seat-details.js';
 
 export interface SubscriptionStatusFieldViewModel {
   label: string;
@@ -41,9 +45,9 @@ export interface SubscriptionQuotaViewModel {
 export interface TokenPlanSectionTierViewModel {
   label: string;
   bar: string;
-  remaining: number;
-  total: number;
-  usedPct: number;
+  remaining: number | null;
+  total: number | null;
+  usedPct: number | null;
 }
 
 export interface TokenPlanSectionViewModel {
@@ -90,6 +94,7 @@ export interface SubscriptionStatusViewModel {
   quotaBar: string | null;
   diagnostics: SubscriptionDiagnostic[];
   tokenPlanSection: TokenPlanSectionViewModel | null;
+  seatDetails?: TokenPlanSeatDetailsViewModel;
   creditPackSection: CreditPackSectionViewModel | null;
   recentOrdersSection: RecentOrdersSectionViewModel | null;
   /** @deprecated alias for banner. */
@@ -127,7 +132,8 @@ function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
 }
 
-function formatInteger(n: number): string {
+function formatInteger(n: number | null): string {
+  if (n === null) return 'unknown';
   return Math.round(n).toLocaleString('en-US');
 }
 
@@ -140,7 +146,7 @@ function isPeriodActive(period: SubscriptionPeriod | null): boolean | null {
 
 function formatExpires(period: SubscriptionPeriod | null, remainingDays: number | null): string {
   if (!period?.end) return NA;
-  const datePart = period.end ? toLocalDate(new Date(period.end)) : period.end;
+  const datePart = period.end ? formatAsiaShanghaiDate(period.end) : period.end;
   if (remainingDays === null) return datePart;
   return `${datePart} (${remainingDays}d)`;
 }
@@ -149,19 +155,28 @@ function buildTokenPlanSection(data: SubscriptionStatus): TokenPlanSectionViewMo
   if (!data.seatTiers || data.seatTiers.length === 0) return null;
 
   const active = isPeriodActive(data.period);
-  const status = active === null ? NA : active ? 'Active' : 'Expired';
+  const status = data.team
+    ? data.team.status
+    : active === null
+      ? NA
+      : active
+        ? 'Active'
+        : 'Expired';
   const autoRenew = data.autoRenew === true ? 'On' : data.autoRenew === false ? 'Off' : NA;
   const expires = formatExpires(data.period, data.remainingDays);
 
   const tiers: TokenPlanSectionTierViewModel[] = data.seatTiers.map((tier) => {
     const remainingPct =
-      tier.totalCredits > 0
+      tier.totalCredits !== null && tier.remainingCredits !== null && tier.totalCredits > 0
         ? Math.min(100, Math.max(0, (tier.remainingCredits / tier.totalCredits) * 100))
         : 0;
-    const bar = buildProgressBar(remainingPct, 24, theme.data, true);
+    const bar =
+      tier.totalCredits === null || tier.remainingCredits === null
+        ? 'unknown'
+        : buildProgressBar(remainingPct, 24, theme.data, true);
     const labelType = tier.specType ? capitalize(tier.specType) : 'Tier';
     const seatNoun = tier.seats === 1 ? 'seat' : 'seats';
-    const label = `${labelType} (${tier.seats} ${seatNoun})`;
+    const label = `${labelType} (${tier.seats ?? 'unknown'} ${seatNoun})`;
     const remainingStr = formatInteger(tier.remainingCredits);
     const totalStr = formatInteger(tier.totalCredits);
     const decorated = `${bar} ${remainingStr} / ${totalStr}`;
@@ -190,7 +205,7 @@ function buildCreditPackSection(data: SubscriptionStatus): CreditPackSectionView
       id: p.instanceId || NA,
       remaining: `${formatInteger(p.remainingCredits)} / ${formatInteger(p.totalCredits)}`,
       bar,
-      expires: p.expiresAt ? toLocalDate(new Date(p.expiresAt)) : NA,
+      expires: p.expiresAt ? formatAsiaShanghaiDate(p.expiresAt) : NA,
     };
   });
   return {
@@ -203,7 +218,7 @@ function buildCreditPackSection(data: SubscriptionStatus): CreditPackSectionView
 function buildRecentOrdersSection(data: SubscriptionStatus): RecentOrdersSectionViewModel | null {
   if (!data.recentOrders || data.recentOrders.length === 0) return null;
   const orders: RecentOrderEntryViewModel[] = data.recentOrders.map((o) => {
-    const date = o.orderTime ? toLocalDate(new Date(o.orderTime)) : NA;
+    const date = o.orderTime ? formatAsiaShanghaiDate(o.orderTime) : NA;
     const amountStr = o.amount ?? '';
     const display =
       amountStr && CURRENCY_SYMBOL && !amountStr.startsWith(CURRENCY_SYMBOL)
@@ -229,6 +244,10 @@ export function buildSubscriptionStatusViewModel(
   diagnostics: SubscriptionDiagnostic[],
   ctx?: ViewContext,
 ): SubscriptionStatusViewModel {
+  const displayDiagnostics = diagnostics.map((diagnostic) => ({
+    ...diagnostic,
+    errorMessage: formatDiagnosticMessage(diagnostic),
+  }));
   if (!data) {
     return {
       available: false,
@@ -238,7 +257,7 @@ export function buildSubscriptionStatusViewModel(
       sections: [],
       quota: null,
       quotaBar: null,
-      diagnostics,
+      diagnostics: displayDiagnostics,
       tokenPlanSection: null,
       creditPackSection: null,
       recentOrdersSection: null,
@@ -247,25 +266,39 @@ export function buildSubscriptionStatusViewModel(
     };
   }
 
-  const fields: SubscriptionStatusFieldViewModel[] = [
-    { label: 'Plan', value: data.plan ?? NA },
-    {
-      label: 'Period',
-      value: data.period
-        ? formatPeriod(
-            data.period.start ? toLocalDate(new Date(data.period.start)) : '',
-            data.period.end ? toLocalDate(new Date(data.period.end)) : '',
-          )
-        : NA,
-    },
-    { label: 'Auto-Renew', value: formatBool(data.autoRenew) },
-    { label: 'Renewable', value: formatBool(data.renewable) },
-    { label: 'Gray', value: formatBool(data.isGray) },
-  ];
+  const editionSections = buildSubscriptionEditionSections(
+    data,
+    data.team?.status === 'active' ? formatBool(data.renewable) : null,
+  );
+  const fields: SubscriptionStatusFieldViewModel[] =
+    editionSections.length > 0
+      ? []
+      : [
+          { label: 'Plan', value: data.plan ?? NA },
+          {
+            label: 'Period',
+            value: data.period
+              ? formatPeriod(
+                  data.period.start ? formatAsiaShanghaiDate(data.period.start) : '',
+                  data.period.end ? formatAsiaShanghaiDate(data.period.end) : '',
+                )
+              : NA,
+          },
+          { label: 'Auto-Renew', value: formatBool(data.autoRenew) },
+          { label: 'Renewable', value: formatBool(data.renewable) },
+          { label: 'Gray', value: formatBool(data.isGray) },
+        ];
 
   const { quota, bar: quotaBar } = buildQuota(data, ctx);
 
   const sections: SubscriptionStatusSectionViewModel[] = [];
+  for (const section of editionSections) {
+    sections.push({
+      id: `tokenplan-${section.edition}`,
+      title: section.title,
+      fields: section.fields,
+    });
+  }
   if (quota) {
     sections.push({
       id: 'quota',
@@ -299,8 +332,9 @@ export function buildSubscriptionStatusViewModel(
     sections,
     quota,
     quotaBar,
-    diagnostics,
+    diagnostics: displayDiagnostics,
     tokenPlanSection,
+    seatDetails: buildTokenPlanSeatDetailsViewModel(data.team?.seatDetails),
     creditPackSection,
     recentOrdersSection,
     errorBanner: null,
