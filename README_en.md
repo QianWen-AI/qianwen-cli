@@ -6,7 +6,7 @@
 
 > Official command-line tool for [QianWen](https://www.qianwenai.com/). Discover models, check usage, manage authentication, and diagnose local setup from a terminal or an AI agent runtime.
 
-![Version](https://img.shields.io/badge/version-1.9.0-blue)
+![Version](https://img.shields.io/badge/version-1.10.0-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
@@ -154,7 +154,7 @@ Run diagnostics to verify authentication, network access, configuration, and she
 | Usage            | `usage summary`, `usage breakdown`, `usage free-tier`, `usage payg`, `usage logs`                                                                    | `--period`, `--from`, `--to`, `--days`, `--model`, `--granularity`, `--format`                                                                                     |
 | Billing          | `billing summary`, `billing breakdown`, `billing limit`, `billing balance summary`, `billing balance recharge`, `billing balance recharge-history`   | `--from`, `--to`, `--period`, `--group-by`, `--granularity`, `--channel`, `--amount`, `--range`, `--start-time`, `--end-time`, `--page`, `--page-size`, `--format` |
 | Workspace        | `workspace list`, `workspace limit`                                                                                                                  | `--format`                                                                                                                                                         |
-| Subscription     | `subscription status`, `subscription orders`, `subscription tokenplan status`, `subscription tokenplan seats`                                        | `--format`                                                                                                                                                         |
+| Subscription     | `subscription status`, `subscription orders`, `subscription tokenplan list`, `subscription tokenplan purchase`, `subscription tokenplan status`, `subscription tokenplan seats` | `--edition`, `--billing-cycle`, `--channel`, `--standard-seat-count`, `--pro-seat-count`, `--max-seat-count`, `--auto-renew`, `--no-auto-renew`, `--format` |
 | Yunqi Conference | `yunqi list forums`, `yunqi list exhibitors`, `yunqi list subscriptions`, `yunqi list summaries`, `yunqi subscribe forum`, `yunqi unsubscribe forum` | `--page`, `--page-size`, `--forum-id`, `--keyword`, `--format`                                                                                                     |
 | Docs             | `docs search`, `docs view`                                                                                                                           | `--format`                                                                                                                                                         |
 | Skills           | `skills search`, `skills install`, `skills pack-install`                                                                                             | `--limit`, `--dir`, `--format`                                                                                                                                     |
@@ -170,6 +170,8 @@ Use help for exact syntax:
 qianwen --help
 qianwen models --help
 qianwen usage breakdown --help
+qianwen subscription tokenplan --help
+qianwen subscription tokenplan purchase --help
 ```
 
 ---

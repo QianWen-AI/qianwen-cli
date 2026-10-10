@@ -1,17 +1,24 @@
 /** Unit tests for SubscriptionService. */
 import { describe, it, expect, vi } from 'vitest';
 import { SubscriptionService } from '../../src/services/subscription-service.js';
+import { SubscriptionTokenPlanService } from '../../src/services/subscription-tokenplan-service.js';
 import { makeMockApiClient, makeMockCachedFetcher } from '../helpers/service-mocks.js';
 import type { SubscriptionAdapter } from '../../src/services/subscription-service.js';
 import type { TokenplanService } from '../../src/services/tokenplan-service.js';
 import type { TokenPlan } from '../../src/types/usage.js';
 import type { CallFlatApiOptions } from '../../src/api/api-client.js';
+import * as tokenPlanModule from '../../src/services/tokenplan-service.js';
+import { teamWithSeatDetails } from '../helpers/tokenplan-status.js';
 
 // Mock TokenplanService factory
 
-function makeMockTokenplanService(result: TokenPlan = { subscribed: false }): TokenplanService {
+function makeMockTokenplanService(
+  result: TokenPlan = { subscribed: false },
+  teamInstanceId: string | null = null,
+): TokenplanService {
   return {
     fetchTokenPlan: vi.fn(async () => result),
+    fetchTokenPlanEditions: vi.fn(async () => ({ tokenPlan: result, teamInstanceId })),
   } as unknown as TokenplanService;
 }
 
@@ -89,8 +96,122 @@ function routeByAction(
 
 // getStatus
 
+describe('status seat details integration', () => {
+  it.each(['complete', 'failed', 'history', 'mismatch'])(
+    'both status commands attach independent seat details (%s)',
+    async (scenario) => {
+      const failed = scenario === 'failed';
+      const history = scenario === 'history';
+      const mismatch = scenario === 'mismatch';
+      const team = teamWithSeatDetails();
+      delete team.seatDetails;
+      const getTeam = vi
+        .spyOn(tokenPlanModule, 'fetchTeamTokenPlan')
+        .mockResolvedValue({ team, instanceId: 'team-1' });
+      const getIndividual = vi
+        .spyOn(tokenPlanModule, 'fetchIndividualTokenPlan')
+        .mockResolvedValue({
+          ...tokenPlanModule.unknownTokenPlanEdition('individual'),
+          status: 'not_subscribed',
+        });
+      const api = makeMockApiClient({
+        flat: async ({ action }) => {
+          if (action === 'GetSubscriptionDetail') {
+            if (failed) throw new Error('private detail failure');
+            return {
+              Data: [
+                ...(history
+                  ? Array.from({ length: 15 }, (_, i) => ({
+                      InstanceCode: `historical-seat-${i}`,
+                      SpecType: 'standard',
+                      Status: 'REFUNDED',
+                      Assignable: true,
+                      EquityList: [{}],
+                    }))
+                  : []),
+                {
+                  InstanceCode: 'seat-1',
+                  SpecType: 'standard',
+                  Status: 'NORMAL',
+                  ...(history ? { Assignable: true } : { MemberId: '' }),
+                  EquityList: [{ TotalValue: '25', SurplusValue: '20' }],
+                },
+              ],
+              TotalCount: history ? 16 : 1,
+            };
+          }
+          if ((history || mismatch) && action === 'GetSeatSubscriptionSummary')
+            return {
+              Data: {
+                SubscriptionGroupList: [
+                  {
+                    SpecType: 'standard',
+                    SubscriptionTotalNumber: mismatch ? 2 : 1,
+                    SubscriptionAssignedNumber: 0,
+                    EquityList: [{ TotalValue: '25', SurplusValue: '20' }],
+                  },
+                ],
+              },
+            };
+          if ((history || mismatch) && action === 'GetSubscriptionSummary')
+            return {
+              Data: { TotalCount: mismatch ? 2 : 1, TotalValue: '25', TotalSurplusValue: '20' },
+            };
+          return null;
+        },
+      });
+      try {
+        const dedicated = await new SubscriptionTokenPlanService(api).getTokenPlanStatus();
+        const general = await new SubscriptionService(
+          api,
+          makeStubAdapter(),
+          makeMockCachedFetcher(),
+          makeMockTokenplanService({ subscribed: true, team }, 'team-1'),
+        ).getStatus();
+        expect(dedicated.team?.seatDetails).toEqual(general.data?.team?.seatDetails);
+        expect(dedicated.team?.seatDetails).toMatchObject({
+          fetchedCount: failed ? 0 : history ? 16 : 1,
+          completeness: failed ? 'unknown' : mismatch ? 'partial' : 'complete',
+        });
+        if (history) {
+          expect(dedicated.team?.seatDetails).toMatchObject({
+            historicalCount: 15,
+            collectionCompleteness: 'complete',
+            diagnostics: [],
+            items: [{ instanceCode: 'seat-1', status: 'NORMAL', assignment: 'unassigned' }],
+          });
+        }
+        expect(dedicated.team?.status).toBe('active');
+        expect(general.data?.team?.status).toBe('active');
+        expect(
+          api.callFlatApi.mock.calls.filter(([opts]) => opts.action === 'GetSubscriptionDetail'),
+        ).toHaveLength(2);
+        if (failed) {
+          expect(general.diagnostics).toContainEqual(
+            expect.objectContaining({ api: 'GetSubscriptionDetail' }),
+          );
+          expect(JSON.stringify(dedicated)).not.toContain('private detail failure');
+        }
+        if (mismatch) {
+          const warning = expect.objectContaining({
+            api: 'GetSubscriptionDetail',
+            errorCode: 'SeatSummaryMismatch',
+          });
+          expect(dedicated.diagnostics).toContainEqual(warning);
+          expect(general.diagnostics).toContainEqual(warning);
+          expect(dedicated.team?.seatDetails?.items).toHaveLength(1);
+          expect(dedicated.team?.seatSummary?.total?.seats).toBe(2);
+        }
+      } finally {
+        getTeam.mockRestore();
+        getIndividual.mockRestore();
+      }
+    },
+  );
+});
+
 describe('SubscriptionService.getStatus', () => {
-  it('returns assembled status from five sub-calls (plan=undefined)', async () => {
+  it('returns assembled status with a verified renewable flag (plan=undefined)', async () => {
     const api = makeMockApiClient({
       flat: routeByAction({
         QuerySubscriptionGray: { IsGray: true },
@@ -103,6 +224,17 @@ describe('SubscriptionService.getStatus', () => {
           Data: [{ InitCapacityBaseValue: '1000', CurrCapacityBaseValue: '750' }],
         },
         CheckTokenPlanAutoRenewal: { AutoRenewal: true },
+        CheckInstancesRenewable: {
+          Success: true,
+          Code: 'Success',
+          Data: [
+            {
+              InstanceId: 'team-instance-1',
+              CommodityCode: 'sfm_tokenplanteams_dp_cn',
+              CanRenew: true,
+            },
+          ],
+        },
         QueryAccountBaseInfoApi: { Data: { NbId: '12345' } },
       }),
     });
@@ -110,18 +242,22 @@ describe('SubscriptionService.getStatus', () => {
       api,
       makeStubAdapter(),
       makeMockCachedFetcher(),
-      makeMockTokenplanService({
-        subscribed: true,
-        totalCredits: 1000,
-        remainingCredits: 750,
-        planName: 'Token Plan Team',
-      }),
+      makeMockTokenplanService(
+        {
+          subscribed: true,
+          totalCredits: 1000,
+          remainingCredits: 750,
+          planName: 'Token Plan Team',
+        },
+        'team-instance-1',
+      ),
     );
 
     const out = await svc.getStatus();
     expect(out.data).toBeDefined();
     expect(out.data?.isGray).toBe(true);
     expect(out.data?.autoRenew).toBe(true);
+    expect(out.data?.renewable).toBe(true);
     expect(out.data?.quota).toMatchObject({ remaining: 750, total: 1000 });
     expect(out.diagnostics).toHaveLength(0);
   });
@@ -219,24 +355,39 @@ describe('SubscriptionService.getStatus', () => {
 
     expect(out.data?.isGray).toBe(false);
     expect(out.diagnostics.length).toBeGreaterThan(0);
-    expect(out.diagnostics.some((d) => d.api === 'GetSeatSubscriptionSummary')).toBe(true);
+    expect(out.diagnostics).toContainEqual({
+      api: 'GetSeatSubscriptionSummary',
+      errorCode: 'SERVICE_UNAVAILABLE',
+      errorMessage: 'The service is temporarily unavailable. Try again later.',
+    });
+    expect(JSON.stringify(out.diagnostics)).not.toContain('seat timeout');
   });
 
-  it('returns data=null when ALL sub-calls fail', async () => {
-    const api = makeMockApiClient({
-      flat: async () => {
-        throw new Error('global down');
-      },
-    });
-    const tokenplan = makeMockTokenplanService();
-    (tokenplan.fetchTokenPlan as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error('global down'),
-    );
-    const svc = new SubscriptionService(api, makeStubAdapter(), makeMockCachedFetcher(), tokenplan);
-    const out = await svc.getStatus();
-    expect(out.data).toBeNull();
-    expect(out.diagnostics.length).toBeGreaterThan(0);
-  });
+  it.each([false, true])(
+    'returns data=null when status sub-calls fail (details succeed=%s)',
+    async (detailsSucceed) => {
+      const api = makeMockApiClient({
+        flat: async ({ action }) => {
+          if (detailsSucceed && action === 'GetSubscriptionDetail')
+            return { Data: [], TotalCount: 0 };
+          throw new Error('global down');
+        },
+      });
+      const tokenplan = makeMockTokenplanService();
+      (tokenplan.fetchTokenPlanEditions as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error('global down'),
+      );
+      const svc = new SubscriptionService(
+        api,
+        makeStubAdapter(),
+        makeMockCachedFetcher(),
+        tokenplan,
+      );
+      const out = await svc.getStatus();
+      expect(out.data).toBeNull();
+      expect(out.diagnostics.length).toBeGreaterThan(0);
+    },
+  );
 
   it('plan=token includes seat + autoRenew + FrInstances', async () => {
     const api = makeMockApiClient({
@@ -283,7 +434,7 @@ describe('SubscriptionService.getStatus', () => {
     );
     await svc.getStatus();
     expect(orderListParams?.CommodityCodeList).toBe(
-      'sfm_tokenplanteams_dp_cn,sfm_tokenplanteamsaddon_dp_cn',
+      'sfm_tokenplanteams_dp_cn,sfm_tokenplanteamsaddon_dp_cn,sfm_tokenplansolo_public_cn',
     );
   });
 
@@ -382,7 +533,11 @@ describe('SubscriptionService.listOrders', () => {
       makeMockCachedFetcher(),
       makeMockTokenplanService(),
     );
-    await expect(svc.listOrders({ page: 1, pageSize: 10 })).rejects.toThrow(/not available/);
+    await expect(svc.listOrders({ page: 1, pageSize: 10 })).rejects.toMatchObject({
+      code: 'ORDER_RESPONSE_INVALID',
+      message: 'Subscription orders could not be retrieved.',
+      exitCode: 4,
+    });
   });
 
   it('forwards CommodityCodeList into the QueryOrderList params when provided', async () => {
@@ -523,18 +678,22 @@ describe('SubscriptionService.getOrderDetail', () => {
       makeMockCachedFetcher(),
       makeMockTokenplanService(),
     );
-    await expect(svc.getOrderDetail('O-99')).rejects.toThrow(/not available/);
+    await expect(svc.getOrderDetail('O-99')).rejects.toMatchObject({
+      code: 'ORDER_RESPONSE_INVALID',
+      message: 'Subscription orders could not be retrieved.',
+      exitCode: 4,
+    });
   });
 });
 
 // Error propagation
 
 describe('SubscriptionService error propagation', () => {
-  it('throws when the ApiClient rejects on listOrders', async () => {
+  it('normalizes ApiClient failures without exposing the backend message', async () => {
     const api = makeMockApiClient({
       flat: async (opts) => {
         if (opts.action === 'QueryAccountBaseInfoApi') return null;
-        throw new Error('network');
+        throw new Error('backend payload must stay private');
       },
     });
     const svc = new SubscriptionService(
@@ -543,6 +702,93 @@ describe('SubscriptionService error propagation', () => {
       makeMockCachedFetcher(),
       makeMockTokenplanService(),
     );
-    await expect(svc.listOrders({ page: 1, pageSize: 10 })).rejects.toThrow('network');
+    const failure = await svc
+      .listOrders({ page: 1, pageSize: 10 })
+      .catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      code: 'SUBSCRIPTION_SERVICE_UNAVAILABLE',
+      message: 'Subscription orders could not be retrieved.',
+      exitCode: 1,
+    });
+    expect(String(failure)).not.toContain('backend payload must stay private');
   });
+});
+
+describe('SubscriptionTokenPlanService safe seat diagnostics', () => {
+  it('does not expose backend codes when the seats API rejects the request', async () => {
+    const api = makeMockApiClient({
+      flat: async () => ({ Success: false, Code: 'INTERNAL_BACKEND_CODE' }),
+    });
+    const service = new SubscriptionTokenPlanService(api);
+
+    await expect(service.listTokenPlanSeats()).rejects.toMatchObject({
+      code: 'TOKENPLAN_SEATS_UNAVAILABLE',
+      message: 'Token Plan seats could not be loaded. Try again later.',
+    });
+  });
+
+  it('uses stable messages for malformed seat quota and configuration fields', async () => {
+    const api = makeMockApiClient({
+      flat: async () => ({
+        Success: true,
+        Data: {
+          SubscriptionList: [
+            {
+              InstanceCode: 'sensitive-instance-id',
+              SpecType: 'standard',
+              EquityList: [],
+              Config: '{not-json',
+            },
+          ],
+          TotalCount: 1,
+        },
+      }),
+    });
+    const service = new SubscriptionTokenPlanService(api);
+    const result = await service.listTokenPlanSeats();
+
+    expect(result.diagnostics).toEqual([
+      {
+        api: 'GetSubscriptionDetail',
+        errorCode: 'EquityListEmpty',
+        errorMessage: 'Seat quota details are unavailable.',
+      },
+      {
+        api: 'GetSubscriptionDetail',
+        errorCode: 'ConfigParseFailed',
+        errorMessage: 'Seat configuration could not be verified.',
+      },
+    ]);
+    expect(JSON.stringify(result.diagnostics)).not.toContain('sensitive-instance-id');
+    expect(JSON.stringify(result.diagnostics)).not.toContain('Unexpected token');
+  });
+});
+
+describe('SubscriptionTokenPlanService seat spec filtering', () => {
+  it.each(['standard', 'pro', 'max'])(
+    'forwards %s to GetSubscriptionDetail and filters mixed backend results',
+    async (specType) => {
+      const api = makeMockApiClient({
+        flat: async () => ({
+          Success: true,
+          Data: {
+            SubscriptionList: ['standard', 'pro', 'max'].map((tier) => ({
+              InstanceCode: `seat-${tier}`,
+              SpecType: tier,
+              Status: 'NORMAL',
+            })),
+          },
+        }),
+      });
+      const service = new SubscriptionTokenPlanService(api);
+      const result = await service.listTokenPlanSeats({ specType });
+      expect(api.callFlatApi).toHaveBeenCalledExactlyOnceWith({
+        product: 'BssOpenAPI-V3',
+        action: 'GetSubscriptionDetail',
+        params: { productCode: 'sfm_tokenplanteams_dp_cn', pageNo: 1, pageSize: 20, specType },
+      });
+      expect(result.filter).toEqual({ specType });
+      expect(result.items.map((item) => item.instanceCode)).toEqual([`seat-${specType}`]);
+    },
+  );
 });

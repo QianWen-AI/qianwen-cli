@@ -59,7 +59,7 @@ export function registerLoginCommand(parent: Command): void {
 
       // For --complete: respect explicit --format, otherwise default to json
       // in non-TTY (so Agents always get structured output) and text in TTY.
-      if (complete && !opts.format) {
+      if (complete && !this.optsWithGlobals().format) {
         format = isNonTTY ? 'json' : 'text';
       }
 
@@ -91,7 +91,7 @@ async function runLogin(format: ResolvedFormat): Promise<void> {
       // Server-side verification failed; fall through to re-login.
     }
 
-    if (status) {
+    if (status?.authenticated) {
       const aliyunId = status.user?.aliyunId ?? resolved.credentials.user.aliyunId ?? 'unknown';
 
       if (format === 'json') {
@@ -101,6 +101,7 @@ async function runLogin(format: ResolvedFormat): Promise<void> {
             authenticated: true,
             source: resolved.source,
             server_verified: status.server_verified,
+            ...(status.warning ? { warning: status.warning } : {}),
             user: { aliyunId },
             token: { expires_at: resolved.credentials.expires_at, remaining },
           }) + '\n',
@@ -112,6 +113,7 @@ async function runLogin(format: ResolvedFormat): Promise<void> {
         );
         console.log(`  Token expires in ${remaining}`);
         console.log(`  Credential source: ${resolved.source}`);
+        if (status.warning) console.log(`  Warning: ${status.warning}`);
         console.log(`  To re-login, run: ${chalk.bold(formatCmd('auth logout'))} first`);
         console.log('');
       }
@@ -300,7 +302,7 @@ async function runLoginInitOnly(): Promise<void> {
       // Server-side verification failed; fall through to init flow.
     }
 
-    if (status) {
+    if (status?.authenticated) {
       const aliyunId = status.user?.aliyunId ?? resolved.credentials.user.aliyunId ?? 'unknown';
       printJSON({
         events: [
@@ -309,6 +311,7 @@ async function runLoginInitOnly(): Promise<void> {
             authenticated: true,
             source: resolved.source,
             server_verified: status.server_verified,
+            ...(status.warning ? { warning: status.warning } : {}),
             user: { aliyunId },
             token: { expires_at: resolved.credentials.expires_at, remaining },
           },

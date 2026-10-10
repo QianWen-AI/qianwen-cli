@@ -19,6 +19,7 @@ import path from 'node:path';
 import { safeRemove, skillStagingPrefix } from '../../../src/services/skills-removal.js';
 import { writeSkillMeta } from '../../../src/services/skills-state-manager.js';
 import type { SkillMetadataV1 } from '../../../src/types/skills.js';
+import { canCreateSymlinks } from '../../helpers/symlink-capability.js';
 
 // Pass-through mock boundary: tests must never touch real system directories,
 // so specific real paths are declared "protected" on demand while every other
@@ -92,7 +93,9 @@ describe('safeRemove — boundary check rejections', () => {
     expect(existsSync(baseDir)).toBe(true);
   });
 
-  it('rejects removal escaping baseDir via a symlink', () => {
+  // Symlink creation needs SeCreateSymbolicLinkPrivilege / Developer Mode on
+  // Windows; skip where the scenario cannot be set up at all.
+  it.skipIf(!canCreateSymlinks())('rejects removal escaping baseDir via a symlink', () => {
     writeFileSync(path.join(outside, 'precious.txt'), 'keep me');
     const link = path.join(baseDir, `${skillStagingPrefix()}via-link`);
     symlinkSync(outside, link);

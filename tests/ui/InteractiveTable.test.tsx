@@ -619,26 +619,35 @@ describe('<InteractiveTable /> viewport windowing (row-level scroll)', () => {
 
 describe('<InteractiveTable /> frame-height policy', () => {
   it('uses natural height for short content outside alt-screen mode', () => {
-    setTermRows(30);
-    const out = frame(
-      <InteractiveTable
-        columns={cols}
-        totalItems={3}
-        perPage={5}
-        loadPage={vi.fn()}
-        initialRows={makeRows(3)}
-      />,
-    );
-    const totalLines = out.split('\n').length;
+    // The Windows main-screen path intentionally pads to full height for stable
+    // resize repaints (covered by the ConHost describe below), so the natural-
+    // height policy is asserted against the non-Windows behaviour.
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+    try {
+      setTermRows(30);
+      const out = frame(
+        <InteractiveTable
+          columns={cols}
+          totalItems={3}
+          perPage={5}
+          loadPage={vi.fn()}
+          initialRows={makeRows(3)}
+        />,
+      );
+      const totalLines = out.split('\n').length;
 
-    // Sanity: content is actually rendered.
-    expect(out).toContain('row-01');
-    expect(out).toContain('row-03');
+      // Sanity: content is actually rendered.
+      expect(out).toContain('row-01');
+      expect(out).toContain('row-03');
 
-    // Main-screen output must not be padded to the terminal height; otherwise
-    // the following shell/REPL prompt appears after a large blank area.
-    expect(totalLines).toBeLessThan(29);
-    expect(trailingBlankLineCount(out)).toBe(0);
+      // Main-screen output must not be padded to the terminal height; otherwise
+      // the following shell/REPL prompt appears after a large blank area.
+      expect(totalLines).toBeLessThan(29);
+      expect(trailingBlankLineCount(out)).toBe(0);
+    } finally {
+      if (originalPlatform) Object.defineProperty(process, 'platform', originalPlatform);
+    }
   });
 
   it('alt-screen 下帧高严格低于终端行数（termRows - 1，避开 3J 清屏路径）', () => {

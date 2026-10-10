@@ -1,5 +1,12 @@
 import { site } from '../../site.js';
+import type { SubscriptionDiagnostic } from '../../types/subscription.js';
+import type {
+  TokenPlanEditionSection,
+  TokenPlanEditionStatus,
+} from '../../types/tokenplan-subscription.js';
 import type { ViewContext } from '../billing/shared.js';
+import { buildTokenPlanEditionSections } from './tokenplan-editions.js';
+import { formatAsiaShanghaiDate } from '../../utils/date.js';
 
 export const NA = '—';
 export const CURRENCY_CODE = site.features.currency;
@@ -17,8 +24,73 @@ export const CURRENCY_SYMBOL =
 export const STATUS_UNAVAILABLE_NOTE =
   'Subscription data unavailable — see --format json for diagnostics';
 
-export const PARTIAL_FAILURE_NOTE_TEMPLATE = (n: number): string =>
-  `Note: ${n} source(s) unavailable, see --format json for details`;
+export const PARTIAL_FAILURE_NOTE_TEMPLATE = (count: number): string =>
+  `Note: ${count} diagnostic(s), see --format json for details`;
+
+export function formatDiagnosticMessage(diagnostic: SubscriptionDiagnostic): string {
+  const prefix = `${diagnostic.api}:`;
+  let message = diagnostic.errorMessage.trimStart();
+  while (message.startsWith(prefix)) {
+    message = message.slice(prefix.length).trimStart();
+  }
+  return message;
+}
+
+export function buildSubscriptionEditionSections(
+  source: { individual?: TokenPlanEditionStatus; team?: TokenPlanEditionStatus },
+  renewable: string | null,
+): TokenPlanEditionSection[] {
+  const sections = buildTokenPlanEditionSections(source);
+  if (sections.length === 0 || renewable === null) return sections;
+  const team = sections.find((section) => section.edition === 'team');
+  if (team) team.fields.push({ label: 'Renewable', value: renewable });
+  return sections;
+}
+
+const STATUS_TIME_FIELDS = new Set([
+  'start',
+  'end',
+  'resetTime',
+  'nextCycleFlushTime',
+  'expiresAt',
+  'orderTime',
+]);
+
+/** Normalize status JSON timestamps and omit unknown individual usage without changing service data. */
+export function formatSubscriptionStatusJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(formatSubscriptionStatusJson);
+  if (value === null || typeof value !== 'object') return value;
+  const isIndividual = 'edition' in value && value.edition === 'individual';
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, entry]): Array<[string, unknown]> => {
+      const isIndividualCredits =
+        isIndividual && (key === 'monthlyCredits' || key === 'weeklyCredits');
+      if (isIndividualCredits && entry === null) return [];
+      if (
+        isIndividualCredits &&
+        entry !== null &&
+        typeof entry === 'object' &&
+        !Array.isArray(entry)
+      ) {
+        const credits = Object.fromEntries(
+          Object.entries(entry).filter(
+            ([field, amount]) => amount !== null || (field !== 'used' && field !== 'remaining'),
+          ),
+        );
+        return [[key, formatSubscriptionStatusJson(credits)]];
+      }
+      if (
+        STATUS_TIME_FIELDS.has(key) &&
+        typeof entry === 'string' &&
+        /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:?\d{2})$/.test(entry) &&
+        Number.isFinite(Date.parse(entry))
+      ) {
+        return [[key, formatAsiaShanghaiDate(entry, 'iso')]];
+      }
+      return [[key, formatSubscriptionStatusJson(entry)]];
+    }),
+  );
+}
 
 export const NARROW_TERMINAL_THRESHOLD = 80;
 

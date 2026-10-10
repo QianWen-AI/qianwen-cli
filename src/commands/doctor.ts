@@ -4,6 +4,7 @@ import { VERSION } from '../index.js';
 import { createClient } from '../api/client.js';
 import {
   resolveCredentials,
+  clearCredentialsCache,
   isTokenExpired,
   isTokenExpiringSoon,
   getTokenRemainingTime,
@@ -17,6 +18,7 @@ import type { OutputFormat } from '../types/config.js';
 import { computeExitCode, formatCheckLabel, type DoctorCheck } from '../view-models/doctor.js';
 import { loginCommand, formatCmd } from '../utils/runtime-mode.js';
 import { resetGlobalCache } from '../utils/cache.js';
+import { CliError, handleError } from '../utils/errors.js';
 import { site } from '../site.js';
 
 // ── Individual check functions ──────────────────────────────────────
@@ -66,6 +68,21 @@ async function checkAuth(
   let identity = IDENTITY_FALLBACK;
   try {
     const authStatus = await client.getAuthStatus();
+    if (!authStatus.authenticated) {
+      return {
+        name: 'auth',
+        status: 'fail',
+        detail: 'Not authenticated',
+        action: `Run: ${loginCommand()}`,
+      };
+    }
+    if (!authStatus.server_verified) {
+      return {
+        name: 'auth',
+        status: 'warn',
+        detail: authStatus.warning || 'Server verification unavailable; showing local status',
+      };
+    }
     const serverAliyunId = authStatus.user?.aliyunId;
     const serverEmail = authStatus.user?.email;
     identity =
@@ -74,12 +91,13 @@ async function checkAuth(
       (resolved.credentials?.user?.aliyunId && resolved.credentials.user.aliyunId.trim()) ||
       (resolved.credentials?.user?.email && resolved.credentials.user.email.trim()) ||
       IDENTITY_FALLBACK;
-  } catch {
-    // Fallback to local credentials if server is unreachable
-    identity =
-      (resolved.credentials?.user?.aliyunId && resolved.credentials.user.aliyunId.trim()) ||
-      (resolved.credentials?.user?.email && resolved.credentials.user.email.trim()) ||
-      IDENTITY_FALLBACK;
+  } catch (error) {
+    if (error instanceof CliError) throw error;
+    return {
+      name: 'auth',
+      status: 'warn',
+      detail: 'Server verification unavailable; showing local status',
+    };
   }
 
   return {
@@ -205,11 +223,15 @@ function checkGlobalConfig(): DoctorCheck {
 async function runChecks(): Promise<DoctorCheck[]> {
   const client = await createClient();
   const resolved = resolveCredentials();
+  const cliVersion = await checkCliVersion(client);
+  const auth = await checkAuth(resolved, client);
+  clearCredentialsCache();
+  const token = checkToken(resolveCredentials());
 
   return [
-    await checkCliVersion(client),
-    await checkAuth(resolved, client),
-    checkToken(resolved),
+    cliVersion,
+    auth,
+    token,
     await checkNetwork(client),
     checkShellCompletion(),
     checkGlobalConfig(),
@@ -241,7 +263,12 @@ export function registerDoctorCommand(program: Command): void {
         getConfigValue('output.format') as OutputFormat,
       );
 
-      const checks = await runChecks();
+      let checks: DoctorCheck[];
+      try {
+        checks = await runChecks();
+      } catch (error) {
+        handleError(error, format);
+      }
       const exitCode = computeExitCode(checks);
 
       if (format === 'json') {

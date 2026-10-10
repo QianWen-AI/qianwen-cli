@@ -7,6 +7,12 @@ import { site } from '../site.js';
 import { handleError, invalidArgError } from '../utils/errors.js';
 import { resolveFormatFromCommand } from '../output/format.js';
 import { getEffectiveConfig } from '../config/manager.js';
+import {
+  SUPPORTED_CHANNELS,
+  getChannelsForScope,
+  SCOPE_TOKENPLAN_PURCHASE,
+} from '../config/payment-channels.js';
+import { TOKEN_PLAN_PURCHASE_TYPES } from '../types/tokenplan-purchase.js';
 
 type ShellType = 'zsh' | 'bash' | 'fish';
 
@@ -72,6 +78,8 @@ ${fnName}() {
   # ── Option value completions (global, position-independent) ──────────────
   case "$prev" in
     --format)      compadd table json text; return ;;
+    --edition)     compadd all individual team; return ;;
+    --billing-cycle) compadd monthly quarterly yearly; return ;;
     --granularity) compadd day month; return ;;
     --period)      compadd today yesterday week month last-month quarter year; return ;;
     --shell)       compadd bash zsh fish; return ;;
@@ -85,7 +93,7 @@ ${fnName}() {
     --type)        compadd purchase renew upgrade; return ;;
     --source)      compadd official custom; return ;;
     --plan)        compadd token; return ;;
-    --spec-type)   compadd pro standard; return ;;
+    --spec-type)   compadd standard pro max; return ;;
     --language)    compadd en zh; return ;;
     --status)      compadd 0 2xx 4xx 5xx; return ;;
   esac
@@ -491,7 +499,7 @@ ${fnName}() {
                   _arguments '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]'
                   ;;
                 recharge)
-                  _arguments '--channel[Payment channel]:channel:(alipay)' '--amount[CNY amount]:amount:()' '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]'
+                  _arguments '--channel[Payment channel]:channel:(${SUPPORTED_CHANNELS.join(' ')})' '--amount[CNY amount]:amount:()' '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]'
                   ;;
                 recharge-history)
                   _arguments '--range[Shanghai day range]:range:(1d 3d 7d 30d)' '--start-time[Start time]:time:()' '--end-time[End time]:time:()' '--page[Page number]:n:()' '--page-size[Page size]:n:()' '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]'
@@ -529,16 +537,35 @@ ${fnName}() {
           tokenplan)
             if (( CURRENT == 4 )); then
               local -a tsubs
-              tsubs=('status:Seat-type breakdown' 'seats:List seat instances')
+              tsubs=('list:List Token Plan prices and availability for your account.' 'purchase:Purchase an Individual or Team Token Plan.' 'status:Individual and team subscription status' 'seats:List seat instances')
               _describe -t commands 'tokenplan subcommand' tsubs
             else
               case "\${words[4]}" in
+                list)
+                  _arguments \\
+                    '--edition[Edition to display (default all)]:edition:(all individual team)' \\
+                    '--billing-cycle[Billing cycle (quarterly for Individual only; default monthly)]:cycle:(monthly quarterly yearly)' \\
+                    '--format[Output format]:format:(table json text)' \\
+                    '(-h --help)'{-h,--help}'[Show help]'
+                  ;;
+                purchase)
+                  _arguments \\
+                    '1:Token Plan TYPE returned by list:(${TOKEN_PLAN_PURCHASE_TYPES.join(' ')})' \\
+                    '--billing-cycle[Required billing cycle (quarterly for Individual only)]:cycle:(monthly quarterly yearly)' \\
+                    '--channel[Required payment channel]:channel:(${getChannelsForScope(SCOPE_TOKENPLAN_PURCHASE).join(' ')})' \\
+                    '--standard-seat-count[Number of Standard Seats (Team only)]:count:()' \\
+                    '--pro-seat-count[Number of Pro Seats (Team only)]:count:()' \\
+                    '--max-seat-count[Number of Max Seats (Team only)]:count:()' \\
+                    '--auto-renew[Required choice: renew automatically at the end of the billing cycle]' '--no-auto-renew[Required choice: do not renew automatically]' \\
+                    '--format[Output format]:format:(table json text)' \\
+                    '(-h --help)'{-h,--help}'[Show help]'
+                  ;;
                 status)
                   _arguments '--format[Output format]:format:(table json text)' '(-h --help)'{-h,--help}'[Show help]'
                   ;;
                 seats)
                   _arguments \\
-                    '--spec-type[Seat spec]:type:(pro standard)' \\
+                    '--spec-type[Seat spec]:type:(standard pro max)' \\
                     '--page[Page number]:n:()' \\
                     '--page-size[Page size]:n:()' \\
                     '--format[Output format]:format:(table json text)' \\
@@ -759,6 +786,10 @@ function generateBashCompletion(): string {
   case "$prev" in
     --format)
       COMPREPLY=( $(compgen -W "table json text" -- "$cur") ); return 0 ;;
+    --edition)
+      COMPREPLY=( $(compgen -W "all individual team" -- "$cur") ); return 0 ;;
+    --billing-cycle)
+      COMPREPLY=( $(compgen -W "monthly quarterly yearly" -- "$cur") ); return 0 ;;
     --granularity)
       COMPREPLY=( $(compgen -W "day month" -- "$cur") ); return 0 ;;
     --period)
@@ -782,13 +813,13 @@ function generateBashCompletion(): string {
     --plan)
       COMPREPLY=( $(compgen -W "token" -- "$cur") ); return 0 ;;
     --spec-type)
-      COMPREPLY=( $(compgen -W "pro standard" -- "$cur") ); return 0 ;;
+      COMPREPLY=( $(compgen -W "standard pro max" -- "$cur") ); return 0 ;;
     --language)
       COMPREPLY=( $(compgen -W "en zh" -- "$cur") ); return 0 ;;
     --status)
       COMPREPLY=( $(compgen -W "0 2xx 4xx 5xx" -- "$cur") ); return 0 ;;
     --channel)
-      COMPREPLY=( $(compgen -W "alipay" -- "$cur") ); return 0 ;;
+      COMPREPLY=( $(compgen -W "${SUPPORTED_CHANNELS.join(' ')}" -- "$cur") ); return 0 ;;
     --range)
       COMPREPLY=( $(compgen -W "1d 3d 7d 30d" -- "$cur") ); return 0 ;;
     --enabled)
@@ -880,9 +911,11 @@ function generateBashCompletion(): string {
           orders) COMPREPLY=( $(compgen -W "--from --to --type --page --page-size --format -h --help" -- "$cur") ); return 0 ;;
           tokenplan)
             case "$sub3" in
+              list)   COMPREPLY=( $(compgen -W "--edition --billing-cycle --format -h --help" -- "$cur") ); return 0 ;;
+              purchase) COMPREPLY=( $(compgen -W "--billing-cycle --channel --standard-seat-count --pro-seat-count --max-seat-count --auto-renew --no-auto-renew --format -h --help" -- "$cur") ); return 0 ;;
               status) COMPREPLY=( $(compgen -W "--format -h --help" -- "$cur") ); return 0 ;;
               seats)  COMPREPLY=( $(compgen -W "--spec-type --page --page-size --format -h --help" -- "$cur") ); return 0 ;;
-              *)      COMPREPLY=( $(compgen -W "status seats -h --help" -- "$cur") ); return 0 ;;
+              *)      COMPREPLY=( $(compgen -W "list purchase status seats -h --help" -- "$cur") ); return 0 ;;
             esac ;;
         esac ;;
       workspace)
@@ -926,6 +959,14 @@ function generateBashCompletion(): string {
   fi
 
   # ── Subcommand completions ────────────────────────────────────────────────
+  if [ "$cmd" = subscription ] && [ "$sub" = tokenplan ]; then
+    if [ "$COMP_CWORD" -eq 3 ]; then
+      COMPREPLY=( $(compgen -W "list purchase status seats" -- "$cur") ); return 0
+    fi
+    if [ "\${COMP_WORDS[3]}" = purchase ] && [ "$COMP_CWORD" -eq 4 ]; then
+      COMPREPLY=( $(compgen -W "${TOKEN_PLAN_PURCHASE_TYPES.join(' ')}" -- "$cur") ); return 0
+    fi
+  fi
   if [ "$COMP_CWORD" -eq 2 ]; then
     case "$cmd" in
       auth)       COMPREPLY=( $(compgen -W "login logout status" -- "$cur") ); return 0 ;;
@@ -1233,7 +1274,7 @@ complete -c ${cli} -n '__fish_seen_subcommand_from billing; and not __fish_seen_
 complete -c ${cli} -n '${helperPrefix}_seen_path billing balance; and not ${helperPrefix}_seen_path billing balance summary; and not ${helperPrefix}_seen_path billing balance recharge; and not ${helperPrefix}_seen_path billing balance recharge-history' -a summary -d 'Available balance'
 complete -c ${cli} -n '${helperPrefix}_seen_path billing balance; and not ${helperPrefix}_seen_path billing balance summary; and not ${helperPrefix}_seen_path billing balance recharge; and not ${helperPrefix}_seen_path billing balance recharge-history' -a recharge -d 'Create recharge order'
 complete -c ${cli} -n '${helperPrefix}_seen_path billing balance; and not ${helperPrefix}_seen_path billing balance summary; and not ${helperPrefix}_seen_path billing balance recharge; and not ${helperPrefix}_seen_path billing balance recharge-history' -a recharge-history -d 'Recharge history'
-complete -c ${cli} -n '${helperPrefix}_seen_path billing balance recharge' -l channel -d 'Payment channel' -a 'alipay'
+complete -c ${cli} -n '${helperPrefix}_seen_path billing balance recharge' -l channel -d 'Payment channel' -a '${SUPPORTED_CHANNELS.join(' ')}'
 complete -c ${cli} -n '${helperPrefix}_seen_path billing balance recharge' -l amount -d 'CNY amount'
 complete -c ${cli} -n '${helperPrefix}_seen_path billing balance recharge' -l format -d 'Output format' -a 'table json text'
 complete -c ${cli} -n '${helperPrefix}_seen_path billing balance recharge-history' -l range -d 'Shanghai day range' -a '1d 3d 7d 30d'
@@ -1272,14 +1313,28 @@ complete -c ${cli} -n '__fish_seen_subcommand_from subscription orders' -l page 
 complete -c ${cli} -n '__fish_seen_subcommand_from subscription orders' -l page-size -d 'Page size'
 complete -c ${cli} -n '__fish_seen_subcommand_from subscription orders' -l format -d 'Output format' -a 'table json text'
 
-complete -c ${cli} -n '__fish_seen_subcommand_from subscription tokenplan; and not __fish_seen_subcommand_from status seats' -f
-complete -c ${cli} -n '__fish_seen_subcommand_from subscription tokenplan; and not __fish_seen_subcommand_from status seats' -a status -d 'Seat-type breakdown'
-complete -c ${cli} -n '__fish_seen_subcommand_from subscription tokenplan; and not __fish_seen_subcommand_from status seats' -a seats  -d 'List seat instances'
-complete -c ${cli} -n '__fish_seen_subcommand_from subscription tokenplan status' -l format -d 'Output format' -a 'table json text'
-complete -c ${cli} -n '__fish_seen_subcommand_from subscription tokenplan seats' -l spec-type -d 'Seat spec' -a 'pro standard'
-complete -c ${cli} -n '__fish_seen_subcommand_from subscription tokenplan seats' -l page -d 'Page number'
-complete -c ${cli} -n '__fish_seen_subcommand_from subscription tokenplan seats' -l page-size -d 'Page size'
-complete -c ${cli} -n '__fish_seen_subcommand_from subscription tokenplan seats' -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan; and not ${helperPrefix}_seen_path subscription tokenplan list; and not ${helperPrefix}_seen_path subscription tokenplan purchase; and not ${helperPrefix}_seen_path subscription tokenplan status; and not ${helperPrefix}_seen_path subscription tokenplan seats' -f
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan; and not ${helperPrefix}_seen_path subscription tokenplan list; and not ${helperPrefix}_seen_path subscription tokenplan purchase; and not ${helperPrefix}_seen_path subscription tokenplan status; and not ${helperPrefix}_seen_path subscription tokenplan seats' -a list -d 'List Token Plan prices and availability for your account.'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan; and not ${helperPrefix}_seen_path subscription tokenplan list; and not ${helperPrefix}_seen_path subscription tokenplan purchase; and not ${helperPrefix}_seen_path subscription tokenplan status; and not ${helperPrefix}_seen_path subscription tokenplan seats' -a purchase -d 'Purchase an Individual or Team Token Plan.'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan; and not ${helperPrefix}_seen_path subscription tokenplan list; and not ${helperPrefix}_seen_path subscription tokenplan purchase; and not ${helperPrefix}_seen_path subscription tokenplan status; and not ${helperPrefix}_seen_path subscription tokenplan seats' -a status -d 'Individual and team subscription status'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan; and not ${helperPrefix}_seen_path subscription tokenplan list; and not ${helperPrefix}_seen_path subscription tokenplan purchase; and not ${helperPrefix}_seen_path subscription tokenplan status; and not ${helperPrefix}_seen_path subscription tokenplan seats' -a seats  -d 'List seat instances'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan purchase' -a '${TOKEN_PLAN_PURCHASE_TYPES.join(' ')}'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan purchase' -l billing-cycle -d 'Required billing cycle (quarterly for Individual only)' -a 'monthly quarterly yearly'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan purchase' -l channel -d 'Required payment channel' -a '${getChannelsForScope(SCOPE_TOKENPLAN_PURCHASE).join(' ')}'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan purchase' -l standard-seat-count -d 'Number of Standard Seats (Team only)'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan purchase' -l pro-seat-count -d 'Number of Pro Seats (Team only)'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan purchase' -l max-seat-count -d 'Number of Max Seats (Team only)'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan purchase' -l auto-renew -d 'Required choice: renew automatically at the end of the billing cycle'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan purchase' -l no-auto-renew -d 'Required choice: do not renew automatically'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan purchase' -l format -a 'table json text'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan list' -l edition -d 'Edition to display (default all)' -a 'all individual team'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan list' -l billing-cycle -d 'Billing cycle (quarterly for Individual only; default monthly)' -a 'monthly quarterly yearly'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan list' -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan status' -l format -d 'Output format' -a 'table json text'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan seats' -l spec-type -d 'Seat spec' -a 'standard pro max'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan seats' -l page -d 'Page number'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan seats' -l page-size -d 'Page size'
+complete -c ${cli} -n '${helperPrefix}_seen_path subscription tokenplan seats' -l format -d 'Output format' -a 'table json text'
 
 # ── workspace subcommands ────────────────────────────────────────────────────
 complete -c ${cli} -n '__fish_seen_subcommand_from workspace; and not __fish_seen_subcommand_from list limit' -f

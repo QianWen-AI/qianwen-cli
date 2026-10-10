@@ -24,11 +24,39 @@ const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
 const VALID_TYPE: OrderType[] = ['purchase', 'renew', 'upgrade'];
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
   const n = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, Math.trunc(n)));
+}
+
+function invalidArgument(message: string, format: 'json' | 'table' | 'text'): never {
+  return handleError(
+    new CliError({
+      code: 'INVALID_ARGUMENT',
+      message,
+      exitCode: EXIT_CODES.GENERAL_ERROR,
+    }),
+    format,
+  );
+}
+
+function validateDateOption(
+  name: '--from' | '--to',
+  value: unknown,
+  format: 'json' | 'table' | 'text',
+): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !ISO_DATE_PATTERN.test(value)) {
+    invalidArgument(`${name} must be a valid date in YYYY-MM-DD format.`, format);
+  }
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    invalidArgument(`${name} must be a valid date in YYYY-MM-DD format.`, format);
+  }
+  return value;
 }
 
 export function registerSubscriptionOrdersCommand(parent: Command): void {
@@ -63,22 +91,29 @@ export function subscriptionOrdersAction(cmd: Command) {
         new CliError({
           code: 'INVALID_ARGUMENT',
           message: `--page-size must not exceed ${MAX_PAGE_SIZE}`,
-          exitCode: EXIT_CODES.INVALID_ARGUMENT,
+          exitCode: EXIT_CODES.GENERAL_ERROR,
         }),
         format,
       );
       return;
     }
     const pageSize = clamp(options.pageSize, 1, MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE);
-    const type =
-      typeof options.type === 'string' && (VALID_TYPE as string[]).includes(options.type)
-        ? (options.type as OrderType)
-        : undefined;
-    const from = typeof options.from === 'string' ? options.from : undefined;
-    const to = typeof options.to === 'string' ? options.to : undefined;
+    let type: OrderType | undefined;
+    if (options.type !== undefined) {
+      if (typeof options.type !== 'string' || !(VALID_TYPE as string[]).includes(options.type)) {
+        invalidArgument('--type must be purchase, renew or upgrade.', format);
+      }
+      type = options.type as OrderType;
+    }
+    const from = validateDateOption('--from', options.from, format);
+    const to = validateDateOption('--to', options.to, format);
+    if (from && to && from > to) {
+      invalidArgument('--from must be earlier than or equal to --to.', format);
+    }
     const commodityCodeList = [
       site.features.tokenPlanCommodityCodes.teams,
       site.features.tokenPlanCommodityCodes.addon,
+      site.features.tokenPlanCommodityCodes.soloBuy,
     ]
       .filter(Boolean)
       .join(',');

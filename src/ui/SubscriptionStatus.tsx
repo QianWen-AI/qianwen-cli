@@ -6,6 +6,7 @@ import type { Column } from './Table.js';
 import { renderWithInk } from './render.js';
 import { colors, theme } from './theme.js';
 import { useTerminalSize } from './useTerminalSize.js';
+import { TokenPlanSeatDetails } from './TokenPlanSeatDetails.js';
 import type {
   CreditPackSectionViewModel,
   OrderStatusColor,
@@ -35,7 +36,7 @@ function statusColor(value: string): string | undefined {
   return undefined;
 }
 
-function TokenPlanSection({
+function LegacyTokenPlanSection({
   section,
   width,
 }: {
@@ -64,6 +65,21 @@ function TokenPlanSection({
   );
 }
 
+function TeamSeatUsage({ section }: { section: TokenPlanSectionViewModel }) {
+  if (section.tiers.length === 0) return null;
+  return (
+    <Box flexDirection="column" paddingLeft={2} marginBottom={1}>
+      <Text bold>Seat Usage</Text>
+      {section.tiers.map((tier) => (
+        <Box flexDirection="column" paddingLeft={2} key={tier.label}>
+          <Text>{tier.label}</Text>
+          <Text>Remaining {tier.bar}</Text>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 function CreditPackSection({
   section,
   width,
@@ -74,7 +90,7 @@ function CreditPackSection({
   return (
     <Box flexDirection="column">
       <Text> </Text>
-      <Text color={colors.brand}>{sectionDivider('Credit Pack', width)}</Text>
+      <Text color={colors.brand}>{sectionDivider('Add-on Credit Packs', width)}</Text>
       <Text>
         {section.count} pack{section.count === 1 ? '' : 's'} Total Remaining:{' '}
         {section.totalRemaining}
@@ -125,7 +141,7 @@ function RecentOrdersSection({
   section: RecentOrdersSectionViewModel;
   width: number;
 }) {
-  const title = `Recent Orders (latest ${section.orders.length})`;
+  const title = `Recent Token Plan Orders (latest ${section.orders.length})`;
   const data = section.orders.map((o) => ({
     ...o,
     status: colorizeOrderStatus(o.statusLabel, o.statusColor),
@@ -174,9 +190,9 @@ export function SubscriptionStatusInk({ vm }: SubscriptionStatusInkProps) {
       <Section title="Subscription Status">
         <Box flexDirection="column" paddingLeft={2}>
           <Text color={colors.error}>{vm.banner}</Text>
-          {vm.diagnostics.map((d) => (
-            <Text key={d.api} color={colors.muted}>
-              · {d.api}: {d.errorCode} {d.errorMessage}
+          {vm.diagnostics.map((diagnostic, index) => (
+            <Text key={`${diagnostic.api}-${index}`} color={colors.muted}>
+              · {diagnostic.errorMessage}
             </Text>
           ))}
         </Box>
@@ -184,28 +200,45 @@ export function SubscriptionStatusInk({ vm }: SubscriptionStatusInkProps) {
     );
   }
 
-  const hasNewSections =
-    vm.tokenPlanSection !== null ||
-    vm.creditPackSection !== null ||
-    vm.recentOrdersSection !== null;
+  const editionSections = vm.sections.filter((section) => section.id.startsWith('tokenplan-'));
+  const hasEditionSections = editionSections.length > 0;
 
   return (
     <Section title="Subscription Status" footer={vm.footnote ?? undefined}>
       <Box flexDirection="column" paddingLeft={2}>
-        {hasNewSections ? (
+        {hasEditionSections ? (
           <>
-            {vm.tokenPlanSection && (
-              <TokenPlanSection section={vm.tokenPlanSection} width={width} />
-            )}
-            {vm.creditPackSection && (
-              <CreditPackSection section={vm.creditPackSection} width={width} />
-            )}
-            {vm.recentOrdersSection && (
-              <RecentOrdersSection section={vm.recentOrdersSection} width={width} />
-            )}
+            <Text color={colors.brand}>{sectionDivider('Token Plans', width)}</Text>
+            {editionSections.map((section) => (
+              <Box key={section.id} flexDirection="column" paddingLeft={2} marginBottom={1}>
+                <Text bold>{section.title}</Text>
+                <Box flexDirection="column" paddingLeft={2}>
+                  {section.fields.map((field) => (
+                    <Text key={field.label}>
+                      {field.label.padEnd(18)}
+                      {field.value}
+                    </Text>
+                  ))}
+                </Box>
+                {section.id === 'tokenplan-team' && vm.tokenPlanSection && (
+                  <TeamSeatUsage section={vm.tokenPlanSection} />
+                )}
+                {section.id === 'tokenplan-team' && vm.seatDetails && (
+                  <Box paddingLeft={2} flexDirection="column">
+                    <TokenPlanSeatDetails details={vm.seatDetails} indent={8} />
+                  </Box>
+                )}
+              </Box>
+            ))}
           </>
+        ) : vm.tokenPlanSection ? (
+          <LegacyTokenPlanSection section={vm.tokenPlanSection} width={width} />
         ) : (
           <FlatFallback vm={vm} />
+        )}
+        {vm.creditPackSection && <CreditPackSection section={vm.creditPackSection} width={width} />}
+        {vm.recentOrdersSection && (
+          <RecentOrdersSection section={vm.recentOrdersSection} width={width} />
         )}
       </Box>
     </Section>

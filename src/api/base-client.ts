@@ -47,10 +47,23 @@ export interface RequestOptions {
   context?: string;
   /** Optional caller cancellation signal, combined with the request timeout. */
   signal?: AbortSignal;
+  /** Called after local preflight succeeds, immediately before fetch is invoked. */
+  onRequestStart?: () => void;
 }
 
 export interface BaseClient {
   request<T>(options: RequestOptions): Promise<T>;
+}
+
+/** HTTP status is used by payment-result error classification. */
+export class HttpResponseError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'HttpResponseError';
+  }
 }
 
 /** Transport timeout retaining the configured duration for scoped error mapping. */
@@ -107,11 +120,6 @@ function getUserAgent(): string {
   return `${site.userAgentPrefix}/${version}`;
 }
 
-function redactToken(value: string): string {
-  if (value.length <= 10) return '***';
-  return value.slice(0, 6) + '***' + value.slice(-4);
-}
-
 /**
  * Parse JSON when possible so field-aware payment redaction can run.
  *
@@ -149,8 +157,8 @@ function redactMessage(message: string, requestBody?: string): string {
  */
 function redactDiagnosticHeaders(headers: Record<string, string>): Record<string, unknown> {
   const safeHeaders: Record<string, unknown> = { ...headers };
-  if (typeof safeHeaders.Authorization === 'string') {
-    safeHeaders.Authorization = `Bearer ${redactToken(safeHeaders.Authorization.replace('Bearer ', ''))}`;
+  for (const key of Object.keys(safeHeaders)) {
+    if (key.toLowerCase() === 'authorization') safeHeaders[key] = '[REDACTED]';
   }
   return safeHeaders;
 }
@@ -241,6 +249,8 @@ export function createBaseClient(opts?: BaseClientOptions): BaseClient {
         } as const;
 
         if (proxyInit) await proxyInit;
+        controller.signal.throwIfAborted();
+        options.onRequestStart?.();
         const response = await fetch(options.url, requestInit);
 
         if (!response.ok) {
@@ -268,7 +278,7 @@ export function createBaseClient(opts?: BaseClientOptions): BaseClient {
             `  URL: ${redactMessage(options.url, options.body)}`,
           ];
           if (truncated) parts.push(`  Response: ${truncated}`);
-          throw new Error(parts.join('\n'));
+          throw new HttpResponseError(response.status, parts.join('\n'));
         }
 
         let data: T;

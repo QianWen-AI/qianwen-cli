@@ -5,6 +5,7 @@
  *   - a write failure is reported gracefully (exit 1, no stack trace)
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { join } from 'node:path';
 import { runCommand } from '../helpers/run-command.js';
 
 // ── Module mocks ────────────────────────────────────────────────────────
@@ -75,7 +76,11 @@ describe('completion install — fish rc filesystem safety', () => {
     const r = await runCommand(setupCompletion, ['completion', 'install', '--shell', 'fish']);
 
     expect(r.exitCode).toBeUndefined();
-    expect(mkdirSync).toHaveBeenCalledWith('/mock-home/.config/fish', { recursive: true });
+    // The production path is join(homedir(), '.config', 'fish'), whose
+    // separator is platform-dependent; build the expectation the same way.
+    expect(mkdirSync).toHaveBeenCalledWith(join('/mock-home', '.config', 'fish'), {
+      recursive: true,
+    });
     const mkdirOrder = vi.mocked(mkdirSync).mock.invocationCallOrder[0];
     const appendOrder = vi.mocked(appendFileSync).mock.invocationCallOrder[0];
     expect(mkdirOrder).toBeLessThan(appendOrder);
@@ -142,4 +147,44 @@ describe('completion generate — recharge command definitions', () => {
       expect(script).not.toMatch(/recharge[^\n]*\bresult\b/);
     },
   );
+});
+
+describe('completion generate — hidden Token Plan agent options', () => {
+  const agentOptions = [
+    '--preview',
+    '--confirm',
+    '--coupon',
+    '--no-coupon',
+    '--preview-amount',
+    '--balance-deduction',
+  ];
+
+  it.each(['bash', 'zsh', 'fish'])(
+    '%s offers team seat options and omits Agent-only options',
+    async (shell) => {
+      const script = await generateScript(shell);
+      for (const tier of ['standard', 'pro', 'max']) {
+        expect(script).toContain(`${tier}-seat-count`);
+      }
+      if (shell !== 'bash') {
+        expect(script).toContain('Number of Pro Seats');
+        expect(script).toContain('Number of Max Seats');
+      }
+      for (const option of agentOptions) expect(script).not.toContain(option);
+    },
+  );
+});
+
+describe('completion generate — Token Plan seat spec values', () => {
+  it.each(['bash', 'zsh', 'fish'])('%s offers all three seat specs', async (shell) => {
+    const script = await generateScript(shell);
+    if (shell === 'bash') {
+      expect(script).toMatch(/--spec-type\)\s+COMPREPLY=\( \$\(compgen -W "standard pro max"/);
+    } else if (shell === 'zsh') {
+      expect(script).toContain('--spec-type)   compadd standard pro max;');
+      expect(script).toContain('--spec-type[Seat spec]:type:(standard pro max)');
+    } else {
+      expect(script).toContain("-l spec-type -d 'Seat spec' -a 'standard pro max'");
+    }
+  });
 });

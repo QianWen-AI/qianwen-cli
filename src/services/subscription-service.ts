@@ -7,6 +7,7 @@ import type {
   FrInstanceResponse,
   GetSeatSubscriptionSummaryResponse,
   GetSubscriptionDetailResponse,
+  GetSubscriptionSummaryResponse,
   QueryOrderDetailResponse,
   QueryOrderListResponse,
   QuerySubscriptionGrayResponse,
@@ -32,11 +33,26 @@ import type {
   SubscriptionStatusResult,
 } from '../types/subscription.js';
 import type { TokenPlan } from '../types/usage.js';
+import type {
+  TokenPlanEditionStatus,
+  TokenPlanSeatDetails,
+} from '../types/tokenplan-subscription.js';
+import {
+  fetchTokenPlanSeatDetails,
+  resolveTokenPlanSeatAssignments,
+} from './tokenplan-seat-details.js';
 import type { TokenplanService } from './tokenplan-service.js';
+import {
+  buildTeamRenewable,
+  enrichTeamTokenPlan,
+  type TokenPlanEditionResult,
+} from './tokenplan-service.js';
 import { site } from '../site.js';
 import { API_PRODUCT_ACCOUNT_CENTER } from '../types/api-routes.js';
 import { CliError } from '../utils/errors.js';
 import { EXIT_CODES } from '../utils/exit-codes.js';
+import { sumAmountStrings } from '../utils/amount.js';
+import { safeSubscriptionDiagnostic, safeSubscriptionError } from './subscription-diagnostics.js';
 
 const API_PRODUCT_BSS = 'BssOpenAPI-V3';
 const API_PRODUCT_BSS_LEGACY = 'BssOpenApi';
@@ -65,7 +81,7 @@ export interface SubscriptionAdapter {
 
 interface SubCallSpec<T> {
   api: string;
-  invoke: () => Promise<T>;
+  invoke: (signal: AbortSignal) => Promise<T>;
 }
 
 interface SubCallResult<T> {
@@ -75,21 +91,29 @@ interface SubCallResult<T> {
 }
 
 function toDiagnostic(api: string, error: unknown): SubscriptionDiagnostic {
-  const errorMessage = error instanceof Error ? error.message : String(error);
-  let errorCode = 'Unknown';
-  if (error && typeof error === 'object') {
-    const candidate =
-      (error as { code?: unknown; errorCode?: unknown }).code ??
-      (error as { errorCode?: unknown }).errorCode;
-    if (typeof candidate === 'string' && candidate.length > 0) errorCode = candidate;
-  }
-  return { api, errorCode, errorMessage };
+  return safeSubscriptionDiagnostic(api, error);
+}
+
+function totalFailureExitCode(diagnostics: SubscriptionDiagnostic[]): 1 | 2 | 3 | 4 {
+  const codes = new Set(diagnostics.map((diagnostic) => diagnostic.errorCode));
+  if (codes.has('CONFIG_ERROR') || codes.has('PROTOCOL_ERROR')) return 4;
+  if (
+    codes.has('AUTH_REQUIRED') ||
+    codes.has('TOKEN_EXPIRED') ||
+    codes.has('CS_DATA_AUTH_REQUIRED')
+  )
+    return 2;
+  if (codes.has('NETWORK_ERROR') || codes.has('Timeout')) return 3;
+  return 1;
 }
 
 async function runWithSoftTimeout(
   calls: Array<SubCallSpec<unknown>>,
   timeoutMs: number,
 ): Promise<Array<SubCallResult<unknown>>> {
+  const controller = new AbortController();
+  let active = true;
+  const settled = new Set<number>();
   const results: Array<SubCallResult<unknown>> = calls.map((c) => ({
     api: c.api,
     data: null,
@@ -98,9 +122,12 @@ async function runWithSoftTimeout(
 
   const tasks = calls.map(async (c, idx) => {
     try {
-      results[idx]!.data = await c.invoke();
+      const data = await c.invoke(controller.signal);
+      if (active) results[idx]!.data = data;
     } catch (error) {
-      results[idx]!.diagnostic = toDiagnostic(c.api, error);
+      if (active) results[idx]!.diagnostic = toDiagnostic(c.api, error);
+    } finally {
+      settled.add(idx);
     }
   });
 
@@ -109,30 +136,98 @@ async function runWithSoftTimeout(
     timeoutHandle = setTimeout(() => resolve(), timeoutMs);
   });
 
-  await Promise.race([Promise.all(tasks), timeoutPromise]);
+  await Promise.race([Promise.allSettled(tasks), timeoutPromise]);
+  active = false;
+  controller.abort();
   if (timeoutHandle) clearTimeout(timeoutHandle);
 
-  for (const r of results) {
-    if (r.data === null && r.diagnostic === null) {
-      r.diagnostic = {
-        api: r.api,
+  for (const [index, result] of results.entries()) {
+    if (!settled.has(index)) {
+      result.diagnostic = {
+        api: result.api,
         errorCode: 'Timeout',
-        errorMessage: `timeout: sub-call exceeded ${timeoutMs}ms soft limit`,
+        errorMessage: 'The service did not respond in time. Try again later.',
       };
     }
   }
   return results;
 }
 
-function quotaFromTokenPlan(dto: TokenPlan | null | undefined): SubscriptionQuota | null {
+function quotaFromValues(
+  total: number | null | undefined,
+  remaining: number | null | undefined,
+): SubscriptionQuota | null {
+  if (
+    typeof total !== 'number' ||
+    typeof remaining !== 'number' ||
+    !Number.isFinite(total) ||
+    !Number.isFinite(remaining) ||
+    total < 0 ||
+    remaining < 0 ||
+    remaining > total
+  )
+    return null;
+  const usedPct = total === 0 ? 0 : Math.round(((total - remaining) / total) * 100);
+  return { remaining, total, usedPct };
+}
+
+function quotaFromSeatValues(
+  groups: Array<{ totalValue: string | null; surplusValue: string | null }>,
+): SubscriptionQuota | null {
+  if (groups.length === 0) return null;
+  const totals: string[] = [];
+  const remainingValues: string[] = [];
+  for (const group of groups) {
+    if (group.totalValue === null || group.surplusValue === null) return null;
+    const quota = quotaFromValues(Number(group.totalValue), Number(group.surplusValue));
+    if (!quota) return null;
+    totals.push(group.totalValue);
+    remainingValues.push(group.surplusValue);
+  }
+  return quotaFromValues(
+    Number(sumAmountStrings(totals)),
+    Number(sumAmountStrings(remainingValues)),
+  );
+}
+
+function quotaFromTokenPlan(
+  dto: TokenPlan | null | undefined,
+  team?: TokenPlanEditionStatus,
+): SubscriptionQuota | null {
   if (!dto || dto.subscribed !== true) return null;
-  const total = Number(dto.totalCredits ?? 0);
-  const remaining = Number(dto.remainingCredits ?? 0);
-  if (!Number.isFinite(total) || !Number.isFinite(remaining)) return null;
-  if (total <= 0) return { remaining: Math.max(0, remaining), total: 0, usedPct: 0 };
-  const used = Math.max(0, total - remaining);
-  const usedPct = Math.min(100, Math.max(0, Math.round((used / total) * 100)));
-  return { remaining: Math.max(0, remaining), total, usedPct };
+  if (team && team.status !== 'active') return null;
+  if (
+    team?.diagnostics.some(
+      (entry) => entry.api === 'GetSubscriptionSummary' && entry.errorCode === 'InvalidFields',
+    )
+  )
+    return null;
+  const legacyQuota = quotaFromValues(dto.totalCredits, dto.remainingCredits);
+  const summary = team?.seatSummary;
+  if (!summary) return legacyQuota;
+  const total = summary.total;
+  const completeTotal = total !== null && total.totalValue !== null && total.surplusValue !== null;
+  const totalQuota = completeTotal ? quotaFromSeatValues([total]) : null;
+  if (completeTotal && !totalQuota) return null;
+  const invalidGroup = team.diagnostics.some(
+    (entry) => entry.api === 'GetSeatSubscriptionSummary' && entry.errorCode === 'InvalidGroup',
+  );
+  const groupQuota = invalidGroup ? null : quotaFromSeatValues(summary.groups);
+  if (
+    totalQuota &&
+    groupQuota &&
+    (totalQuota.total !== groupQuota.total || totalQuota.remaining !== groupQuota.remaining)
+  )
+    return null;
+  if (totalQuota || groupQuota) return totalQuota ?? groupQuota;
+  if (invalidGroup || summary.groups.length > 0 || !legacyQuota) return null;
+  if (
+    total &&
+    ((total.totalValue !== null && Number(total.totalValue) !== legacyQuota.total) ||
+      (total.surplusValue !== null && Number(total.surplusValue) !== legacyQuota.remaining))
+  )
+    return null;
+  return legacyQuota;
 }
 
 function syntheticSeatTierFromTokenPlan(dto: TokenPlan | null | undefined): SubscriptionSeatTier[] {
@@ -155,6 +250,25 @@ function syntheticSeatTierFromTokenPlan(dto: TokenPlan | null | undefined): Subs
   ];
 }
 
+function hasConfirmedStatusData(data: SubscriptionStatus): boolean {
+  return (
+    data.individual?.status === 'active' ||
+    data.individual?.status === 'not_subscribed' ||
+    data.team?.status === 'active' ||
+    data.team?.status === 'not_subscribed' ||
+    data.isGray !== null ||
+    data.plan !== null ||
+    data.period !== null ||
+    data.quota !== null ||
+    data.autoRenew !== null ||
+    data.renewable !== null ||
+    data.remainingDays !== null ||
+    data.seatTiers.length > 0 ||
+    data.creditPacks.length > 0 ||
+    data.recentOrders.length > 0
+  );
+}
+
 function detectOrderApiUnavailable(
   raw: { Code?: string; Message?: string; Data?: unknown } | null | undefined,
 ): CliError | null {
@@ -162,10 +276,26 @@ function detectOrderApiUnavailable(
   if (raw.Data !== undefined) return null;
   const code = typeof raw.Code === 'string' ? raw.Code : '';
   if (!code) return null;
+  if (['FEATURE_UNAVAILABLE', 'NOT_SUPPORTED', 'UNSUPPORTED'].includes(code)) {
+    return new CliError({
+      code: 'FEATURE_UNAVAILABLE',
+      message: 'Subscription order history is not available for this account.',
+      exitCode: EXIT_CODES.GENERAL_ERROR,
+    });
+  }
+  if (
+    ['AUTH_REQUIRED', 'TOKEN_EXPIRED', 'InvalidSecurityToken', 'Login.NotLogined'].includes(code)
+  ) {
+    return new CliError({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication failed. Run: qianwen auth login',
+      exitCode: EXIT_CODES.AUTH_FAILURE,
+    });
+  }
   return new CliError({
-    code: 'FEATURE_UNAVAILABLE',
-    message: 'Subscription orders is not available yet.',
-    exitCode: EXIT_CODES.GENERAL_ERROR,
+    code: 'ORDER_RESPONSE_INVALID',
+    message: 'Subscription orders could not be retrieved.',
+    exitCode: EXIT_CODES.CONFIG_ERROR,
   });
 }
 
@@ -182,25 +312,34 @@ export class SubscriptionService {
 
   async getStatus(opts: { plan?: 'token' } = {}): Promise<SubscriptionStatusResult> {
     const wantToken = opts.plan === undefined || opts.plan === 'token';
+    let tokenPlanPromise: Promise<TokenPlanEditionResult> | undefined;
+    const getTokenPlan = (signal: AbortSignal) =>
+      (tokenPlanPromise ??= this.tokenplanService.fetchTokenPlanEditions(signal));
 
     const calls: Array<SubCallSpec<unknown>> = [
       {
         api: 'QuerySubscriptionGray',
-        invoke: () =>
+        invoke: (signal) =>
           this.apiClient.callFlatApi<QuerySubscriptionGrayResponse>({
             product: API_PRODUCT_BSS,
             action: 'QuerySubscriptionGray',
+            signal,
           }),
       },
     ];
 
     if (wantToken) {
       calls.push({
+        api: 'TeamSeatDetails',
+        invoke: (signal) => fetchTokenPlanSeatDetails(this.apiClient, signal),
+      });
+      calls.push({
         api: 'GetSeatSubscriptionSummary',
-        invoke: () =>
+        invoke: (signal) =>
           this.apiClient.callFlatApi<GetSeatSubscriptionSummaryResponse>({
             product: API_PRODUCT_BSS,
             action: 'GetSeatSubscriptionSummary',
+            signal,
             params: {
               productCode: site.features.tokenPlanCommodityCodes.teams,
             },
@@ -208,14 +347,25 @@ export class SubscriptionService {
       });
       calls.push({
         api: 'TokenPlan',
-        invoke: () => this.tokenplanService.fetchTokenPlan(),
+        invoke: getTokenPlan,
+      });
+      calls.push({
+        api: 'GetSubscriptionSummary',
+        invoke: (signal) =>
+          this.apiClient.callFlatApi<GetSubscriptionSummaryResponse>({
+            product: API_PRODUCT_BSS,
+            action: 'GetSubscriptionSummary',
+            signal,
+            params: { productCode: site.features.tokenPlanCommodityCodes.teams },
+          }),
       });
       calls.push({
         api: 'DescribeFrInstances-addon',
-        invoke: () =>
+        invoke: (signal) =>
           this.apiClient.callFlatApi<FrInstanceResponse>({
             product: API_PRODUCT_BSS,
             action: 'DescribeFrInstances',
+            signal,
             params: {
               Group: 'tokenPlan',
               CommodityCode: site.features.tokenPlanCommodityCodes.addon,
@@ -226,14 +376,32 @@ export class SubscriptionService {
       });
       calls.push({
         api: 'CheckTokenPlanAutoRenewal',
-        invoke: () =>
+        invoke: (signal) =>
           this.apiClient.callFlatApi<CheckTokenPlanAutoRenewalResponse>({
             product: API_PRODUCT_BSS_LEGACY,
             action: 'CheckTokenPlanAutoRenewal',
+            signal,
             params: {
               CommodityCode: site.features.tokenPlanCommodityCodes.teams,
             },
           }),
+      });
+      calls.push({
+        api: 'CheckInstancesRenewable',
+        invoke: async (signal) => {
+          const { teamInstanceId } = await getTokenPlan(signal);
+          if (!teamInstanceId) return null;
+          return this.apiClient.callFlatApi<CheckInstancesRenewableResponse>({
+            product: API_PRODUCT_BSS,
+            action: 'CheckInstancesRenewable',
+            signal,
+            params: {
+              'instanceIdentities.1.InstanceId': teamInstanceId,
+              'instanceIdentities.1.CommodityCode': site.features.tokenPlanCommodityCodes.teams,
+              'instanceIdentities.1.ResourceType': 'subscription',
+            },
+          });
+        },
       });
     }
 
@@ -249,8 +417,15 @@ export class SubscriptionService {
       if (r.data !== null) lookup.set(r.api, r.data);
     }
 
-    if (diagnostics.length === results.length) {
-      return { data: null, diagnostics };
+    // Supplementary seat details cannot turn a failed status query into success.
+    if (results.filter((r) => r.api !== 'TeamSeatDetails').every((r) => r.diagnostic !== null)) {
+      const details = lookup.get('TeamSeatDetails') as TokenPlanSeatDetails | undefined;
+      diagnostics.push(...(details?.diagnostics ?? []));
+      return {
+        data: null,
+        diagnostics,
+        failureExitCode: totalFailureExitCode(diagnostics),
+      };
     }
 
     // Phase 3: best-effort recent orders (non-fatal).
@@ -259,6 +434,7 @@ export class SubscriptionService {
       const tokenPlanCommodityCodes = [
         site.features.tokenPlanCommodityCodes.teams,
         site.features.tokenPlanCommodityCodes.addon,
+        site.features.tokenPlanCommodityCodes.soloBuy,
       ]
         .filter(Boolean)
         .join(',');
@@ -281,6 +457,15 @@ export class SubscriptionService {
     }
 
     const data = this.assembleStatus(lookup, recentOrders);
+    diagnostics.push(...(data.individual?.diagnostics ?? []), ...(data.team?.diagnostics ?? []));
+    diagnostics.push(...(data.team?.seatDetails?.diagnostics ?? []));
+    if (!hasConfirmedStatusData(data)) {
+      return {
+        data: null,
+        diagnostics,
+        failureExitCode: totalFailureExitCode(diagnostics),
+      };
+    }
     return { data, diagnostics };
   }
 
@@ -312,13 +497,18 @@ export class SubscriptionService {
     }
     if (opts.commodityCodeList) params.CommodityCodeList = opts.commodityCodeList;
 
-    const listRaw = await this.cache.getOrFetch(cacheKey, ORDERS_CACHE_TTL_MS, async () =>
-      this.apiClient.callFlatApi<QueryOrderListResponse>({
-        product: API_PRODUCT_BSS,
-        action: 'QueryOrderList',
-        params,
-      }),
-    );
+    let listRaw: QueryOrderListResponse;
+    try {
+      listRaw = await this.cache.getOrFetch(cacheKey, ORDERS_CACHE_TTL_MS, async () =>
+        this.apiClient.callFlatApi<QueryOrderListResponse>({
+          product: API_PRODUCT_BSS,
+          action: 'QueryOrderList',
+          params,
+        }),
+      );
+    } catch (error) {
+      throw safeSubscriptionError(error, 'Subscription orders could not be retrieved.');
+    }
 
     // Surface upstream authentication failure (or any other inner business
     // error) as a CliError instead of silently returning an empty list.
@@ -345,11 +535,16 @@ export class SubscriptionService {
 
   /** Fetch a single order detail. */
   async getOrderDetail(orderId: string): Promise<OrderDetail> {
-    const raw = await this.apiClient.callFlatApi<QueryOrderDetailResponse>({
-      product: API_PRODUCT_BSS,
-      action: 'QueryOrderDetail',
-      params: { OrderId: orderId },
-    });
+    let raw: QueryOrderDetailResponse;
+    try {
+      raw = await this.apiClient.callFlatApi<QueryOrderDetailResponse>({
+        product: API_PRODUCT_BSS,
+        action: 'QueryOrderDetail',
+        params: { OrderId: orderId },
+      });
+    } catch (error) {
+      throw safeSubscriptionError(error, 'Subscription order details could not be retrieved.');
+    }
     const unavailable = detectOrderApiUnavailable(
       raw as unknown as { Code?: string; Message?: string; Data?: unknown },
     );
@@ -381,8 +576,13 @@ export class SubscriptionService {
           result[idx] = { ...order, detail: enriched, detailError: null };
         } catch (error) {
           if (error instanceof CliError) throw error;
-          const message = error instanceof Error ? error.message : String(error);
-          result[idx] = { ...order, detailError: message };
+          result[idx] = {
+            ...order,
+            detailError: safeSubscriptionError(
+              error,
+              'Subscription order details could not be retrieved.',
+            ).message,
+          };
         }
       }
     };
@@ -434,12 +634,28 @@ export class SubscriptionService {
     const autoRenewDto = this.subscriptionAdapter.transformAutoRenewal(
       lookup.get('CheckTokenPlanAutoRenewal') as CheckTokenPlanAutoRenewalResponse | undefined,
     );
-    const renewableDto = this.subscriptionAdapter.transformInstancesRenewable(
-      lookup.get('CheckInstancesRenewable') as CheckInstancesRenewableResponse | undefined,
+    const tokenPlanResult = lookup.get('TokenPlan') as TokenPlanEditionResult | undefined;
+    const renewable = buildTeamRenewable(
+      lookup.get('CheckInstancesRenewable'),
+      tokenPlanResult?.teamInstanceId ?? null,
     );
     const frAddonRaw = lookup.get('DescribeFrInstances-addon') as FrInstanceResponse | undefined;
-    const tokenPlanDto = lookup.get('TokenPlan') as TokenPlan | undefined;
-    const quota = quotaFromTokenPlan(tokenPlanDto);
+    const tokenPlanDto = tokenPlanResult?.tokenPlan;
+    const individual = tokenPlanDto?.individual;
+    const team = tokenPlanDto?.team
+      ? enrichTeamTokenPlan(
+          tokenPlanDto.team,
+          seatRaw,
+          lookup.get('GetSubscriptionSummary'),
+          lookup.get('CheckTokenPlanAutoRenewal'),
+        )
+      : undefined;
+    if (team)
+      team.seatDetails = resolveTokenPlanSeatAssignments(
+        lookup.get('TeamSeatDetails') as TokenPlanSeatDetails | undefined,
+        team,
+      );
+    const quota = quotaFromTokenPlan(tokenPlanDto, team);
 
     const detailActive = detailDto.activeInstance;
     const plan = detailActive?.plan ?? seatDto.plan ?? tokenPlanDto?.planName ?? null;
@@ -451,20 +667,40 @@ export class SubscriptionService {
     // nulled to prevent it being read as a quota-reset date. null autoRenew is
     // "unknown" and must not trigger clearing.
     const seatTiersRaw = extractSeatTiers(seatInner, autoRenewDto.autoRenew);
-    const seatTiers = seatTiersRaw.some((tier) => tier.totalCredits > 0)
+    const seatTiers = seatTiersRaw.some(
+      (tier) => tier.totalCredits !== null && tier.totalCredits > 0,
+    )
       ? seatTiersRaw
       : syntheticSeatTierFromTokenPlan(tokenPlanDto);
     const remainingDays = extractRemainingDays(seatInner);
     const creditPacks = extractCreditPacks(frAddonRaw);
     return {
+      individual,
+      team,
       isGray: grayDto.isGray,
-      plan,
-      period,
+      plan: team ? team.name : plan,
+      period: team ? team.period : period,
       quota,
-      autoRenew: autoRenewDto.autoRenew,
-      renewable: renewableDto.renewable,
-      remainingDays,
-      seatTiers,
+      autoRenew: team ? (team.autoRenew?.enabled ?? null) : autoRenewDto.autoRenew,
+      renewable: renewable?.canRenew ?? null,
+      remainingDays: team ? team.remainingDays : remainingDays,
+      seatTiers: team
+        ? (team.seatSummary?.groups ?? []).map((group) => {
+            const total = group.totalValue === null ? null : Number(group.totalValue);
+            const remaining = group.surplusValue === null ? null : Number(group.surplusValue);
+            return {
+              specType: group.specType,
+              seats: group.seats,
+              totalCredits: total !== null && Number.isFinite(total) ? total : null,
+              remainingCredits: remaining !== null && Number.isFinite(remaining) ? remaining : null,
+              usedPct:
+                total !== null && remaining !== null && total > 0 && remaining <= total
+                  ? (1 - remaining / total) * 100
+                  : null,
+              nextCycleFlushTime: group.nextCycleFlushTime,
+            };
+          })
+        : seatTiers,
       creditPacks,
       recentOrders,
     };

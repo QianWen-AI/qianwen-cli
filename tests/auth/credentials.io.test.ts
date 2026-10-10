@@ -237,6 +237,14 @@ describe('resolveCredentials', () => {
 
 // ── writeCredentials ───────────────────────────────────────────────
 describe('writeCredentials', () => {
+  it('clears a derived cs-data token cache before storing a new login', () => {
+    writeFileSync(`${credPath}.console`, 'stale-cs-data-token', 'utf-8');
+
+    writeCredentials(makeCreds(24));
+
+    expect(existsSync(`${credPath}.console`)).toBe(false);
+  });
+
   it('writes via keychain when available and readback matches', () => {
     keychainState.available = true;
     const creds = makeCreds(24);

@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { theme } from '../ui/theme.js';
 
 // ── Commander internal property helpers — centralized for upgrade safety ──────
 
@@ -63,6 +64,19 @@ export function getLongDescription(cmd: Command): string {
 
 export function addExamples(cmd: Command, examples: string[]): void {
   (cmd as AnyCommand)._examples = examples;
+}
+
+/**
+ * Style a help section title identically to the built-in headings rendered by
+ * {@link formatHelp} in cli.ts.  Designed for use inside `addHelpText('after', …)`
+ * so that custom sections ("Agent automation:", "Team seat rules:", etc.) match
+ * the appearance of standard sections ("Arguments:", "Flags:", "Examples:").
+ *
+ * Commander decides whether the active output supports colors and strips ANSI
+ * when it does not, so this helper must consistently provide the styled form.
+ */
+export function styleHelpSectionTitle(text: string): string {
+  return theme.help.sectionTitle(text);
 }
 
 export function addCommandErrorSupplement(cmd: Command, supplement: CommandErrorSupplement): void {

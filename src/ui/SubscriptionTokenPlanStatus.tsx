@@ -3,6 +3,8 @@ import { Box, Text } from 'ink';
 import { Section } from './Section.js';
 import { renderWithInk } from './render.js';
 import { colors } from './theme.js';
+import { TokenPlanSeatDetails } from './TokenPlanSeatDetails.js';
+import { formatTextTable } from '../output/format.js';
 import type { TokenPlanStatusViewModel } from '../types/tokenplan-subscription.js';
 
 export interface SubscriptionTokenPlanStatusInkProps {
@@ -10,16 +12,19 @@ export interface SubscriptionTokenPlanStatusInkProps {
 }
 
 export function SubscriptionTokenPlanStatusInk({ vm }: SubscriptionTokenPlanStatusInkProps) {
-  const hasData = vm.header !== undefined || (vm.seatLines && vm.seatLines.length > 0);
+  const hasData =
+    (vm.editionSections?.length ?? 0) > 0 ||
+    vm.header !== undefined ||
+    (vm.seatLines?.length ?? 0) > 0;
 
   if (!hasData && vm.diagnostics.length > 0) {
     return (
       <Section title="Token Plan Subscription">
         <Box flexDirection="column" paddingLeft={2}>
           <Text color={colors.error}>Token Plan subscription data unavailable</Text>
-          {vm.diagnostics.map((d) => (
-            <Text key={d.api} color={colors.muted}>
-              · {d.api}: {d.errorCode} {d.errorMessage}
+          {vm.diagnostics.map((diagnostic, index) => (
+            <Text key={`${diagnostic.api}-${index}`} color={colors.muted}>
+              · {diagnostic.errorMessage}
             </Text>
           ))}
         </Box>
@@ -30,6 +35,17 @@ export function SubscriptionTokenPlanStatusInk({ vm }: SubscriptionTokenPlanStat
   return (
     <Section title="Token Plan Subscription" footer={vm.footnote ?? undefined}>
       <Box flexDirection="column" paddingLeft={2}>
+        {vm.editionSections?.map((section) => (
+          <Box key={section.edition} flexDirection="column" marginBottom={1}>
+            <Text bold>{section.title}</Text>
+            {section.fields.map((field) => (
+              <Text key={field.label}>
+                {field.label.padEnd(18)}
+                {field.value}
+              </Text>
+            ))}
+          </Box>
+        ))}
         {vm.header && (
           <>
             <Text>
@@ -53,37 +69,18 @@ export function SubscriptionTokenPlanStatusInk({ vm }: SubscriptionTokenPlanStat
         {vm.seatLines && vm.seatLines.length > 0 && (
           <>
             <Text> </Text>
-            <Text bold>Seat Summary</Text>
+            <Text bold>SEAT SUMMARY</Text>
+            <Text> </Text>
             <Text>
-              {'  '}
-              {'Type'.padEnd(12)}
-              {'Seats'.padEnd(10)}
-              {'Total'.padEnd(20)}
-              {'Surplus'.padEnd(20)}
-              {'Next Cycle'.padEnd(12)}
+              {formatTextTable(
+                ['SEAT TYPE', 'QUANTITY'],
+                vm.seatLines.map((row) => [row.specType, row.seats]),
+                0,
+              )}
             </Text>
-            {vm.seatLines.map((row) => (
-              <Text key={row.specType}>
-                {'  '}
-                {row.specType.padEnd(12)}
-                {row.seats.padEnd(10)}
-                {row.totalValue.padEnd(20)}
-                {row.surplusValue.padEnd(20)}
-                {row.nextCycleFlushTime.padEnd(12)}
-              </Text>
-            ))}
-            {vm.totalLine && (
-              <Text bold>
-                {'  '}
-                {vm.totalLine.specType.padEnd(12)}
-                {vm.totalLine.seats.padEnd(10)}
-                {vm.totalLine.totalValue.padEnd(20)}
-                {vm.totalLine.surplusValue.padEnd(20)}
-                {vm.totalLine.nextCycleFlushTime.padEnd(12)}
-              </Text>
-            )}
           </>
         )}
+        {vm.seatDetails && <TokenPlanSeatDetails details={vm.seatDetails} titleGap={1} />}
         {vm.warnings && vm.warnings.length > 0 && (
           <>
             <Text> </Text>

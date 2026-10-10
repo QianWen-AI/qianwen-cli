@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import React from 'react';
 import { Text, useApp } from 'ink';
 import { renderWithInk, renderInteractive } from '../../src/ui/render.js';
+import { createGuardedStdin } from '../../src/ui/interactive-stdin.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -366,6 +367,35 @@ describe('renderInteractive in Windows environments', () => {
     expect(joined).not.toContain('\x1b[?1049h');
     expect(joined).not.toContain('\x1b[?1049l');
     expect(joined).toContain('\x1b[2J\x1b[H');
+  });
+
+  it('keeps raw mode enabled until the active readable callback has returned', async () => {
+    const state = { raw: true };
+    const setRawMode = vi.fn((enabled: boolean) => {
+      state.raw = enabled;
+    });
+    const source = {
+      get isRaw() {
+        return state.raw;
+      },
+      setRawMode,
+    } as unknown as NodeJS.ReadStream;
+    const session = createGuardedStdin(source);
+
+    session.stdin.setRawMode(false);
+    expect(setRawMode).not.toHaveBeenCalled();
+    expect(state.raw).toBe(true);
+
+    session.stdin.setRawMode(true);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(setRawMode).toHaveBeenCalledTimes(1);
+    expect(setRawMode).toHaveBeenLastCalledWith(true);
+
+    session.stdin.setRawMode(false);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(setRawMode).toHaveBeenLastCalledWith(false);
+    expect(state.raw).toBe(false);
+    session.restore();
   });
 
   it('does not intercept Ink 2J/3J full-redraw frames on the Windows main screen', async () => {

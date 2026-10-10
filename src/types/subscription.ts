@@ -3,6 +3,8 @@
 // failure is recorded in a diagnostics[] entry so the JSON consumer
 // can reason about partial data.
 
+import type { TokenPlanEditionStatus } from './tokenplan-subscription.js';
+
 export type SubscriptionPlanKind = 'token';
 
 export interface SubscriptionPeriod {
@@ -18,10 +20,10 @@ export interface SubscriptionQuota {
 
 export interface SubscriptionSeatTier {
   specType: string;
-  seats: number;
-  totalCredits: number;
-  remainingCredits: number;
-  usedPct: number;
+  seats: number | null;
+  totalCredits: number | null;
+  remainingCredits: number | null;
+  usedPct: number | null;
   nextCycleFlushTime: string | null;
 }
 
@@ -41,6 +43,8 @@ export interface SubscriptionRecentOrder {
 }
 
 export interface SubscriptionStatus {
+  individual?: TokenPlanEditionStatus;
+  team?: TokenPlanEditionStatus;
   isGray: boolean | null;
   plan: string | null;
   period: SubscriptionPeriod | null;
@@ -62,6 +66,8 @@ export interface SubscriptionDiagnostic {
 export interface SubscriptionStatusResult {
   data: SubscriptionStatus | null;
   diagnostics: SubscriptionDiagnostic[];
+  /** Preserved failure category when no remote field could be confirmed. */
+  failureExitCode?: 1 | 2 | 3 | 4;
 }
 
 // ────────────────────────────────────────────────────────────────────

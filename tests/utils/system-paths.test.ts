@@ -62,13 +62,17 @@ describe('isSystemRootPath — darwin list (injected platform)', () => {
     },
   );
 
-  it('flags the realpath form of a listed symlinked entry (symlink normalization)', () => {
-    // On macOS this resolves /etc to /private/etc; elsewhere it stays /etc.
-    const realEtc = fs.realpathSync('/etc');
-    expect(isSystemRootPath(realEtc, darwin)).toBe(true);
-    const realVar = fs.realpathSync('/var');
-    expect(isSystemRootPath(realVar, darwin)).toBe(true);
-  });
+  it.skipIf(!fs.existsSync('/etc'))(
+    'flags the realpath form of a listed symlinked entry (symlink normalization)',
+    () => {
+      // On macOS this resolves /etc to /private/etc; on Linux it stays /etc.
+      // Windows has no /etc, so the realpath probe cannot run there.
+      const realEtc = fs.realpathSync('/etc');
+      expect(isSystemRootPath(realEtc, darwin)).toBe(true);
+      const realVar = fs.realpathSync('/var');
+      expect(isSystemRootPath(realVar, darwin)).toBe(true);
+    },
+  );
 });
 
 describe('isSystemRootPath — windows logic (injected platform)', () => {

@@ -110,6 +110,18 @@ describe('tabCompleter', () => {
       ['1d', '3d', '7d', '30d'],
       '',
     ]);
+    expect(tabCompleter('subscription tokenplan purchase token_plan_individual_e')).toEqual([
+      ['token_plan_individual_essential'],
+      'token_plan_individual_e',
+    ]);
+    expect(tabCompleter('subscription tokenplan purchase --pro-seat')).toEqual([
+      ['--pro-seat-count'],
+      '--pro-seat',
+    ]);
+    expect(tabCompleter('subscription tokenplan purchase --max-seat')).toEqual([
+      ['--max-seat-count'],
+      '--max-seat',
+    ]);
   });
 
   it('subcommand + space → suggests available flags', () => {
@@ -405,6 +417,37 @@ describe('getGhostSuffix', () => {
   it('returns the same ghost text for a full qianwen prefix and a bare command', () => {
     expect(getGhostSuffix('qianwen billing balance re')).toBe(getGhostSuffix('billing balance re'));
     expect(getGhostSuffix('qianwen billing balance recharge --channel ali')).toBe('pay');
+  });
+});
+
+describe('hidden agent options', () => {
+  it('omits Agent-only options from Token Plan purchase completion', () => {
+    const agentOptions = [
+      '--preview',
+      '--confirm',
+      '--coupon',
+      '--no-coupon',
+      '--preview-amount',
+      '--balance-deduction',
+    ];
+    for (const option of agentOptions) {
+      expect(COMMAND_FLAGS['subscription tokenplan purchase']).not.toContain(option);
+    }
+    const [completions] = tabCompleter('subscription tokenplan purchase --');
+    for (const option of agentOptions) expect(completions).not.toContain(option);
+  });
+});
+
+describe('Token Plan seat spec completion', () => {
+  it('offers standard, pro and max after --spec-type', () => {
+    expect(tabCompleter('subscription tokenplan seats --spec-type ')).toEqual([
+      ['standard', 'pro', 'max'],
+      '',
+    ]);
+  });
+
+  it('completes max from its prefix', () => {
+    expect(tabCompleter('subscription tokenplan seats --spec-type m')).toEqual([['max'], 'm']);
   });
 });
 

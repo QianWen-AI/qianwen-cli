@@ -9,6 +9,12 @@
 import chalk from 'chalk';
 import { site } from '../site.js';
 import { didYouMean } from '../utils/strings.js';
+import {
+  SUPPORTED_CHANNELS,
+  getChannelsForScope,
+  SCOPE_TOKENPLAN_PURCHASE,
+} from '../config/payment-channels.js';
+import { TOKEN_PLAN_PURCHASE_TYPES } from '../types/tokenplan-purchase.js';
 
 /**
  * Remove one optional CLI executable token from REPL input.
@@ -71,7 +77,7 @@ export const SUBCOMMANDS: Record<string, string[]> = {
   billing: ['limit', 'breakdown', 'summary', 'balance'],
   'billing balance': ['summary', 'recharge', 'recharge-history'],
   subscription: ['status', 'orders', 'tokenplan'],
-  'subscription tokenplan': ['status', 'seats'],
+  'subscription tokenplan': ['list', 'purchase', 'status', 'seats'],
   workspace: ['list', 'limit'],
   support: ['list', 'view', 'create', 'reply', 'close', 'rate'],
   docs: ['search', 'view'],
@@ -206,6 +212,17 @@ export const COMMAND_FLAGS: Record<string, string[]> = {
   'subscription status': ['--plan', '--format'],
   'subscription orders': ['--from', '--to', '--type', '--page', '--page-size', '--format'],
   'subscription tokenplan': [],
+  'subscription tokenplan list': ['--edition', '--billing-cycle', '--format'],
+  'subscription tokenplan purchase': [
+    '--billing-cycle',
+    '--channel',
+    '--standard-seat-count',
+    '--pro-seat-count',
+    '--max-seat-count',
+    '--auto-renew',
+    '--no-auto-renew',
+    '--format',
+  ],
   'subscription tokenplan status': ['--format'],
   'subscription tokenplan seats': ['--spec-type', '--page', '--page-size', '--format'],
   'account info': ['--format'],
@@ -304,10 +321,12 @@ export const FLAG_VALUES: Record<string, string[]> = {
   '--source': ['official', 'custom'],
   '--language': ['en', 'zh'],
   '--plan': ['token'],
-  '--spec-type': ['pro', 'standard'],
+  '--edition': ['all', 'individual', 'team'],
+  '--billing-cycle': ['monthly', 'quarterly', 'yearly'],
+  '--spec-type': ['standard', 'pro', 'max'],
   '--status': ['0', '2xx', '4xx', '5xx'],
   '--group-by': ['model', 'api-key'],
-  '--channel': ['alipay'],
+  '--channel': SUPPORTED_CHANNELS,
   '--range': ['1d', '3d', '7d', '30d'],
   '--enabled': ['true', 'false'],
   '--texture-quality': ['standard', 'detailed'],
@@ -319,6 +338,9 @@ export const COMMAND_FLAG_VALUES: Record<string, Record<string, string[]>> = {
   'billing breakdown': {
     '--group-by': ['model', 'api-key'],
     '--granularity': ['day', 'month'],
+  },
+  'subscription tokenplan purchase': {
+    '--channel': getChannelsForScope(SCOPE_TOKENPLAN_PURCHASE),
   },
   'usage logs': {
     '--period': ['today', 'yesterday', 'week'],
@@ -458,13 +480,20 @@ export function tabCompleter(line: string): [string[], string] {
 
     const flagKey3 = `${cmd} ${sub} ${subsub}`;
     const availableFlags3 = [...(COMMAND_FLAGS[flagKey3] ?? []), HELP_FLAG];
+    if (
+      flagKey3 === 'subscription tokenplan purchase' &&
+      tokens.length === 4 &&
+      !tokens[3].startsWith('-')
+    ) {
+      return [fuzzyFilter([...TOKEN_PLAN_PURCHASE_TYPES], tokens[3]), tokens[3]];
+    }
     const completedTokens3 = endsWithSpace ? tokens.slice(3) : tokens.slice(3, -1);
     const usedFlags3 = new Set(completedTokens3.filter((t) => t.startsWith('--')));
     const remainingFlags3 = availableFlags3.filter((f) => !usedFlags3.has(f));
 
     if (endsWithSpace) {
       const prevToken3 = tokens[tokens.length - 2];
-      const knownValues3 = FLAG_VALUES[prevToken3];
+      const knownValues3 = getFlagValues(flagKey3, prevToken3);
       if (knownValues3) return [knownValues3, ''];
       return [remainingFlags3, ''];
     }
@@ -472,7 +501,7 @@ export function tabCompleter(line: string): [string[], string] {
     const partial3 = tokens[tokens.length - 1];
     const prev3 = tokens.length >= 4 ? tokens[tokens.length - 2] : null;
     if (prev3) {
-      const knownValues3 = FLAG_VALUES[prev3];
+      const knownValues3 = getFlagValues(flagKey3, prev3);
       if (knownValues3) return [fuzzyFilter(knownValues3, partial3), partial3];
     }
     return [fuzzyFilter(remainingFlags3, partial3), partial3];
@@ -564,7 +593,7 @@ export function getGhostSuffix(line: string): string {
           const avail3 = [...(COMMAND_FLAGS[flagKey3] ?? []), HELP_FLAG];
           const prevToken3 = tokens[tokens.length - 2];
           partial = tokens[tokens.length - 1];
-          const knownValues3 = FLAG_VALUES[prevToken3];
+          const knownValues3 = getFlagValues(flagKey3, prevToken3);
           if (knownValues3) {
             candidates = knownValues3;
           } else {

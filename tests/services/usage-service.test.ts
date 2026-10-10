@@ -222,7 +222,11 @@ describe('UsageService.resolveTokenPlan — resetDate from NextCycleFlushTime', 
     const svc = buildServiceWithSeatMock({
       Data: {
         SubscriptionGroupList: [
-          { SpecType: 'standard', NextCycleFlushTime: ts, EquityList: [{ TotalValue: '100', SurplusValue: '50' }] },
+          {
+            SpecType: 'standard',
+            NextCycleFlushTime: ts,
+            EquityList: [{ TotalValue: '100', SurplusValue: '50' }],
+          },
         ],
       },
     } as GetSeatSubscriptionSummaryResponse);
@@ -235,7 +239,11 @@ describe('UsageService.resolveTokenPlan — resetDate from NextCycleFlushTime', 
     const svc = buildServiceWithSeatMock({
       Data: {
         SubscriptionGroupList: [
-          { SpecType: 'standard', NextCycleFlushTime: '2026-10-01T00:00:00Z', EquityList: [{ TotalValue: '100', SurplusValue: '50' }] },
+          {
+            SpecType: 'standard',
+            NextCycleFlushTime: '2026-10-01T00:00:00Z',
+            EquityList: [{ TotalValue: '100', SurplusValue: '50' }],
+          },
         ],
       },
     } as GetSeatSubscriptionSummaryResponse);

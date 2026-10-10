@@ -15,9 +15,15 @@ import {
   GatewayEnvelopeError,
   GatewayShapeError,
 } from '../../src/api/request-adapter.js';
-import type { BaseClient, RequestOptions } from '../../src/api/base-client.js';
+import {
+  HttpResponseError,
+  RequestTimeoutError,
+  type BaseClient,
+  type RequestOptions,
+} from '../../src/api/base-client.js';
 import type { RawApiEnvelope, GatewayEnvelope } from '../../src/types/api-envelope.js';
 import { redactPaymentData } from '../../src/utils/strings.js';
+import { API_TOKENPLAN_SOLO_QUOTA_CONFIG } from '../../src/types/api-routes.js';
 
 interface StubBaseClient extends BaseClient {
   calls: RequestOptions[];
@@ -123,6 +129,18 @@ describe('ApiClient.callFlatApi', () => {
     const body = JSON.parse(base.calls[0]?.body ?? '{}') as Record<string, unknown>;
     expect(body).not.toHaveProperty('signal');
     expect(body.params).toEqual({ Nbid: 'nbid-test', ChargeOrderId: 'order-test' });
+  });
+
+  it('passes onRequestStart to the transport without serializing it', async () => {
+    const base = makeStubBaseClient();
+    base.setResponse({ code: '200', data: {} });
+    const client = createApiClient({ baseClient: base });
+    const onRequestStart = vi.fn();
+
+    await client.callFlatApi({ product: 'BssOpenAPI-V3', action: 'MergePay', onRequestStart });
+
+    expect(base.calls[0]?.onRequestStart).toBe(onRequestStart);
+    expect(JSON.parse(base.calls[0]?.body ?? '{}')).not.toHaveProperty('onRequestStart');
   });
 
   it('throws GatewayEnvelopeError when the gateway returns a non-200 code', async () => {
@@ -284,5 +302,129 @@ describe('ApiClient.callEnvelopeApi', () => {
     await expect(client.callEnvelopeApi({ api: 'a.b', data: {} })).rejects.toBeInstanceOf(
       GatewayEnvelopeError,
     );
+  });
+});
+
+describe('ApiClient.callCsDataApi', () => {
+  function makeCsDataSuccessResponse(): RawApiEnvelope<unknown> {
+    return {
+      code: '200',
+      successResponse: true,
+      data: {
+        success: true,
+        errorCode: '',
+        DataV2: {
+          ret: ['SUCCESS::ok'],
+          data: {
+            code: 'SUCCESS',
+            success: true,
+            data: { lite: { weekly: 2500 } },
+          },
+        },
+      },
+    };
+  }
+
+  it('calls the public quota configuration without issuing or attaching credentials', async () => {
+    const base = makeStubBaseClient();
+    base.setResponse(makeCsDataSuccessResponse());
+    const client = createApiClient({ baseClient: base });
+
+    const result = await client.callCsDataApi({
+      api: API_TOKENPLAN_SOLO_QUOTA_CONFIG,
+      authMode: 'none',
+      parse: (business) => {
+        const envelope = business as { data: { lite: { weekly: number } } };
+        return envelope.data.lite.weekly;
+      },
+    });
+
+    expect(result).toBe(2500);
+    expect(base.calls).toHaveLength(1);
+    expect(base.calls[0]?.authMode).toBe('none');
+    expect(base.calls[0]?.headers).not.toHaveProperty('Authorization');
+    expect(new URL(base.calls[0]?.url ?? '').searchParams.get('api')).toBe(
+      API_TOKENPLAN_SOLO_QUOTA_CONFIG,
+    );
+  });
+
+  it('retries a cs-data request once after a transport failure', async () => {
+    const calls: RequestOptions[] = [];
+    let attempt = 0;
+    const response = makeCsDataSuccessResponse();
+    const base: BaseClient = {
+      request: vi.fn(async <T>(options: RequestOptions): Promise<T> => {
+        calls.push(options);
+        if (attempt++ === 0) throw new Error('Network request failed: fetch failed');
+        return response as T;
+      }),
+    };
+    const client = createApiClient({ baseClient: base });
+
+    const result = await client.callCsDataApi({
+      api: API_TOKENPLAN_SOLO_QUOTA_CONFIG,
+      authMode: 'none',
+      parse: (business) => business,
+    });
+
+    expect(result).toBeTruthy();
+    expect(calls).toHaveLength(2);
+  });
+
+  it('retries a cs-data request once after a transport timeout', async () => {
+    const calls: RequestOptions[] = [];
+    let attempt = 0;
+    const response = makeCsDataSuccessResponse();
+    const base: BaseClient = {
+      request: vi.fn(async <T>(options: RequestOptions): Promise<T> => {
+        calls.push(options);
+        if (attempt++ === 0) {
+          throw new RequestTimeoutError(1_000, 'https://cs-data.test.qianwenai.com');
+        }
+        return response as T;
+      }),
+    };
+    const client = createApiClient({ baseClient: base });
+
+    await expect(
+      client.callCsDataApi({
+        api: API_TOKENPLAN_SOLO_QUOTA_CONFIG,
+        authMode: 'none',
+        parse: (business) => business,
+      }),
+    ).resolves.toBeTruthy();
+    expect(calls).toHaveLength(2);
+  });
+
+  it('does not retry HTTP or cs-data business errors', async () => {
+    const httpBase = makeStubBaseClient();
+    httpBase.setError(new HttpResponseError(400, 'HTTP 400: Bad Request'));
+    const httpClient = createApiClient({ baseClient: httpBase });
+
+    await expect(
+      httpClient.callCsDataApi({
+        api: API_TOKENPLAN_SOLO_QUOTA_CONFIG,
+        authMode: 'none',
+        parse: (business) => business,
+      }),
+    ).rejects.toBeInstanceOf(HttpResponseError);
+    expect(httpBase.calls).toHaveLength(1);
+
+    const businessBase = makeStubBaseClient();
+    businessBase.setResponse({
+      code: '200',
+      successResponse: true,
+      data: { success: false, errorCode: 'InvalidParameter' },
+    });
+    const businessClient = createApiClient({ baseClient: businessBase });
+
+    await expect(
+      businessClient.callCsDataApi({
+        api: API_TOKENPLAN_SOLO_QUOTA_CONFIG,
+        authMode: 'none',
+        parse: (business) => business,
+      }),
+    ).rejects.toBeInstanceOf(GatewayShapeError);
+    expect(businessBase.calls).toHaveLength(1);
   });
 });

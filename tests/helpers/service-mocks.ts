@@ -2,7 +2,7 @@
  * Shared mock factories for Service-layer tests.
  *
  * The Service layer consumes two abstractions exclusively:
- *   - ApiClient ({ callFlatApi, callEnvelopeApi })
+ *   - ApiClient ({ callFlatApi, callEnvelopeApi, callOrchestrationApi })
  *   - CachedFetcher ({ getOrFetch, invalidate })
  *
  * Each mock is a minimal stub that lets a test override only the surfaces
@@ -13,16 +13,20 @@ import type {
   ApiClient,
   CallEnvelopeApiOptions,
   CallFlatApiOptions,
+  CallOrchestrationApiOptions,
+  CallCsDataApiOptions,
 } from '../../src/api/api-client.js';
 import type { CachedFetcher, CacheKey } from '../../src/types/cache.js';
 
 export interface MockApiClient extends ApiClient {
   callFlatApi: Mock;
   callEnvelopeApi: Mock;
+  callOrchestrationApi: Mock;
+  callCsDataApi: Mock;
 }
 
 /**
- * Build a fully-typed ApiClient mock. Both methods default to throwing so
+ * Build a fully-typed ApiClient mock. All methods default to throwing so
  * callers must wire up the responses they care about; this prevents silent
  * "undefined response" passes when a Service evolves and starts hitting
  * a new endpoint.
@@ -30,6 +34,8 @@ export interface MockApiClient extends ApiClient {
 export function makeMockApiClient(overrides?: {
   flat?: (opts: CallFlatApiOptions) => Promise<unknown>;
   envelope?: (opts: CallEnvelopeApiOptions) => Promise<unknown>;
+  orchestration?: (opts: CallOrchestrationApiOptions<unknown>) => Promise<unknown>;
+  csData?: (opts: CallCsDataApiOptions<unknown>) => Promise<unknown>;
 }): MockApiClient {
   const flatHandler =
     overrides?.flat ??
@@ -60,7 +66,17 @@ export function makeMockApiClient(overrides?: {
     },
   );
   const callEnvelopeApi = vi.fn((opts: CallEnvelopeApiOptions) => envelopeHandler(opts));
-  return { callFlatApi, callEnvelopeApi } as MockApiClient;
+  const callOrchestrationApi = vi.fn((opts: CallOrchestrationApiOptions<unknown>) => {
+    if (overrides?.orchestration) return overrides.orchestration(opts);
+    return Promise.reject(
+      new Error(`MockApiClient.callOrchestrationApi unhandled: ${opts.action}`),
+    );
+  });
+  const callCsDataApi = vi.fn((opts: CallCsDataApiOptions<unknown>) => {
+    if (overrides?.csData) return overrides.csData(opts);
+    return Promise.reject(new Error(`MockApiClient.callCsDataApi unhandled: ${opts.api}`));
+  });
+  return { callFlatApi, callEnvelopeApi, callOrchestrationApi, callCsDataApi } as MockApiClient;
 }
 
 export interface MockCachedFetcher extends CachedFetcher {

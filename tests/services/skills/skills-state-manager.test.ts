@@ -26,6 +26,7 @@ import {
 } from '../../../src/services/skills-state-manager.js';
 import { site } from '../../../src/site.js';
 import type { SkillMetadataV1 } from '../../../src/types/skills.js';
+import { canCreateSymlinks } from '../../helpers/symlink-capability.js';
 
 function validMeta(overrides: Partial<SkillMetadataV1> = {}): SkillMetadataV1 {
   return {
@@ -72,11 +73,16 @@ describe('assessSkillDir — tri-state classification', () => {
     expect(assessSkillDir(target)).toEqual({ kind: 'unmanaged', reason: 'missing-metadata' });
   });
 
-  it('returns unmanaged/missing-metadata for a symlink occupant', () => {
-    mkdirSync(path.join(root, 'real'));
-    symlinkSync(path.join(root, 'real'), target);
-    expect(assessSkillDir(target)).toEqual({ kind: 'unmanaged', reason: 'missing-metadata' });
-  });
+  // Symlink creation needs SeCreateSymbolicLinkPrivilege / Developer Mode on
+  // Windows; skip where the scenario cannot be set up at all.
+  it.skipIf(!canCreateSymlinks())(
+    'returns unmanaged/missing-metadata for a symlink occupant',
+    () => {
+      mkdirSync(path.join(root, 'real'));
+      symlinkSync(path.join(root, 'real'), target);
+      expect(assessSkillDir(target)).toEqual({ kind: 'unmanaged', reason: 'missing-metadata' });
+    },
+  );
 
   it('returns unmanaged/missing-metadata for a directory without the meta file', () => {
     mkdirSync(target);

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { existsSync, mkdtempSync, rmSync, statSync } from 'fs';
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { preflightOutPath } from '../../src/utils/out-path.js';
@@ -29,9 +29,16 @@ describe('preflightOutPath', () => {
   });
 
   it('throws IO_ERROR when the parent directory cannot be created', () => {
+    const base = mkdtempSync(join(tmpdir(), 'out-'));
+    created.push(base);
+    // A regular file occupying an ancestor segment makes mkdir fail on every
+    // platform; a drive-root path like '/x/y' is creatable on Windows, so it
+    // cannot stand in for an uncreatable parent there.
+    const blocker = join(base, 'blocked');
+    writeFileSync(blocker, 'x');
     let err: unknown;
     try {
-      preflightOutPath('/dfdfef/fef/cat.png');
+      preflightOutPath(join(blocker, 'sub', 'cat.png'));
     } catch (e) {
       err = e;
     }

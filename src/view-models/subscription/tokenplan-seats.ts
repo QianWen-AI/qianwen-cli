@@ -7,7 +7,7 @@ import type {
   TokenPlanSeatsRow,
   TokenPlanSeatsViewModel,
 } from '../../types/tokenplan-subscription.js';
-import { NA, PARTIAL_FAILURE_NOTE_TEMPLATE } from './shared.js';
+import { formatDiagnosticMessage, NA, PARTIAL_FAILURE_NOTE_TEMPLATE } from './shared.js';
 
 const SEAT_STATUS_GROUP: Record<string, string> = {
   CREATING: 'active',
@@ -40,7 +40,9 @@ export function buildTokenPlanSeatsViewModel(
     diagnostics.length > 0 ? PARTIAL_FAILURE_NOTE_TEMPLATE(diagnostics.length) : null;
 
   const warnings =
-    diagnostics.length > 0 ? diagnostics.map((d) => `⚠ ${d.api}: ${d.errorMessage}`) : undefined;
+    diagnostics.length > 0
+      ? diagnostics.map((diagnostic) => `⚠ ${formatDiagnosticMessage(diagnostic)}`)
+      : undefined;
 
   const items: TokenPlanSeatItem[] =
     format === 'json' ? result.items : result.items.map((it) => ({ ...it }));

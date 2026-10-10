@@ -3,12 +3,22 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from 'ink-testing-library';
 import stripAnsi from 'strip-ansi';
 import { InteractiveDocsSearch } from '../../src/ui/InteractiveDocsSearch.js';
+import { AltScreenContext } from '../../src/ui/render.js';
 import { visibleWidth } from '../../src/ui/textWrap.js';
 import type {
   DocsSearchViewModel,
   DocsSearchItemViewModel,
   DocContentViewModel,
 } from '../../src/view-models/docs/index.js';
+
+type InputHandler = Parameters<typeof import('ink').useInput>[0];
+let inputHandler: InputHandler | undefined;
+vi.mock('ink', async () => ({
+  ...(await vi.importActual<typeof import('ink')>('ink')),
+  useInput: (handler: InputHandler) => {
+    inputHandler = handler;
+  },
+}));
 
 function makeItem(overrides: Partial<DocsSearchItemViewModel> = {}): DocsSearchItemViewModel {
   return {
@@ -53,6 +63,7 @@ function setTermSize(columns: number, rows: number): void {
 }
 
 beforeEach(() => {
+  inputHandler = undefined;
   setTermSize(120, 40);
 });
 
@@ -403,5 +414,82 @@ describe('InteractiveDocsSearch — narrow terminal width guard', () => {
     }
     expect(out).not.toContain('<em>');
     expect(out).not.toContain('</em>');
+  });
+});
+
+describe('InteractiveDocsSearch viewport height', () => {
+  const items = Array.from({ length: 5 }, (_, index) =>
+    makeItem({
+      index: index + 1,
+      title: `Document ${index + 1}`,
+      highlightedTitle: `Document ${index + 1}`,
+      subBizType: '',
+      url: `https://docs.test.qianwenai.com/${index + 1}`,
+    }),
+  );
+  const vm = makeVm({ items, totalCount: 5 });
+  const element = (fetchContent = vi.fn<(url: string) => Promise<DocContentViewModel>>()) => (
+    <AltScreenContext.Provider value={true}>
+      <InteractiveDocsSearch initialVm={vm} loadPage={async () => vm} fetchContent={fetchContent} />
+    </AltScreenContext.Provider>
+  );
+  const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 20));
+  const pressDown = () => inputHandler?.('', { downArrow: true } as import('ink').Key);
+
+  it.each([5, 8, 12])('keeps the selected result and footer inside a %i-row screen', (rows) => {
+    setTermSize(40, rows);
+    const out = frame(element());
+    expect(out).toContain('Document 1');
+    expect(out).toContain('Page 1/1');
+    expect(out.split('\n').length).toBeLessThanOrEqual(rows - 1);
+    for (const line of out.split('\n')) expect(visibleWidth(line)).toBeLessThanOrEqual(40);
+  });
+
+  it('scrolls to the last selected result and opens its URL', async () => {
+    setTermSize(40, 12);
+    const fetchContent = vi.fn<(url: string) => Promise<DocContentViewModel>>(
+      () => new Promise(() => {}),
+    );
+    const inst = render(element(fetchContent));
+    try {
+      await flush();
+      for (let i = 0; i < 4; i++) {
+        pressDown();
+        await flush();
+      }
+      const out = stripAnsi(inst.lastFrame() ?? '');
+      expect(out).toContain('Document 5');
+      expect(out).not.toContain('Document 1');
+      expect(out.split('\n').length).toBeLessThanOrEqual(11);
+      inputHandler?.('', { return: true } as import('ink').Key);
+      await flush();
+      expect(fetchContent).toHaveBeenCalledWith(items[4]!.url);
+    } finally {
+      inst.unmount();
+    }
+  });
+
+  it('keeps selection visible while shrinking and restores the full list when expanded', async () => {
+    const inst = render(element());
+    try {
+      await flush();
+      for (let i = 0; i < 4; i++) {
+        pressDown();
+        await flush();
+      }
+      setTermSize(40, 12);
+      process.stdout.emit('resize');
+      await flush();
+      const narrow = stripAnsi(inst.lastFrame() ?? '');
+      expect(narrow).toContain('Document 5');
+      expect(narrow.split('\n').length).toBeLessThanOrEqual(11);
+      setTermSize(120, 40);
+      process.stdout.emit('resize');
+      await flush();
+      const wide = stripAnsi(inst.lastFrame() ?? '');
+      for (const item of items) expect(wide).toContain(item.title);
+    } finally {
+      inst.unmount();
+    }
   });
 });

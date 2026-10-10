@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { readZipEntries, extractZipTo, ZipReadError, crc32 } from '../../src/utils/zip-reader.js';
 import { buildZip } from '../fixtures/zip-builder.js';
+import { canCreateSymlinks } from '../helpers/symlink-capability.js';
 
 describe('readZipEntries — parsing happy paths', () => {
   it('parses store and deflate entries with sizes/CRC from the Central Directory', () => {
@@ -235,15 +236,20 @@ describe('extractZipTo — extraction behaviour', () => {
     expect(existsSync(path.join(root, 'evil.txt'))).toBe(false);
   });
 
-  it('blocks writes through a pre-existing symlinked directory (realpath probe)', () => {
-    const outside = path.join(root, 'outside');
-    mkdirSync(outside);
-    symlinkSync(outside, path.join(dest, 'link'));
-    const zip = buildZip([{ path: 'link/evil.txt', data: 'escape' }]);
+  // Symlink creation needs SeCreateSymbolicLinkPrivilege / Developer Mode on
+  // Windows; skip where the scenario cannot be set up at all.
+  it.skipIf(!canCreateSymlinks())(
+    'blocks writes through a pre-existing symlinked directory (realpath probe)',
+    () => {
+      const outside = path.join(root, 'outside');
+      mkdirSync(outside);
+      symlinkSync(outside, path.join(dest, 'link'));
+      const zip = buildZip([{ path: 'link/evil.txt', data: 'escape' }]);
 
-    expect(() => extractZipTo(zip, dest)).toThrow(/escapes the extraction root/);
-    expect(existsSync(path.join(outside, 'evil.txt'))).toBe(false);
-  });
+      expect(() => extractZipTo(zip, dest)).toThrow(/escapes the extraction root/);
+      expect(existsSync(path.join(outside, 'evil.txt'))).toBe(false);
+    },
+  );
 
   it('fails on a CRC mismatch against the Central Directory', () => {
     const zip = buildZip([{ path: 'bad-crc.txt', data: 'payload', crcOverride: 0xdeadbeef }]);
@@ -270,16 +276,19 @@ describe('extractZipTo — extraction behaviour', () => {
     expect(() => extractZipTo(zip, dest)).toThrow(/inflates beyond its declared size/);
   });
 
-  it('refuses to write through a pre-existing symlink even when it stays inside the root', () => {
-    // A symlink resolving inside the destination passes the realpath probe;
-    // the write layer itself must still refuse to follow it.
-    writeFileSync(path.join(dest, 'inside.txt'), 'original');
-    symlinkSync(path.join(dest, 'inside.txt'), path.join(dest, 'link.txt'));
-    const zip = buildZip([{ path: 'link.txt', data: 'overwrite attempt' }]);
+  it.skipIf(!canCreateSymlinks())(
+    'refuses to write through a pre-existing symlink even when it stays inside the root',
+    () => {
+      // A symlink resolving inside the destination passes the realpath probe;
+      // the write layer itself must still refuse to follow it.
+      writeFileSync(path.join(dest, 'inside.txt'), 'original');
+      symlinkSync(path.join(dest, 'inside.txt'), path.join(dest, 'link.txt'));
+      const zip = buildZip([{ path: 'link.txt', data: 'overwrite attempt' }]);
 
-    expect(() => extractZipTo(zip, dest)).toThrow(/Refusing to write through a symlink/);
-    expect(readFileSync(path.join(dest, 'inside.txt'), 'utf8')).toBe('original');
-  });
+      expect(() => extractZipTo(zip, dest)).toThrow(/Refusing to write through a symlink/);
+      expect(readFileSync(path.join(dest, 'inside.txt'), 'utf8')).toBe('original');
+    },
+  );
 
   it('reports a duplicate-path error when the target file already exists', () => {
     writeFileSync(path.join(dest, 'exists.txt'), 'already here');

@@ -54,7 +54,7 @@ import {
   subtractAmountStrings,
   toDecimalString,
 } from '../utils/amount.js';
-import { formatShanghaiDateTime, normalizeToFullDate } from '../utils/date.js';
+import { formatAsiaShanghaiDate, normalizeToFullDate } from '../utils/date.js';
 import { PAYMENT_URL_HOSTS, redactPaymentData, validatePaymentUrl } from '../utils/strings.js';
 import { classifyRechargeStatus } from '../utils/recharge-status.js';
 import { addDiagnostic as writeDiagnostic } from '../api/debug-buffer.js';
@@ -946,8 +946,8 @@ export class BillingService {
       throw markRechargeApiFailure(error, 'fund-flow');
     }
     return {
-      startTime: formatShanghaiDateTime(options.startTime),
-      endTime: formatShanghaiDateTime(options.endTime),
+      startTime: formatAsiaShanghaiDate(options.startTime, 'iso'),
+      endTime: formatAsiaShanghaiDate(options.endTime, 'iso'),
       page,
       pageSize,
       totalCount: record.TotalCount,

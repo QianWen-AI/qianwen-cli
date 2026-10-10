@@ -851,69 +851,77 @@ describe('skills install — --dir preflight validation', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('rejects with exit 1 when --dir exists but is not writable (json structured, install service not called)', async () => {
-    const calls: Array<Record<string, unknown>> = [];
-    stubInstall(sample, calls);
-    const readonlyDir = path.join(workDir, 'readonly');
-    mkdirSync(readonlyDir, { recursive: true });
-    chmodSync(readonlyDir, 0o555);
-    try {
-      const r = await runCommand(build, [
-        'skills',
-        'install',
-        'pdf-extractor',
-        '--dir',
-        readonlyDir,
-        '--format',
-        'json',
-      ]);
-      expect(r.exitCode).toBe(1);
-      expect(JSON.parse(r.stderr)).toEqual({
-        error: {
-          code: 'INSTALL_DIR_NOT_WRITABLE',
-          message:
-            `Installation failed: no permission to write to the target directory: ${readonlyDir}. ` +
-            'Please provide an existing writable directory or update its permissions, then rerun the command.',
-          exit_code: 1,
-        },
-      });
-      expect(r.stdout).toBe('');
-      expect(calls).toHaveLength(0);
-    } finally {
-      // Restore write permission so afterEach can clean up the temp tree.
-      chmodSync(readonlyDir, 0o755);
-    }
-  });
+  // chmod 0o555 does not revoke write access under Windows ACL semantics,
+  // so the read-only premise cannot be established there; POSIX-only scenario.
+  it.skipIf(process.platform === 'win32')(
+    'rejects with exit 1 when --dir exists but is not writable (json structured, install service not called)',
+    async () => {
+      const calls: Array<Record<string, unknown>> = [];
+      stubInstall(sample, calls);
+      const readonlyDir = path.join(workDir, 'readonly');
+      mkdirSync(readonlyDir, { recursive: true });
+      chmodSync(readonlyDir, 0o555);
+      try {
+        const r = await runCommand(build, [
+          'skills',
+          'install',
+          'pdf-extractor',
+          '--dir',
+          readonlyDir,
+          '--format',
+          'json',
+        ]);
+        expect(r.exitCode).toBe(1);
+        expect(JSON.parse(r.stderr)).toEqual({
+          error: {
+            code: 'INSTALL_DIR_NOT_WRITABLE',
+            message:
+              `Installation failed: no permission to write to the target directory: ${readonlyDir}. ` +
+              'Please provide an existing writable directory or update its permissions, then rerun the command.',
+            exit_code: 1,
+          },
+        });
+        expect(r.stdout).toBe('');
+        expect(calls).toHaveLength(0);
+      } finally {
+        // Restore write permission so afterEach can clean up the temp tree.
+        chmodSync(readonlyDir, 0o755);
+      }
+    },
+  );
 
-  it('text mode outputs plain-text error when --dir exists but is not writable (exit 1)', async () => {
-    const calls: Array<Record<string, unknown>> = [];
-    stubInstall(sample, calls);
-    const readonlyDir = path.join(workDir, 'readonly');
-    mkdirSync(readonlyDir, { recursive: true });
-    chmodSync(readonlyDir, 0o555);
-    try {
-      const r = await runCapturingExitCode([
-        'skills',
-        'install',
-        'pdf-extractor',
-        '--dir',
-        readonlyDir,
-        '--format',
-        'text',
-      ]);
-      expect(r.finalExit).toBe(1);
-      expect(r.stderr).toBe(
-        `\u2717 Installation failed: no permission to write to the target directory: ${readonlyDir}.\n\n` +
-          'Please provide an existing writable directory or update its permissions, then rerun the command.\n',
-      );
-      expect(r.stderr).not.toContain('\u001b[');
-      expect(r.stdout).toBe('');
-      expect(calls).toHaveLength(0);
-    } finally {
-      // Restore write permission so afterEach can clean up the temp tree.
-      chmodSync(readonlyDir, 0o755);
-    }
-  });
+  it.skipIf(process.platform === 'win32')(
+    'text mode outputs plain-text error when --dir exists but is not writable (exit 1)',
+    async () => {
+      const calls: Array<Record<string, unknown>> = [];
+      stubInstall(sample, calls);
+      const readonlyDir = path.join(workDir, 'readonly');
+      mkdirSync(readonlyDir, { recursive: true });
+      chmodSync(readonlyDir, 0o555);
+      try {
+        const r = await runCapturingExitCode([
+          'skills',
+          'install',
+          'pdf-extractor',
+          '--dir',
+          readonlyDir,
+          '--format',
+          'text',
+        ]);
+        expect(r.finalExit).toBe(1);
+        expect(r.stderr).toBe(
+          `\u2717 Installation failed: no permission to write to the target directory: ${readonlyDir}.\n\n` +
+            'Please provide an existing writable directory or update its permissions, then rerun the command.\n',
+        );
+        expect(r.stderr).not.toContain('\u001b[');
+        expect(r.stdout).toBe('');
+        expect(calls).toHaveLength(0);
+      } finally {
+        // Restore write permission so afterEach can clean up the temp tree.
+        chmodSync(readonlyDir, 0o755);
+      }
+    },
+  );
 
   it('rejects with ROOT_DIR_NOT_ALLOWED when --dir is filesystem root (json, exit 1)', async () => {
     const calls: Array<Record<string, unknown>> = [];

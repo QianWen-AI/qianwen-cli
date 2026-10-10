@@ -6,6 +6,7 @@ import {
   AUTH_OPTIONAL_PRODUCTS,
   API_PRODUCT_GATEWAY,
   API_ACTION_GATEWAY,
+  API_VERSION_GATEWAY,
 } from '../types/api-routes.js';
 import { site } from '../site.js';
 
@@ -19,6 +20,8 @@ export type { RouteType } from '../types/api-routes.js';
 export interface AdapterOptions {
   product: string;
   action: string;
+  /** Type A only; place the version at the request root and omit it when undefined. */
+  version?: string;
   params?: Record<string, unknown>;
   /** Type B only — overrides default envelope Api field */
   gatewayApi?: string;
@@ -112,10 +115,12 @@ export function flattenParams(params: Record<string, unknown>): Record<string, s
 // ────────────────────────────────────────────────────────────────────
 
 declare const __NODE_ENV__: string;
-const GATEWAY_URL = `${(typeof __NODE_ENV__ === 'undefined' || __NODE_ENV__ !== 'production'
-  ? process.env.QIANWEN_API_ENDPOINT || site.apiEndpoint
-  : site.apiEndpoint
-).replace(/\/+$/, '')}/data/v2/api.json`;
+export const API_ENDPOINT = (
+  typeof __NODE_ENV__ === 'undefined' || __NODE_ENV__ !== 'production'
+    ? process.env.QIANWEN_API_ENDPOINT || site.apiEndpoint
+    : site.apiEndpoint
+).replace(/\/+$/, '');
+const GATEWAY_URL = `${API_ENDPOINT}/data/v2/api.json`;
 const DEFAULT_REGION = 'cn-beijing';
 
 function resolveAuthMode(opts: AdapterOptions): 'required' | 'optional' {
@@ -135,7 +140,7 @@ export function buildRequest(routeType: RouteType, opts: AdapterOptions): Adapte
     const innerParams: Record<string, string> = {
       Api: opts.gatewayApi ?? opts.action,
       Data: JSON.stringify(opts.gatewayData ?? {}),
-      V: '1.0',
+      V: API_VERSION_GATEWAY,
     };
     if (opts.cornerstoneParam) {
       innerParams.cornerstoneParam = JSON.stringify(opts.cornerstoneParam);
@@ -155,6 +160,9 @@ export function buildRequest(routeType: RouteType, opts: AdapterOptions): Adapte
       region: DEFAULT_REGION,
       params: flattened,
     };
+    if (typeof opts.version === 'string' && opts.version.trim()) {
+      bodyObj.version = opts.version;
+    }
   }
 
   return {

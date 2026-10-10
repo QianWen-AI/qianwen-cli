@@ -20,6 +20,7 @@ import { ensureAuthenticated } from '../../../auth/credentials.js';
 import { withSpinner } from '../../../ui/spinner.js';
 import { HandledError, handleError, invalidArgError } from '../../../utils/errors.js';
 import { EXIT_CODES } from '../../../utils/exit-codes.js';
+import { registerCommandInterrupt } from '../../../utils/command-interrupt.js';
 import { parseRechargeAmount } from '../../../utils/amount.js';
 import { addCommandErrorSupplement } from '../../../utils/commander-helpers.js';
 import {
@@ -116,6 +117,7 @@ async function renderPaymentAndAwaitResult(
   const cancel = () => controller.abort(new DOMException('Interrupted', 'AbortError'));
   // Only reachable outside a TTY, where no readline is intercepting the signal.
   process.on('SIGINT', cancel);
+  const unregisterInterrupt = registerCommandInterrupt(cancel);
   const interactive = process.stdin.isTTY === true;
   try {
     const resultPromise = createServices()
@@ -171,6 +173,7 @@ async function renderPaymentAndAwaitResult(
           altScreen: false,
           trailingNewline: true,
           protectStaticContent: true,
+          inputMode: 'flowing',
         });
       } else {
         await renderWithInk(element, { waitUntil: resultPromise });
@@ -211,6 +214,7 @@ async function renderPaymentAndAwaitResult(
     if (!controller.signal.aborted) {
       controller.abort(new DOMException('Recharge result rendering stopped', 'AbortError'));
     }
+    unregisterInterrupt();
     process.off('SIGINT', cancel);
   }
 }
