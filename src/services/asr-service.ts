@@ -1,4 +1,4 @@
-/** Orchestrates tiers 0/1/2/3 into a native async transcription body and drives the ASR client. */
+/** Builds native ASR requests and drives transcription. */
 
 import { CliError } from '../utils/errors.js';
 import { EXIT_CODES } from '../utils/exit-codes.js';
@@ -24,9 +24,19 @@ export const DEFAULT_ASR_TIMEOUT_MS = 5 * 60 * 1000;
 export const DEFAULT_ASR_POLL_INTERVAL_MS = 2000;
 export const DEFAULT_ASR_MODEL = 'qwen-audio-3.0-asr-flash';
 
-/** Qwen-family ASR (qwen-audio / qwen3-asr) is a synchronous multimodal-generation model. */
-function isQwenFamily(model: string): boolean {
-  return model.trim().toLowerCase().startsWith('qwen');
+type ASRProtocol = 'multimodal-sync' | 'transcription-async';
+
+const ASR_PROTOCOL_OVERRIDES: Record<string, ASRProtocol> = {
+  'qwen-audio-3.0-asr-flash-filetrans': 'transcription-async',
+  'qwen-audio-3.1-asr-flash-filetrans': 'transcription-async',
+};
+
+function resolveASRProtocol(model: string): ASRProtocol {
+  const id = model.trim().toLowerCase();
+  return (
+    ASR_PROTOCOL_OVERRIDES[id] ??
+    (id.startsWith('qwen') ? 'multimodal-sync' : 'transcription-async')
+  );
 }
 
 const SUPPORTED_AUDIO_FORMATS = new Set([
@@ -49,7 +59,7 @@ const SUPPORTED_AUDIO_FORMATS = new Set([
   'wmv',
 ]);
 
-/** Qwen ASR requires an explicit audio `format`; infer it from the source extension. */
+/** Synchronous ASR requires an explicit audio `format`; infer it from the source extension. */
 function inferAudioFormat(source: string): string {
   const withoutQuery = source.split('?')[0] ?? '';
   const segment = withoutQuery.split('/').pop() ?? '';
@@ -150,12 +160,12 @@ export class ASRService {
     };
   }
 
-  private layer2Assignments(input: AudioTranscribeInput, qwen: boolean): Layer2Assignment[] {
+  private layer2Assignments(input: AudioTranscribeInput, sync: boolean): Layer2Assignment[] {
     const assignments: Layer2Assignment[] = [];
     if (input.language !== undefined) {
       assignments.push({
         flag: '--language',
-        paths: [qwen ? 'parameters.asr_options.language' : 'parameters.language_hints'],
+        paths: [sync ? 'parameters.asr_options.language' : 'parameters.language_hints'],
       });
     }
     return assignments;
@@ -179,6 +189,16 @@ export class ASRService {
       body = { ...parsed.body };
     }
 
+    if (
+      !hasSource &&
+      typeof body.model === 'string' &&
+      typeof input.model === 'string' &&
+      resolveASRProtocol(body.model) !== resolveASRProtocol(input.model)
+    ) {
+      throw invalidArg(
+        'Cannot override an ASR --request model with a different protocol. Provide a --request body for the target model, or use an audio source without --request.',
+      );
+    }
     body = this.deps.conflictDetector.applyModelOverride(body, input.model);
 
     const requestHasInput = Object.prototype.hasOwnProperty.call(body, 'input');
@@ -201,13 +221,13 @@ export class ASRService {
     this.lastDeprecationNotice =
       (await this.deps.deprecationGuard?.notifyIfDeprecated(model)) ?? null;
 
-    const qwen = isQwenFamily(model);
+    const sync = resolveASRProtocol(model) === 'multimodal-sync';
 
-    this.deps.conflictDetector.assertNoConflict(this.layer2Assignments(input, qwen), body);
+    this.deps.conflictDetector.assertNoConflict(this.layer2Assignments(input, sync), body);
 
     let extraHeaders: Record<string, string> | undefined;
     if (hasSource) {
-      const built = await this.buildInput(input, model, qwen);
+      const built = await this.buildInput(input, model, sync);
       body.input = built.input;
       extraHeaders = built.extraHeaders;
     }
@@ -217,7 +237,7 @@ export class ASRService {
         body.parameters && typeof body.parameters === 'object'
           ? (body.parameters as Record<string, unknown>)
           : {};
-      if (qwen) {
+      if (sync) {
         const asrOptions =
           parameters.asr_options && typeof parameters.asr_options === 'object'
             ? (parameters.asr_options as Record<string, unknown>)
@@ -234,7 +254,7 @@ export class ASRService {
       body.parameters = {};
     }
 
-    if (qwen) {
+    if (sync) {
       const parameters = body.parameters as Record<string, unknown>;
       if (!Object.prototype.hasOwnProperty.call(parameters, 'format')) {
         const audioSource = hasSource
@@ -252,7 +272,7 @@ export class ASRService {
   private async buildInput(
     input: AudioTranscribeInput,
     model: string,
-    qwen: boolean,
+    sync: boolean,
   ): Promise<{ input: Record<string, unknown>; extraHeaders?: Record<string, string> }> {
     const entry = this.deps.registry.lookup(this.mappingKey(model));
     const filePolicy = entry?.filePolicy ?? DEFAULT_AUDIO_FILE_POLICY;
@@ -262,7 +282,7 @@ export class ASRService {
       { site: ctx.site, account: ctx.account, model },
       filePolicy,
     );
-    const built = qwen
+    const built = sync
       ? { messages: [{ role: 'user', content: [{ audio: asset.url }] }] }
       : { file_urls: [asset.url] };
     return {
@@ -274,7 +294,7 @@ export class ASRService {
   async generate(input: AudioTranscribeInput): Promise<AudioTranscribeOutcome> {
     const { model, body, extraHeaders } = await this.buildRequest(input);
 
-    if (isQwenFamily(model)) {
+    if (resolveASRProtocol(model) === 'multimodal-sync') {
       return this.generateSync(model, body, extraHeaders);
     }
 

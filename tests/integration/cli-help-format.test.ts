@@ -7,10 +7,29 @@
  * into the description column. The assertions measure visible width, so they
  * stay valid whether or not styling escapes are present.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createProgram } from '../../src/cli.js';
 import { stripAnsi, visibleWidth } from '../../src/ui/textWrap.js';
 import { runCommand } from './helpers.js';
+
+const configPaths = vi.hoisted(() => ({ root: '' }));
+
+vi.mock('../../src/config/paths.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/config/paths.js')>()),
+  getConfigDir: () => configPaths.root,
+  getGlobalConfigPath: () => join(configPaths.root, 'config.json'),
+  getLocalConfigPath: () => join(configPaths.root, '.qianwen.json'),
+  getMigrationStatePath: () => join(configPaths.root, '.migrated-projects'),
+  getPluginsDir: () => join(configPaths.root, 'plugins'),
+  getPluginsManifestPath: () => join(configPaths.root, 'plugins.json'),
+  getCredentialsPath: () => join(configPaths.root, 'credentials.json'),
+  getCacheDir: () => join(configPaths.root, 'cache'),
+  getCacheFilePath: (fileName: string) => join(configPaths.root, 'cache', fileName),
+  getDeviceFlowPendingPath: () => join(configPaths.root, 'device-flow-pending.json'),
+}));
 
 const MAX_HELP_WIDTH = 80;
 const HELP_RIGHT_MARGIN = 1;
@@ -29,6 +48,7 @@ function setTerminalColumns(columns: number): void {
 }
 
 beforeEach(() => {
+  configPaths.root = mkdtempSync(join(tmpdir(), 'qianwen-help-format-'));
   columnsDescriptor = Object.getOwnPropertyDescriptor(process.stdout, 'columns');
   isTTYDescriptor = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
   noColor = process.env.NO_COLOR;
@@ -36,6 +56,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  rmSync(configPaths.root, { recursive: true, force: true });
   if (columnsDescriptor) {
     Object.defineProperty(process.stdout, 'columns', columnsDescriptor);
   } else {

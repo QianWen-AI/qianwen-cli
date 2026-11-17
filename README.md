@@ -6,7 +6,7 @@
 
 > 千问AI平台官方命令行工具。在终端或 AI Agent 运行时中，发现模型、查看用量、管理认证与诊断本地环境。
 
-![Version](https://img.shields.io/badge/version-1.10.0-blue)
+![Version](https://img.shields.io/badge/version-1.11.0-blue)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
@@ -144,23 +144,24 @@ qianwen auth login --complete --format json
 
 ## 命令
 
-| 领域     | 命令                                                                                                                                                 | 常用标志                                                                                                                                                           |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 模型调用 | `chat create`, `image generate`, `video generate`, `audio transcribe`, `audio speech`, `model3d generate`, `music generate`, `task get`              | `--model`, `--stream`, `--size`, `--image`, `--voice`, `--out`, `--no-wait`, `--timeout`, `--request`, `--api-key`, `--format`                                     |
-| 认证     | `auth login`, `auth logout`, `auth status`                                                                                                           | `--init-only`, `--complete`, `--timeout`, `--format`                                                                                                               |
-| 模型     | `models list`, `models info`, `models search`                                                                                                        | `--input`, `--output`, `--all`, `--verbose`, `--page`, `--per-page`, `--format`                                                                                    |
-| 用量     | `usage summary`, `usage breakdown`, `usage free-tier`, `usage payg`, `usage logs`                                                                    | `--period`, `--from`, `--to`, `--days`, `--model`, `--granularity`, `--format`                                                                                     |
-| 账单     | `billing summary`, `billing breakdown`, `billing limit`, `billing balance summary`, `billing balance recharge`, `billing balance recharge-history`   | `--from`, `--to`, `--period`, `--group-by`, `--granularity`, `--channel`, `--amount`, `--range`, `--start-time`, `--end-time`, `--page`, `--page-size`, `--format` |
-| 业务空间 | `workspace list`, `workspace limit`                                                                                                                  | `--format`                                                                                                                                                         |
-| 订阅     | `subscription status`, `subscription orders`, `subscription tokenplan list`, `subscription tokenplan purchase`, `subscription tokenplan status`, `subscription tokenplan seats` | `--edition`, `--billing-cycle`, `--channel`, `--standard-seat-count`, `--pro-seat-count`, `--max-seat-count`, `--auto-renew`, `--no-auto-renew`, `--format` |
-| 云栖大会 | `yunqi list forums`, `yunqi list exhibitors`, `yunqi list subscriptions`, `yunqi list summaries`, `yunqi subscribe forum`, `yunqi unsubscribe forum` | `--page`, `--page-size`, `--forum-id`, `--keyword`, `--format`                                                                                                     |
-| 文档     | `docs search`, `docs view`                                                                                                                           | `--format`                                                                                                                                                         |
-| 技能     | `skills search`, `skills install`, `skills pack-install`                                                                                             | `--limit`, `--dir`, `--format`                                                                                                                                     |
-| 工单     | `support list`, `support view`, `support create`, `support reply`, `support close`, `support rate`                                                   | `--format`                                                                                                                                                         |
-| 配置     | `config list`, `config get`, `config set`, `config unset`                                                                                            | `--format`                                                                                                                                                         |
-| 诊断     | `doctor`                                                                                                                                             | `--format`                                                                                                                                                         |
-| Shell    | `completion install`, `completion generate`                                                                                                          | `--shell`                                                                                                                                                          |
-| 版本     | `version`                                                                                                                                            | `--check`                                                                                                                                                          |
+| 领域     | 命令                                                                                                                                                                            | 常用标志                                                                                                                                                           |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 模型调用 | `chat create`, `image generate`, `video generate`, `audio transcribe`, `audio speech`, `model3d generate`, `music generate`, `task get`                                         | `--model`, `--stream`, `--size`, `--image`, `--voice`, `--out`, `--no-wait`, `--timeout`, `--request`, `--api-key`, `--format`                                     |
+| 认证     | `auth login`, `auth logout`, `auth status`                                                                                                                                      | `--init-only`, `--complete`, `--timeout`, `--format`                                                                                                               |
+| 模型     | `models list`, `models info`, `models search`                                                                                                                                   | `--input`, `--output`, `--all`, `--verbose`, `--page`, `--per-page`, `--format`                                                                                    |
+| 用量     | `usage summary`, `usage breakdown`, `usage free-tier`, `usage payg`, `usage logs`                                                                                               | `--period`, `--from`, `--to`, `--days`, `--model`, `--granularity`, `--format`                                                                                     |
+| 账单     | `billing summary`, `billing breakdown`, `billing limit`, `billing balance summary`, `billing balance recharge`, `billing balance recharge-history`                              | `--from`, `--to`, `--period`, `--group-by`, `--granularity`, `--channel`, `--amount`, `--range`, `--start-time`, `--end-time`, `--page`, `--page-size`, `--format` |
+| 业务空间 | `workspace list`, `workspace limit`                                                                                                                                             | `--format`                                                                                                                                                         |
+| 订阅     | `subscription status`, `subscription orders`, `subscription tokenplan list`, `subscription tokenplan purchase`, `subscription tokenplan status`, `subscription tokenplan seats` | `--edition`, `--billing-cycle`, `--channel`, `--standard-seat-count`, `--pro-seat-count`, `--max-seat-count`, `--auto-renew`, `--no-auto-renew`, `--format`        |
+| 云栖大会 | `yunqi list forums`, `yunqi list exhibitors`, `yunqi list subscriptions`, `yunqi list summaries`, `yunqi subscribe forum`, `yunqi unsubscribe forum`                            | `--page`, `--page-size`, `--forum-id`, `--keyword`, `--format`                                                                                                     |
+| 文档     | `docs search`, `docs view`                                                                                                                                                      | `--format`                                                                                                                                                         |
+| 技能     | `skills search`, `skills install`, `skills pack-install`                                                                                                                        | `--limit`, `--dir`, `--format`                                                                                                                                     |
+| 工单     | `support list`, `support view`, `support create`, `support reply`, `support close`, `support rate`                                                                              | `--format`                                                                                                                                                         |
+| 插件     | `plugin list`, `plugin install`, `plugin update`, `plugin uninstall`, `plugin init`, `plugin validate`                                                                          | `--name`, `--command`, `--force`, `--format`                                                                                                                       |
+| 配置     | `config list`, `config get`, `config set`, `config unset`                                                                                                                       | `--format`                                                                                                                                                         |
+| 诊断     | `doctor`                                                                                                                                                                        | `--format`                                                                                                                                                         |
+| Shell    | `completion install`, `completion generate`                                                                                                                                     | `--shell`                                                                                                                                                          |
+| 版本     | `version`                                                                                                                                                                       | `--check`                                                                                                                                                          |
 
 使用帮助查看完整语法：
 
@@ -305,7 +306,7 @@ qianwen config unset output.format
 
 我们欢迎修复、文档改进和功能提议。
 
-1. 从最新的 `master` 分支开始。
+1. 从最新的 `main` 分支开始。
 2. 创建一个聚焦的分支，例如 `fix/auth-token-expiry` 或 `doc/install-options`。
 3. 使用 `pnpm install` 安装依赖。
 4. 进行修改，并在行为变更时添加或更新测试。
@@ -319,7 +320,7 @@ pnpm run build
 ```
 
 6. 使用 [Conventional Commits](https://www.conventionalcommits.org/) 提交，如 `feat:`、`fix:`、`doc:`、`refactor:` 和 `chore:`。
-7. 推送分支并向 `master` 发起 Pull Request。
+7. 推送分支并向 `main` 发起 Pull Request。
 8. 填写 PR 模板，关联相关 Issue，描述用户可见变更，CLI UX 变更需附截图或终端输出。
 
 面向产品的变更应包含文档更新，并需要产品和工程评审。

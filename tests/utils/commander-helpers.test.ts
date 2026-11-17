@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import {
   addCommandErrorSupplement,
   getCommandArgs,
   getCommandErrorSupplement,
+  extractCommandTree,
+  setCommandHidden,
 } from '../../src/utils/commander-helpers.js';
 
 // getCommandArgs must read positional arguments from commander's PUBLIC
@@ -68,6 +70,153 @@ describe('getCommandArgs', () => {
     expect(args).toHaveLength(1);
     // No description was supplied; commander stores '' for the Argument.
     expect(args[0].description).toBe('');
+  });
+});
+
+describe('extractCommandTree', () => {
+  it('collects top-level command names, descriptions, and aliases', () => {
+    const program = new Command();
+    program.command('models').description('Browse models').alias('m');
+
+    const tree = extractCommandTree(program);
+    const models = tree.find((n) => n.name === 'models');
+
+    expect(models).toBeDefined();
+    expect(models!.description).toBe('Browse models');
+    expect(models!.aliases).toContain('m');
+  });
+
+  it('collects long options (--flag) for each command', () => {
+    const program = new Command();
+    program
+      .command('usage')
+      .option('--format <fmt>', 'output format')
+      .option('--days <n>', 'day range');
+
+    const tree = extractCommandTree(program);
+    const usage = tree.find((n) => n.name === 'usage')!;
+
+    const longs = usage.options.map((o) => o.long);
+    expect(longs).toContain('--format');
+    expect(longs).toContain('--days');
+  });
+
+  it('collects OptionSpec description and takesArg for value options', () => {
+    const program = new Command();
+    program.command('usage').option('--days <n>', 'day range');
+
+    const tree = extractCommandTree(program);
+    const days = tree.find((n) => n.name === 'usage')!.options.find((o) => o.long === '--days')!;
+
+    expect(days.description).toBe('day range');
+    expect(days.takesArg).toBe(true);
+    expect(days.choices).toEqual([]);
+  });
+
+  it('sets OptionSpec takesArg to false for boolean flags', () => {
+    const program = new Command();
+    program.command('models').option('--all', 'show all');
+
+    const tree = extractCommandTree(program);
+    const all = tree.find((n) => n.name === 'models')!.options.find((o) => o.long === '--all')!;
+
+    expect(all.takesArg).toBe(false);
+    expect(all.choices).toEqual([]);
+  });
+
+  it('collects OptionSpec enumerated values from .choices()', () => {
+    const program = new Command();
+    program
+      .command('billing')
+      .addOption(new Option('--group-by <g>', 'grouping').choices(['model', 'api-key']));
+
+    const tree = extractCommandTree(program);
+    const groupBy = tree
+      .find((n) => n.name === 'billing')!
+      .options.find((o) => o.long === '--group-by')!;
+
+    expect(groupBy.choices).toEqual(['model', 'api-key']);
+    expect(groupBy.takesArg).toBe(true);
+  });
+
+  it('uses an empty string for an omitted OptionSpec description', () => {
+    const program = new Command();
+    program.command('doctor').option('--format <fmt>');
+
+    const tree = extractCommandTree(program);
+    const format = tree.find((n) => n.name === 'doctor')!.options[0];
+
+    expect(format.description).toBe('');
+  });
+
+  it('collects positional arguments with ArgSpec name, required, and variadic fields', () => {
+    const program = new Command();
+    program.command('search').argument('<query>', 'search query');
+    program.command('install').argument('[slug...]', 'skill slugs');
+
+    const tree = extractCommandTree(program);
+    const searchArgs = tree.find((n) => n.name === 'search')!.args;
+    const installArgs = tree.find((n) => n.name === 'install')!.args;
+
+    expect(searchArgs).toEqual([{ name: 'query', required: true, variadic: false }]);
+    expect(installArgs).toEqual([{ name: 'slug', required: false, variadic: true }]);
+  });
+
+  it('returns an empty args array for commands without arguments', () => {
+    const program = new Command();
+    program.command('doctor');
+
+    const tree = extractCommandTree(program);
+    expect(tree.find((n) => n.name === 'doctor')!.args).toEqual([]);
+  });
+
+  it('recursively collects subcommands in a nested command tree', () => {
+    const program = new Command();
+    const billing = program.command('billing').description('Billing');
+    billing.command('balance').description('Show balance');
+
+    const tree = extractCommandTree(program);
+    const billingNode = tree.find((n) => n.name === 'billing')!;
+
+    expect(billingNode.subcommands).toHaveLength(1);
+    expect(billingNode.subcommands[0].name).toBe('balance');
+  });
+
+  it('omits hidden commands when includeHidden defaults to false', () => {
+    const program = new Command();
+    const login = program.command('login').description('Login');
+    setCommandHidden(login, true);
+    program.command('models').description('Models');
+
+    const tree = extractCommandTree(program);
+
+    expect(tree.find((n) => n.name === 'login')).toBeUndefined();
+    expect(tree.find((n) => n.name === 'models')).toBeDefined();
+  });
+
+  it('includes hidden commands for reserved-name checks when includeHidden is true', () => {
+    const program = new Command();
+    const login = program.command('login').description('Login');
+    setCommandHidden(login, true);
+
+    const tree = extractCommandTree(program, { includeHidden: true });
+
+    expect(tree.find((n) => n.name === 'login')).toBeDefined();
+  });
+
+  it('collects aliases so reserved-name checks protect built-in aliases', () => {
+    const program = new Command();
+    program.command('logout').description('Logout').aliases(['signout', 'exit']);
+
+    const tree = extractCommandTree(program, { includeHidden: true });
+    const logout = tree.find((n) => n.name === 'logout')!;
+
+    expect(logout.aliases).toEqual(expect.arrayContaining(['signout', 'exit']));
+  });
+
+  it('returns an empty array for an empty program', () => {
+    const program = new Command();
+    expect(extractCommandTree(program)).toEqual([]);
   });
 });
 

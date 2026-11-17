@@ -3,7 +3,7 @@
 import type { RawApiEnvelope, GatewayEnvelope } from '../types/api-envelope.js';
 import type { RouteType } from '../types/api-routes.js';
 import {
-  AUTH_OPTIONAL_PRODUCTS,
+  PUBLIC_ANONYMOUS_CAPABILITIES,
   API_PRODUCT_GATEWAY,
   API_ACTION_GATEWAY,
   API_VERSION_GATEWAY,
@@ -124,8 +124,11 @@ const GATEWAY_URL = `${API_ENDPOINT}/data/v2/api.json`;
 const DEFAULT_REGION = 'cn-beijing';
 
 function resolveAuthMode(opts: AdapterOptions): 'required' | 'optional' {
+  if (opts.authOptional === false) return 'required';
   if (opts.authOptional === true) return 'optional';
-  if (AUTH_OPTIONAL_PRODUCTS.has(opts.product)) return 'optional';
+  if (PUBLIC_ANONYMOUS_CAPABILITIES.get(opts.product)?.has(opts.action) === true) {
+    return 'optional';
+  }
   return 'required';
 }
 

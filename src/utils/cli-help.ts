@@ -8,3 +8,8 @@ const HELP_TOKENS = new Set(['-h', '--help']);
 export function isHelpRequest(...values: unknown[]): boolean {
   return values.some((v) => typeof v === 'string' && HELP_TOKENS.has(v));
 }
+
+export function isHelpInvocation(argv: readonly string[]): boolean {
+  const separator = argv.indexOf('--');
+  return isHelpRequest(...(separator < 0 ? argv : argv.slice(0, separator)));
+}

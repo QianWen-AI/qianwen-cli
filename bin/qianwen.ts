@@ -4,6 +4,7 @@ export {};
 import { resetGlobalCache } from '../src/utils/cache.js';
 
 const args = process.argv.slice(2);
+const initializePlugins = args.length === 1 && args[0] === '--internal-prepare-default-plugins';
 
 if (args.length === 0) {
   // REPL mode — dynamic import to avoid loading cost in one-shot mode
@@ -14,7 +15,8 @@ if (args.length === 0) {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`REPL error: ${message}\n`);
     resetGlobalCache();
-    process.exitCode = 1;
+    const { CliError } = await import('../src/utils/errors.js');
+    process.exitCode = err instanceof CliError ? err.exitCode : 1;
   }
 } else {
   // One-shot mode
@@ -22,7 +24,6 @@ if (args.length === 0) {
   const { CliError, HandledError } = await import('../src/utils/errors.js');
   const { classifyHttpError } = await import('../src/utils/api-errors.js');
   const { flushDebugReport } = await import('../src/api/debug-buffer.js');
-  const program = createProgram();
 
   const formatFromArgv = (): string | undefined => {
     const args = process.argv.slice(2);
@@ -52,7 +53,13 @@ if (args.length === 0) {
   }
 
   try {
-    await program.parseAsync(process.argv);
+    const program = createProgram({ loadPlugins: !initializePlugins });
+    if (initializePlugins) {
+      const { initializeDefaultPlugins } = await import('../src/plugins/initialize.js');
+      await initializeDefaultPlugins(program);
+    } else {
+      await program.parseAsync(process.argv);
+    }
     flushDebugReport();
     resetGlobalCache();
   } catch (err: unknown) {

@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import { existsSync } from 'fs';
-import { VERSION } from '../index.js';
+import { VERSION } from '../version.js';
 import { createClient } from '../api/client.js';
 import {
   resolveCredentials,

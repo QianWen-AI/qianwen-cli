@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "noEmit": true },
+  "include": [
+    "../src/**/*",
+    "../scripts/**/*",
+    "commands/plugin/update-sources.test.ts",
+    "commands/plugin/update-hardening.test.ts",
+    "plugins/root-containment.test.ts",
+    "internal/script-references.test.ts"
+  ],
+  "exclude": ["../node_modules", "../dist", "../dist-dev"]
+}

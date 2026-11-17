@@ -2,10 +2,10 @@
 # QianWen CLI Installer
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/QianWen-AI/qianwen-cli/main/install.sh | sh
-#   sh install.sh --version v1.10.0
+#   sh install.sh --version v1.11.0
 #
 # Arguments:
-#   --version, -v      - version to install (e.g. v1.10.0, default: v1.10.0)
+#   --version, -v      - version to install (e.g. v1.11.0, default: v1.11.0)
 #   --help, -h         - show help message
 #
 # Behavior:
@@ -17,7 +17,7 @@ set -e
 
 # ─── Default Version ────────────────────────────────────────────────────────
 # Update this value when releasing a new version.
-VERSION="v1.10.0"
+VERSION="v1.11.0"
 
 # ─── Brand Colors ────────────────────────────────────────────────────────────
 # Generate real ESC character for POSIX sh compatibility
@@ -33,6 +33,53 @@ DIM="${ESC}[2m"
 YELLOW="${ESC}[33m"
 
 # ─── Helper Functions ────────────────────────────────────────────────────────
+
+prepare_default_plugins() (
+  retry_message='QianWen CLI is installed. Default plugins are temporarily unavailable; they will be retried automatically when you run a corresponding plugin command.'
+  umask 077
+  report_dir=$(mktemp -d "${TMPDIR:-/tmp}/qianwen-prepare.XXXXXX") || {
+    printf '%s\n' "$retry_message" >&2
+    exit 0
+  }
+  child=''
+  watchdog=''
+  cleanup_preparation() {
+    if [ -n "$child" ]; then kill -KILL "$child" 2>/dev/null || :; wait "$child" 2>/dev/null || :; fi
+    if [ -n "$watchdog" ]; then kill "$watchdog" 2>/dev/null || :; wait "$watchdog" 2>/dev/null || :; fi
+    rm -f "$report_dir/status"
+    rmdir "$report_dir" 2>/dev/null || :
+  }
+  trap cleanup_preparation 0
+  trap 'exit 130' INT
+  trap 'exit 143' HUP TERM
+  : > "$report_dir/status"
+  QIANWEN_PLUGIN_PREPARE_REPORT="$report_dir/status" QIANWEN_PLUGIN_PREPARE_DEADLINE='' \
+    "$1" --internal-prepare-default-plugins >/dev/null 2>&1 &
+  child=$!
+  (
+    timer=''
+    trap 'if [ -n "$timer" ]; then kill "$timer" 2>/dev/null || :; wait "$timer" 2>/dev/null || :; fi; exit 0' INT TERM
+    sleep 50 &
+    timer=$!
+    wait "$timer" || exit 0
+    kill -KILL "$child" 2>/dev/null || :
+  ) >/dev/null 2>&1 &
+  watchdog=$!
+  result=0
+  wait "$child" 2>/dev/null || result=$?
+  child=''
+  kill "$watchdog" 2>/dev/null || :
+  wait "$watchdog" 2>/dev/null || :
+  watchdog=''
+  if [ "$result" -ne 0 ]; then
+    if [ "$(head -c 32 "$report_dir/status")" = 'upgrade-required' ]; then
+      printf '%s\n' 'QianWen CLI is installed. A default plugin requires a newer CLI. Upgrade QianWen CLI, then run the plugin command again.' >&2
+    else
+      printf '%s\n' "$retry_message" >&2
+    fi
+  fi
+  exit 0
+)
 
 # Use %b to interpret escape sequences in arguments
 info() {
@@ -116,7 +163,7 @@ parse_args() {
           VERSION="$2"
           shift 2
         else
-          fatal "--version requires a value (e.g. --version v1.10.0)"
+          fatal "--version requires a value (e.g. --version v1.11.0)"
         fi
         ;;
       --help|-h)
@@ -275,6 +322,7 @@ main() {
   printf "\n"
   if [ -x "${install_dir}/qianwen" ]; then
     success "${BRAND_BOLD}QianWen CLI${RESET} ${VERSION} installed successfully!"
+    prepare_default_plugins "${install_dir}/qianwen"
   else
     success "Installation complete (${VERSION})"
   fi

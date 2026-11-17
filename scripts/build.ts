@@ -4,7 +4,7 @@
  *
  * Usage:
  *   tsx scripts/build.ts                        # production build (default, Terser obfuscation)
- *   tsx scripts/build.ts --mode dev             # development build (no minify)
+ *   tsx scripts/build.ts --mode dev             # development build in dist-dev/ (no minify)
  *   tsx scripts/build.ts --mode prod            # production build (Terser obfuscation)
  *   tsx scripts/build.ts --obfuscator terser    # production build with Terser obfuscation (default)
  *   tsx scripts/build.ts --obfuscator none      # production build without obfuscation
@@ -34,6 +34,10 @@ const skipSmoke = argv.includes('--skip-smoke');
 const skipObfuscate = argv.includes('--skip-obfuscate');
 const allowProxy = argv.includes('--allow-proxy');
 const isProd = mode === 'prod';
+const outputDir = resolve(
+  process.cwd(),
+  process.env.QIANWEN_BUILD_OUTDIR || (isProd ? 'dist' : 'dist-dev'),
+);
 
 // Obfuscator selection: 'none' | 'terser' | 'jso' (javascript-obfuscator)
 // --obfuscator <type> takes precedence; --skip-obfuscate is a legacy alias for --obfuscator none.
@@ -167,8 +171,7 @@ const elapsed = Date.now() - start;
 // where clean: false). When sourcemap is not requested, remove all .map files
 // to prevent them from leaking into published packages.
 if (isProd && !enableSourcemap) {
-  const distDir = join(process.cwd(), 'dist');
-  if (existsSync(distDir)) {
+  if (existsSync(outputDir)) {
     function removeMapFiles(dir: string): void {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const full = join(dir, entry.name);
@@ -179,7 +182,7 @@ if (isProd && !enableSourcemap) {
         }
       }
     }
-    removeMapFiles(distDir);
+    removeMapFiles(outputDir);
   }
 }
 
@@ -192,7 +195,7 @@ console.log('');
 console.log('  Build summary');
 console.log('  ─────────────────────────────────────────────');
 
-const distFiles = collectDistFiles(join(process.cwd(), 'dist'));
+const distFiles = collectDistFiles(outputDir);
 let totalSize = 0;
 for (const f of distFiles) {
   totalSize += f.size;
@@ -208,8 +211,8 @@ console.log('');
 
 if (analyze && isProd) {
   const metaFiles = [
-    join(process.cwd(), 'dist', 'bin', 'metafile-esm.json'),
-    join(process.cwd(), 'dist', 'metafile-esm.json'),
+    join(outputDir, 'bin', 'metafile-esm.json'),
+    join(outputDir, 'metafile-esm.json'),
   ].filter(existsSync);
 
   if (metaFiles.length > 0) {
@@ -248,7 +251,7 @@ if (analyze && isProd) {
 //   - No string encryption or self-defending (use jso for those)
 
 if (isProd && obfuscator === 'terser') {
-  const binPath = join(process.cwd(), 'dist', 'bin', 'qianwen.js');
+  const binPath = join(outputDir, 'bin', 'qianwen.js');
   if (existsSync(binPath)) {
     console.log('  Obfuscating with Terser...');
     const terserStart = Date.now();
@@ -305,7 +308,7 @@ if (isProd && obfuscator === 'terser') {
 // ── Smoke test ────────────────────────────────────────────────────────────────
 
 if (!skipSmoke) {
-  const binary = join(process.cwd(), 'dist', 'bin', 'qianwen.js');
+  const binary = join(outputDir, 'bin', 'qianwen.js');
   if (!existsSync(binary)) {
     console.error(`  Smoke test failed: binary not found at ${binary}`);
     process.exit(1);

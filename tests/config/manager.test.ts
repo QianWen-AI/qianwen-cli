@@ -82,6 +82,38 @@ describe('readGlobalConfig', () => {
     expect(readGlobalConfig()).toEqual({});
   });
 
+  it('reads only known schema keys and rejects unknown top-level, nested and dotted keys', async () => {
+    mockedFs.existsSync.mockImplementation((path) => path === GLOBAL_PATH);
+    mockedFs.readFileSync.mockReturnValue(
+      JSON.stringify({
+        output: { format: 'json', future: 'mock-value' },
+        model: { endpoint: 'https://model.test.qianwenai.com', api_key: 'mock-model-key' },
+        auth: { endpoint: 'https://auth.test.qianwenai.com', token: 'mock-auth-token' },
+        secret: 'mock-root-value',
+        'future.credential': 'mock-dot-value',
+      }),
+    );
+    const { readGlobalConfig, getEffectiveConfig } = await loadManager();
+    const global = readGlobalConfig();
+    expect(global).toEqual({
+      'output.format': 'json',
+      'model.endpoint': 'https://model.test.qianwenai.com',
+      'model.api_key': 'mock-model-key',
+      'auth.endpoint': 'https://auth.test.qianwenai.com',
+    });
+    const effective = getEffectiveConfig();
+    expect(Object.keys(effective).sort()).toEqual([
+      'api.endpoint',
+      'auth.endpoint',
+      'cache.ttl',
+      'model.api_key',
+      'model.endpoint',
+      'output.format',
+      'support.categorySource',
+    ]);
+    expect(effective['model.api_key']).toBe('mock-model-key');
+  });
+
   it('returns empty object on read error', async () => {
     mockedFs.existsSync.mockReturnValue(true);
     mockedFs.readFileSync.mockImplementation(() => {
@@ -118,6 +150,22 @@ describe('getEffectiveConfig', () => {
 
     expect(result['output.format']).toBe('table');
     expect(result['api.endpoint']).toBe(s.apiEndpoint); // default
+  });
+
+  it('does not merge nested fields outside the schema from global configuration', async () => {
+    mockedFs.existsSync.mockImplementation((path) => path === GLOBAL_PATH);
+    mockedFs.readFileSync.mockReturnValue(
+      JSON.stringify({
+        output: { format: 'text' },
+        auth: { token: 'mock-only' },
+        future: { option: 'mock-only' },
+      }),
+    );
+    const { getEffectiveConfig } = await loadManager();
+    const result = getEffectiveConfig();
+    expect(result['output.format']).toBe('text');
+    expect(result).not.toHaveProperty('auth.token');
+    expect(result).not.toHaveProperty('future.option');
   });
 });
 
@@ -309,5 +357,51 @@ describe('legacy project-config migration', () => {
     expect(mockedFs.writeFileSync).not.toHaveBeenCalled();
     // But the path is still recorded so we don't re-attempt next run.
     expect(mockedFs.appendFileSync).toHaveBeenCalledWith(MIGRATION_STATE_PATH, `${LEGACY_PATH}\n`);
+  });
+});
+
+describe('validated configuration trust boundary', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  it('migrates a public format but never persists a syntactically valid cwd endpoint', async () => {
+    mockedFs.existsSync.mockImplementation((file) => file === LEGACY_PATH);
+    mockedFs.readFileSync.mockReturnValue(
+      JSON.stringify({
+        output: { format: 'json' },
+        api: { endpoint: 'https://attacker.test.qianwenai.com' },
+        auth: { endpoint: 'https://attacker.test.qianwenai.com' },
+        model: { endpoint: 'https://attacker.test.qianwenai.com' },
+        cache: { ttl: '999' },
+      }),
+    );
+    const { getEffectiveConfig } = await loadManager();
+    const config = getEffectiveConfig();
+    expect(config['api.endpoint']).toBe(s.apiEndpoint);
+    expect(config['auth.endpoint']).toBe(s.authEndpoint);
+    expect(mockedFs.writeFileSync).toHaveBeenCalledOnce();
+    const persisted = String(mockedFs.writeFileSync.mock.calls[0][1]);
+    expect(JSON.parse(persisted)).toEqual({ output: { format: 'json' } });
+  });
+
+  it('rejects invalid legacy public values without persisting them', async () => {
+    mockedFs.existsSync.mockImplementation((file) => file === LEGACY_PATH);
+    mockedFs.readFileSync.mockReturnValue(JSON.stringify({ output: { format: 'bogus' } }));
+    const { getEffectiveConfig } = await loadManager();
+    expect(getEffectiveConfig()['output.format']).toBe('auto');
+    expect(mockedFs.writeFileSync).not.toHaveBeenCalled();
+  });
+
+  it('validates global internal values while retaining explicitly configured valid endpoints', async () => {
+    mockedFs.existsSync.mockImplementation((file) => file === GLOBAL_PATH);
+    mockedFs.readFileSync.mockReturnValue(
+      JSON.stringify({
+        output: { format: 'bogus' },
+        api: { endpoint: 'not a url' },
+        auth: { endpoint: 'https://auth.test.qianwenai.com' },
+        cache: { ttl: '-1' },
+      }),
+    );
+    const { readGlobalConfig } = await loadManager();
+    expect(readGlobalConfig()).toEqual({ 'auth.endpoint': 'https://auth.test.qianwenai.com' });
   });
 });

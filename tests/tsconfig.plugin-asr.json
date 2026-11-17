@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "../src/**/*",
+    "services/asr-protocol-overrides.test.ts",
+    "commands/plugin/command-regressions.test.ts",
+    "plugins/cancellation-lifecycle.test.ts"
+  ],
+  "exclude": ["../node_modules", "../dist"]
+}

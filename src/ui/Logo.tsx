@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { theme } from './theme.js';
-import { VERSION } from '../index.js';
+import { VERSION } from '../version.js';
 import { site } from '../site.js';
 
 export function Logo() {

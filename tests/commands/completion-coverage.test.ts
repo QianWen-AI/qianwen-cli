@@ -7,8 +7,7 @@
  * forget to teach the two completion surfaces about it (this happened with the
  * v1.5.0 model-invocation commands: chat/image/video/audio/model3d/music/task).
  *
- * These tests derive the command list from the real program and assert every
- * command + subcommand is reachable through both completion surfaces.
+ * These tests cover visible built-in commands except the explicit exclusions below.
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { Command } from 'commander';
@@ -16,6 +15,17 @@ import { createProgram } from '../../src/cli.js';
 import { TOP_COMMANDS, SUBCOMMANDS } from '../../src/repl/completer.js';
 import { registerCompletionCommand } from '../../src/commands/completion.js';
 import { runCommand } from '../helpers/run-command.js';
+
+vi.mock('../../src/plugins/loader.js', async (original) => ({
+  ...(await original<typeof import('../../src/plugins/loader.js')>()),
+  loadInstalledPlugins: () => [],
+  registerDefaultPluginCommands: () => {},
+}));
+
+// API/plugin commands are excluded from static completion coverage.
+const STATIC_COMPLETION_EXCLUSIONS = new Set(['api', 'plugin']);
+// Retain the legacy skills completion entry for compatibility.
+const LEGACY_STATIC_TOP_COMMANDS = new Set(['skills']);
 
 // REPL-only pseudo commands that never exist on the real program.
 const REPL_ONLY_TOP_COMMANDS = new Set<string>(['help', 'clear']);
@@ -25,7 +35,9 @@ function isHidden(c: Command): boolean {
 }
 
 function topLevelCommands(program: Command): Command[] {
-  return program.commands.filter((c) => !isHidden(c));
+  return program.commands.filter(
+    (c) => !isHidden(c) && !STATIC_COMPLETION_EXCLUSIONS.has(c.name()),
+  );
 }
 
 async function generateScript(shell: string): Promise<string> {
@@ -42,7 +54,7 @@ async function generateScript(shell: string): Promise<string> {
 }
 
 describe('completion command coverage', () => {
-  const program = createProgram();
+  const program = createProgram({ loadPlugins: false });
   const commands = topLevelCommands(program);
   const names = commands.map((c) => c.name());
 
@@ -51,9 +63,9 @@ describe('completion command coverage', () => {
       expect(TOP_COMMANDS, `missing "${name}" in REPL TOP_COMMANDS`).toContain(name);
     }
     // And TOP_COMMANDS should not reference commands that no longer exist
-    // (REPL built-ins excepted).
+    // (REPL built-ins and legacy static entries excepted).
     for (const name of TOP_COMMANDS) {
-      if (REPL_ONLY_TOP_COMMANDS.has(name)) continue;
+      if (REPL_ONLY_TOP_COMMANDS.has(name) || LEGACY_STATIC_TOP_COMMANDS.has(name)) continue;
       expect(names, `stale "${name}" in REPL TOP_COMMANDS`).toContain(name);
     }
   });

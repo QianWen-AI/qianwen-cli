@@ -9,12 +9,15 @@ const LOCAL_CONFIG_FILE = site.localConfigFile;
 const MIGRATION_STATE_FILE = '.migrated-projects';
 const DEVICE_FLOW_PENDING_FILE = '.device-flow-pending';
 const CACHE_DIR_NAME = 'cache';
+const PLUGINS_DIR_NAME = 'plugins';
+const PLUGINS_MANIFEST_FILE = 'plugins.json';
 
 /**
  * Get the global config directory path (~/.qianwen).
  */
 export function getConfigDir(): string {
-  return join(homedir(), CONFIG_DIR_NAME);
+  const override = process.env[`${site.envPrefix}_CONFIG_DIR`]?.trim();
+  return override ? resolve(override) : join(homedir(), CONFIG_DIR_NAME);
 }
 
 /**
@@ -71,4 +74,18 @@ export function getCacheDir(): string {
  */
 export function getCacheFilePath(fileName: string): string {
   return join(getCacheDir(), fileName);
+}
+
+/**
+ * Plugin storage root; registry and local packages are installed under node_modules/<pkg>.
+ */
+export function getPluginsDir(): string {
+  return join(getConfigDir(), PLUGINS_DIR_NAME);
+}
+
+/**
+ * Install-state manifest in the config directory, separate from plugin artifacts.
+ */
+export function getPluginsManifestPath(): string {
+  return join(getConfigDir(), PLUGINS_MANIFEST_FILE);
 }
