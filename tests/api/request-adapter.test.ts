@@ -12,8 +12,8 @@ import {
   GatewayEnvelopeError,
   GatewayShapeError,
 } from '../../src/api/request-adapter.js';
-import type { RawApiEnvelope, GatewayEnvelope } from '../../src/types/api-envelope.js';
 import { site } from '../../src/site.js';
+import type { RawApiEnvelope, GatewayEnvelope } from '../../src/types/api-envelope.js';
 import { buildCsDataRequest } from '../../src/api/adapters/cs-data-adapter.js';
 import {
   API_TOKENPLAN_SOLO_QUOTA_CONFIG,
@@ -122,10 +122,36 @@ describe('buildRequest (Type A)', () => {
     expect(out.authMode).toBe('optional');
   });
 
-  it('marks AUTH_OPTIONAL_PRODUCTS as optional implicitly', () => {
+  it('allows public anonymous capabilities without an explicit flag', () => {
     const out = buildRequest('A', {
       product: 'aliyun-search-maas',
       action: 'SearchAll',
+    });
+    expect(out.authMode).toBe('optional');
+  });
+
+  it('keeps other actions on an anonymous-capable product authenticated', () => {
+    const out = buildRequest('A', {
+      product: 'aliyun-search-maas',
+      action: 'UpdateEntry',
+    });
+    expect(out.authMode).toBe('required');
+  });
+
+  it('allows an explicit false flag to require auth for a public capability', () => {
+    const out = buildRequest('A', {
+      product: 'aliyun-search-maas',
+      action: 'SearchAll',
+      authOptional: false,
+    });
+    expect(out.authMode).toBe('required');
+  });
+
+  it('allows an explicit anonymous flag for an otherwise private API', () => {
+    const out = buildRequest('A', {
+      product: 'TestPortal',
+      action: 'ReadEntry',
+      authOptional: true,
     });
     expect(out.authMode).toBe('optional');
   });

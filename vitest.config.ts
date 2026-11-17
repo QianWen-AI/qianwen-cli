@@ -10,6 +10,9 @@ export default defineConfig({
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     restoreMocks: true,
     clearMocks: true,
+    // Shared CI runners need more time for transforms and subprocess startup.
+    testTimeout: process.env.CI === 'true' || process.env.CI === '1' ? 30_000 : 5_000,
+    hookTimeout: process.env.CI === 'true' || process.env.CI === '1' ? 30_000 : 10_000,
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts', 'src/**/*.tsx'],

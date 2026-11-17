@@ -1,0 +1,12 @@
+{
+  "plugins": [
+    {
+      "name": "@qianwenai/qianwen-plugin-skillshub",
+      "version": "1.0.0",
+      "command": "skills",
+      "source": {
+        "type": "npm"
+      }
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 import { Command, type CommanderError, type Help } from 'commander';
 
 // Project metadata & runtime helpers
-import { VERSION } from './index.js';
+import { VERSION } from './version.js';
 import { site } from './site.js';
 import { theme } from './ui/theme.js';
 import { padEndVisible, visibleWidth, wrapText } from './ui/textWrap.js';
@@ -10,6 +10,7 @@ import { isReplMode, formatCmd } from './utils/runtime-mode.js';
 
 // Command groups (alphabetical by feature directory)
 import { registerAuthCommands } from './commands/auth/index.js';
+import { registerApiCommands } from './commands/api/index.js';
 import { registerAudioCommands } from './commands/audio/index.js';
 import { registerBillingCommands } from './commands/billing/index.js';
 import { registerChatCommands } from './commands/chat/index.js';
@@ -21,7 +22,7 @@ import { registerImageCommands } from './commands/image/index.js';
 import { registerModel3dCommands } from './commands/model3d/index.js';
 import { registerModelsCommands as registerModelsCommandsImpl } from './commands/models/index.js';
 import { registerMusicCommands } from './commands/music/index.js';
-import { registerSkillsCommands } from './commands/skills/index.js';
+import { registerPluginManagementCommands } from './commands/plugin/index.js';
 import { registerSubscriptionCommands } from './commands/subscription/index.js';
 import { registerSupportCommands } from './commands/support/index.js';
 import { registerTaskCommands } from './commands/task/index.js';
@@ -40,7 +41,13 @@ import {
   setCommandHelpMetadata,
   styleHelpSectionTitle,
 } from './utils/commander-helpers.js';
-import { isHelpRequest } from './utils/cli-help.js';
+import { isHelpInvocation } from './utils/cli-help.js';
+import {
+  loadInstalledPlugins,
+  registerPluginCommands,
+  registerDefaultPluginCommands,
+} from './plugins/loader.js';
+import { getPluginsManifestPath, getPluginsDir } from './config/paths.js';
 
 // ---------------------------------------------------------------------------
 // Custom help formatter for the layered help layout
@@ -370,15 +377,15 @@ function addExamples(cmd: Command, examples: string[]): void {
 // Apply custom help to every command recursively
 // ---------------------------------------------------------------------------
 
-function applyCustomHelp(cmd: Command): void {
-  if (!cmd.configureHelp().formatHelp) {
+function applyCustomHelp(cmd: Command, force = false): void {
+  if (force || !cmd.configureHelp().formatHelp) {
     cmd.configureHelp({
       formatHelp: (_command, helper) => formatHelp(cmd, helper),
     });
   }
   cmd.helpOption('-h, --help', 'Show this help');
   for (const sub of cmd.commands) {
-    applyCustomHelp(sub);
+    applyCustomHelp(sub, force);
   }
 }
 
@@ -410,7 +417,7 @@ function applyExitOverride(cmd: Command): void {
 function applyHelpFlagGuard(program: Command): void {
   program.hook('preAction', (_thisCommand, actionCommand) => {
     const rawArgs = (program as unknown as { rawArgs?: string[] }).rawArgs ?? [];
-    if (isHelpRequest(...rawArgs)) {
+    if (isHelpInvocation(rawArgs)) {
       actionCommand.outputHelp();
       throw Object.assign(new Error('(outputHelp)'), {
         code: 'commander.helpDisplayed',
@@ -607,7 +614,6 @@ function applyTopLevelHelpMetadata(program: Command): void {
   setTopLevelHelpMetadata(program, 'models', 'Core', 110);
   setTopLevelHelpMetadata(program, 'task', 'Core', 115);
   setTopLevelHelpMetadata(program, 'docs', 'Core', 120);
-  setTopLevelHelpMetadata(program, 'skills', 'Core', 130);
 
   setTopLevelHelpMetadata(program, 'auth', 'Account & access', 200);
   setTopLevelHelpMetadata(program, 'workspace', 'Account & access', 220);
@@ -620,6 +626,8 @@ function applyTopLevelHelpMetadata(program: Command): void {
   setTopLevelHelpMetadata(program, 'config', 'Operations', 410);
   setTopLevelHelpMetadata(program, 'completion', 'Operations', 420);
   setTopLevelHelpMetadata(program, 'version', 'Operations', 430);
+  setTopLevelHelpMetadata(program, 'plugin', 'Operations', 440);
+  setTopLevelHelpMetadata(program, 'api', 'Operations', 450);
 
   setTopLevelHelpMetadata(program, 'support', 'Support', 520);
   setTopLevelHelpMetadata(program, 'update', 'Support', 530);
@@ -630,7 +638,7 @@ function applyTopLevelHelpMetadata(program: Command): void {
 // Public API
 // ---------------------------------------------------------------------------
 
-export function createProgram(): Command {
+export function createProgram(options: { loadPlugins?: boolean } = {}): Command {
   const program = new Command();
 
   program
@@ -663,7 +671,8 @@ export function createProgram(): Command {
   // Operations & references
   registerSupportCommands(program);
   registerDocsCommands(program);
-  registerSkillsCommands(program);
+  registerPluginManagementCommands(program);
+  registerApiCommands(program);
   registerYunqiCommands(program);
 
   // Local utilities & meta
@@ -672,6 +681,19 @@ export function createProgram(): Command {
   registerCompletionCommand(program);
   registerVersionCommand(program);
   registerUpdateCommand(program);
+
+  if (options.loadPlugins !== false) {
+    registerDefaultPluginCommands(program, {
+      onCommandsChanged(command) {
+        applyCustomHelp(command, true);
+        applyExitOverride(command);
+      },
+    });
+    registerPluginCommands(
+      program,
+      loadInstalledPlugins(getPluginsManifestPath(), getPluginsDir()),
+    );
+  }
 
   applyTopLevelHelpMetadata(program);
 

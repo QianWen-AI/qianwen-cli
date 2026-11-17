@@ -66,6 +66,82 @@ export function addExamples(cmd: Command, examples: string[]): void {
   (cmd as AnyCommand)._examples = examples;
 }
 
+export interface OptionSpec {
+  long: string;
+  description: string;
+  choices: string[];
+  takesArg: boolean;
+  completion?: 'file' | 'directory';
+}
+
+export interface ArgSpec {
+  name: string;
+  required: boolean;
+  variadic: boolean;
+  choices?: string[];
+  completion?: 'file' | 'directory';
+}
+
+export interface CommandNode {
+  name: string;
+  aliases: string[];
+  description: string;
+  options: OptionSpec[];
+  args: ArgSpec[];
+  subcommands: CommandNode[];
+}
+
+export interface ExtractCommandTreeOptions {
+  includeHidden?: boolean;
+}
+
+// A value-taking option is `required` XOR `optional`; a boolean flag is
+// neither — hence takesArg ORs the two. argChoices holds `.choices()` values.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Commander Option access
+type AnyOption = any;
+
+function pathCompletion(name: string): 'file' | 'directory' | undefined {
+  if (/^(?:dir|directory)$/.test(name)) return 'directory';
+  if (/(?:^|[-|])(?:file|path)(?:$|[-|])/.test(name)) return 'file';
+  return undefined;
+}
+
+function toOptionSpec(option: AnyOption): OptionSpec {
+  const argumentName = /[<[]([^>\]]+)[>\]]/.exec(String(option.flags))?.[1] ?? '';
+  const completion =
+    option.long === '--dir' || option.long === '--directory'
+      ? 'directory'
+      : pathCompletion(argumentName);
+  return {
+    long: option.long as string,
+    description: (option.description as string) ?? '',
+    choices: (option.argChoices as string[] | undefined) ?? [],
+    takesArg: option.required === true || option.optional === true,
+    ...(completion ? { completion } : {}),
+  };
+}
+
+export function extractCommandTree(
+  program: Command,
+  { includeHidden = false }: ExtractCommandTreeOptions = {},
+): CommandNode[] {
+  return program.commands
+    .filter((cmd) => includeHidden || !isHiddenCommand(cmd))
+    .map((cmd) => ({
+      name: cmd.name(),
+      aliases: cmd.aliases(),
+      description: getLongDescription(cmd),
+      options: cmd.options.filter((o) => !o.hidden && o.long).map(toOptionSpec),
+      args: getCommandArgs(cmd).map((a) => ({
+        name: a.name(),
+        required: a.required,
+        variadic: a.variadic,
+        ...(pathCompletion(a.name()) ? { completion: pathCompletion(a.name()) } : {}),
+      })),
+      subcommands: extractCommandTree(cmd, { includeHidden }),
+    }));
+}
+
 /**
  * Style a help section title identically to the built-in headings rendered by
  * {@link formatHelp} in cli.ts.  Designed for use inside `addHelpText('after', …)`

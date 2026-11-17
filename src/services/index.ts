@@ -54,10 +54,8 @@ import { TokenPlanListService } from './tokenplan-list-service.js';
 import { TokenPlanPaymentService } from './tokenplan-payment-service.js';
 import { TokenPlanPurchaseService } from './tokenplan-purchase-service.js';
 import { SupportService } from './support-service.js';
-import { SkillsHubService } from './skills-hub-service.js';
-import { SkillsInstallService } from './skills-install-service.js';
-import { SkillsPackService } from './skills-pack-service.js';
 import { YunqiService } from './yunqi-service.js';
+import { OpenApiService } from './openapi-service.js';
 
 import type { CachedFetcher } from '../types/cache.js';
 import type { ApiModelGroup, ApiModelItem, ConsumeSummaryLineItem } from '../types/api-models.js';
@@ -86,10 +84,8 @@ export interface ServiceContainer {
   tokenPlanPaymentService: TokenPlanPaymentService;
   tokenPlanPurchaseService: TokenPlanPurchaseService;
   supportService: SupportService;
-  skillsHubService: SkillsHubService;
-  skillsInstallService: SkillsInstallService;
-  skillsPackService: SkillsPackService;
   yunqiService: YunqiService;
+  openApiService: OpenApiService;
 }
 
 export interface CreateServicesOptions {
@@ -192,10 +188,8 @@ export function createServices(options: CreateServicesOptions = {}): ServiceCont
   const tokenPlanPaymentService = new TokenPlanPaymentService(apiClient);
   const tokenPlanPurchaseService = new TokenPlanPurchaseService(apiClient);
   const supportService = new SupportService(apiClient);
-  const skillsHubService = new SkillsHubService(apiClient);
-  const skillsInstallService = new SkillsInstallService(skillsHubService);
-  const skillsPackService = new SkillsPackService(skillsHubService, skillsInstallService);
   const yunqiService = new YunqiService(apiClient);
+  const openApiService = new OpenApiService(apiClient);
 
   return {
     apiClient,
@@ -215,9 +209,7 @@ export function createServices(options: CreateServicesOptions = {}): ServiceCont
     tokenPlanPaymentService,
     tokenPlanPurchaseService,
     supportService,
-    skillsHubService,
-    skillsInstallService,
-    skillsPackService,
     yunqiService,
+    openApiService,
   };
 }

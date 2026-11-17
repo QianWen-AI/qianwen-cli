@@ -96,12 +96,32 @@ describe('ApiClient.callFlatApi', () => {
     expect(body.params).toEqual({ v: '1' });
   });
 
-  it('marks AUTH_OPTIONAL_PRODUCTS as authMode=optional', async () => {
+  it('marks a public anonymous capability as authMode=optional', async () => {
     const base = makeStubBaseClient();
     base.setResponse({ code: '200', data: {} });
     const client = createApiClient({ baseClient: base });
     await client.callFlatApi({ product: 'aliyun-search-maas', action: 'SearchAll' });
     expect(base.calls[0]!.authMode).toBe('optional');
+  });
+
+  it('keeps non-public actions on the same product authenticated', async () => {
+    const base = makeStubBaseClient();
+    base.setResponse({ code: '200', data: {} });
+    const client = createApiClient({ baseClient: base });
+    await client.callFlatApi({ product: 'aliyun-search-maas', action: 'UpdateEntry' });
+    expect(base.calls[0]!.authMode).toBe('required');
+  });
+
+  it('honours an explicit authOptional=false override for a public capability', async () => {
+    const base = makeStubBaseClient();
+    base.setResponse({ code: '200', data: {} });
+    const client = createApiClient({ baseClient: base });
+    await client.callFlatApi({
+      product: 'aliyun-search-maas',
+      action: 'SearchAll',
+      authOptional: false,
+    });
+    expect(base.calls[0]!.authMode).toBe('required');
   });
 
   it('honours an explicit authOptional=true flag', async () => {

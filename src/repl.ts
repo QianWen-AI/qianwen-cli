@@ -3,7 +3,7 @@ import { homedir } from 'os';
 import { createProgram } from './cli.js';
 import { resolveCredentials } from './auth/credentials.js';
 import { getEffectiveConfig } from './config/manager.js';
-import { VERSION } from './index.js';
+import { VERSION } from './version.js';
 import { flushDebugReport, clearDebugBuffer } from './api/debug-buffer.js';
 import {
   SUBCOMMANDS,

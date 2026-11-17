@@ -89,12 +89,14 @@ function makeTaskService(responses: Array<Record<string, unknown>>): {
 
 function makeASRClient(submitResponse: Record<string, unknown>): {
   client: ASRClient;
+  request: ReturnType<typeof vi.fn>;
   submitBody: () => Record<string, unknown>;
 } {
   const request = vi.fn().mockResolvedValue(submitResponse);
   const transport = { request, requestRaw: vi.fn() } as unknown as DashScopeTransport;
   return {
     client: new ASRClient({ transport }),
+    request,
     submitBody: () => (request.mock.calls[0]![0] as { body: Record<string, unknown> }).body,
   };
 }
@@ -618,5 +620,327 @@ describe('ASRService.generate — Qwen synchronous recognition', () => {
       asr_options: { language: 'zh' },
       format: 'wav',
     });
+  });
+});
+
+describe('ASRService — protocol routing', () => {
+  const filetransModels = [
+    'qwen-audio-3.0-asr-flash-filetrans',
+    'qwen-audio-3.1-asr-flash-filetrans',
+  ];
+  const source = 'https://mock-media.test.qianwenai.com/meeting.wav';
+  const submit = { output: { task_id: 'filetrans-1', task_status: 'PENDING' } };
+
+  function expectAsyncRequest(
+    request: ReturnType<typeof vi.fn>,
+    body: Record<string, unknown>,
+    headers: Record<string, string> = { 'X-DashScope-Async': 'enable' },
+  ): void {
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'POST',
+        path: '/api/v1/services/audio/asr/transcription',
+        body,
+        headers,
+      }),
+    );
+  }
+
+  it.each(filetransModels)('submits %s with empty parameters without polling', async (model) => {
+    const stub = makeASRClient(submit);
+    const task = makeTaskService([]);
+    const service = new ASRService(
+      makeDeps({ client: stub.client, taskService: task.taskService }),
+    );
+    const body = { model, input: { file_urls: [source] }, parameters: {} };
+
+    const built = await service.buildRequest({ source, model });
+    expect(built.model).toBe(model);
+    expect(built.body).toEqual(body);
+
+    const outcome = await service.generate({ source, model, wait: false });
+
+    expectAsyncRequest(stub.request, body);
+    expect(outcome.completed).toBe(false);
+    expect(outcome.envelope.data).toMatchObject({
+      task_id: 'filetrans-1',
+      task_status: 'PENDING',
+    });
+    expect(task.request).not.toHaveBeenCalled();
+  });
+
+  it.each(filetransModels)(
+    'submits %s with language hints and waits for the transcript by default',
+    async (model) => {
+      const transcriptionUrl = 'https://mock-media.test.qianwenai.com/transcription.json';
+      const stub = makeASRClient(submit);
+      const task = makeTaskService([
+        { output: { task_id: 'filetrans-1', task_status: 'RUNNING' } },
+        {
+          output: {
+            task_id: 'filetrans-1',
+            task_status: 'SUCCEEDED',
+            results: [{ file_url: source, transcription_url: transcriptionUrl }],
+          },
+        },
+      ]);
+      const service = new ASRService(
+        makeDeps({
+          client: stub.client,
+          taskService: task.taskService,
+          transcriptFetcher: makeTranscriptFetcher('Meeting transcript'),
+        }),
+      );
+
+      const outcome = await service.generate({
+        source,
+        model,
+        language: 'en',
+        timeoutMs: 1000,
+        pollIntervalMs: 10,
+      });
+
+      expectAsyncRequest(stub.request, {
+        model,
+        input: { file_urls: [source] },
+        parameters: { language_hints: ['en'] },
+      });
+      expect(task.request).toHaveBeenCalledTimes(2);
+      expect(task.request).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ method: 'GET', path: '/api/v1/tasks/filetrans-1' }),
+      );
+      expect(task.request).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ method: 'GET', path: '/api/v1/tasks/filetrans-1' }),
+      );
+      expect(outcome.completed).toBe(true);
+      expect(outcome.envelope.meta.model).toBe(model);
+      expect(outcome.envelope.data).toMatchObject({
+        task_id: 'filetrans-1',
+        task_status: 'SUCCEEDED',
+        text: 'Meeting transcript',
+        text_truncated: false,
+        transcription_url: transcriptionUrl,
+        urls: [transcriptionUrl],
+      });
+    },
+  );
+
+  it('throws the upstream error when a filetrans task fails', async () => {
+    const model = 'qwen-audio-3.1-asr-flash-filetrans';
+    const stub = makeASRClient(submit);
+    const task = makeTaskService([
+      {
+        output: {
+          task_id: 'filetrans-1',
+          task_status: 'FAILED',
+          code: 'InvalidParameter',
+          message: 'unsupported audio codec',
+        },
+      },
+    ]);
+    const service = new ASRService(
+      makeDeps({ client: stub.client, taskService: task.taskService }),
+    );
+
+    await expect(service.generate({ source, model })).rejects.toThrow('unsupported audio codec');
+
+    expectAsyncRequest(stub.request, { model, input: { file_urls: [source] }, parameters: {} });
+    expect(task.request).toHaveBeenCalledTimes(1);
+    expect(task.request).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'GET', path: '/api/v1/tasks/filetrans-1' }),
+    );
+  });
+
+  it('normalizes whitespace and case for routing without lowercasing the upstream model', async () => {
+    const model = 'QwEn-AuDiO-3.1-AsR-FlAsH-FiLeTrAnS';
+    const stub = makeASRClient(submit);
+    const service = new ASRService(makeDeps({ client: stub.client }));
+
+    await service.generate({ source, model: ` \t${model}\n`, wait: false });
+
+    expectAsyncRequest(stub.request, { model, input: { file_urls: [source] }, parameters: {} });
+  });
+
+  it('forwards both OSS resolution and async headers for filetrans', async () => {
+    const model = 'qwen-audio-3.0-asr-flash-filetrans';
+    const ossSource = 'oss://qwen-uploads/meeting.wav';
+    const stub = makeASRClient(submit);
+    const service = new ASRService(makeDeps({ client: stub.client }));
+    const built = await service.buildRequest({ source: ossSource, model });
+
+    expect(built.extraHeaders).toEqual({ 'X-DashScope-OssResourceResolve': 'enable' });
+    await service.generate({ source: ossSource, model, wait: false });
+
+    expectAsyncRequest(
+      stub.request,
+      { model, input: { file_urls: [ossSource] }, parameters: {} },
+      { 'X-DashScope-OssResourceResolve': 'enable', 'X-DashScope-Async': 'enable' },
+    );
+  });
+
+  it('routes a request-only filetrans model asynchronously and preserves native parameters', async () => {
+    const body = {
+      model: 'qwen-audio-3.1-asr-flash-filetrans',
+      input: { file_urls: [source] },
+      parameters: { language_hints: ['en'], channel_id: [0] },
+    };
+    const stub = makeASRClient(submit);
+    const task = makeTaskService([]);
+    const service = new ASRService(
+      makeDeps({ client: stub.client, taskService: task.taskService }),
+    );
+
+    const outcome = await service.generate({ request: JSON.stringify(body), wait: false });
+
+    expectAsyncRequest(stub.request, body);
+    expect(outcome.completed).toBe(false);
+    expect(outcome.envelope.data.task_id).toBe('filetrans-1');
+    expect(task.request).not.toHaveBeenCalled();
+  });
+
+  it('uses a filetrans override for routing and language mapping without a sync-field conflict', async () => {
+    const model = 'qwen-audio-3.0-asr-flash-filetrans';
+    const stub = makeASRClient(submit);
+    const service = new ASRService(makeDeps({ client: stub.client }));
+
+    await service.generate({
+      source,
+      model,
+      language: 'zh',
+      request: JSON.stringify({
+        model: 'qwen-audio-3.0-asr-flash',
+        parameters: { asr_options: { language: 'en' } },
+      }),
+      wait: false,
+    });
+
+    expectAsyncRequest(stub.request, {
+      model,
+      input: { file_urls: [source] },
+      parameters: { asr_options: { language: 'en' }, language_hints: ['zh'] },
+    });
+  });
+
+  it('uses a sync override for routing and language mapping without an async-field conflict', async () => {
+    const model = 'qwen3-asr-flash';
+    const stub = makeASRClient({ output: { text: 'Sync transcript' } });
+    const task = makeTaskService([]);
+    const service = new ASRService(
+      makeDeps({ client: stub.client, taskService: task.taskService }),
+    );
+
+    const outcome = await service.generate({
+      source,
+      model,
+      language: 'zh',
+      request: JSON.stringify({
+        model: 'qwen-audio-3.1-asr-flash-filetrans',
+        parameters: { language_hints: ['en'] },
+      }),
+    });
+
+    expect(stub.request).toHaveBeenCalledTimes(1);
+    expect(stub.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'POST',
+        path: '/api/v1/services/aigc/multimodal-generation/generation',
+        body: {
+          model,
+          input: { messages: [{ role: 'user', content: [{ audio: source }] }] },
+          parameters: {
+            language_hints: ['en'],
+            asr_options: { language: 'zh' },
+            format: 'wav',
+          },
+        },
+      }),
+    );
+    const headers = (stub.request.mock.calls[0]![0] as { headers?: Record<string, string> })
+      .headers;
+    expect(headers).toBeUndefined();
+    expect(outcome.completed).toBe(true);
+    expect(outcome.envelope.data.text).toBe('Sync transcript');
+    expect(task.request).not.toHaveBeenCalled();
+  });
+
+  it('rejects language hints that conflict with --language after a filetrans override', async () => {
+    const stub = makeASRClient(submit);
+    const task = makeTaskService([]);
+    const service = new ASRService(
+      makeDeps({ client: stub.client, taskService: task.taskService }),
+    );
+
+    await expect(
+      service.generate({
+        source,
+        model: 'qwen-audio-3.1-asr-flash-filetrans',
+        language: 'zh',
+        request: JSON.stringify({
+          model: 'qwen3-asr-flash',
+          parameters: { language_hints: ['en'] },
+        }),
+        wait: false,
+      }),
+    ).rejects.toMatchObject({ exitCode: 4 });
+
+    expect(stub.request).not.toHaveBeenCalled();
+    expect(task.request).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['qwen-audio-3.0-asr-flash', 'qwen-audio-3.0-asr-flash'],
+    ['qwen3-asr-flash', 'qwen3-asr-flash'],
+    ['qwen-audio-3.2-asr-flash-filetrans', 'qwen-audio-3.2-asr-flash-filetrans'],
+    ['qwen-audio-3.1-asr-flash-filetrans-extra', 'qwen-audio-3.1-asr-flash-filetrans-extra'],
+    [' \tQwEn3-AsR-FlAsH\n', 'QwEn3-AsR-FlAsH'],
+  ])('keeps %s on the synchronous protocol', async (model, expectedModel) => {
+    const stub = makeASRClient({ output: { text: 'Sync transcript' } });
+    const task = makeTaskService([]);
+    const service = new ASRService(
+      makeDeps({ client: stub.client, taskService: task.taskService }),
+    );
+
+    const outcome = await service.generate({ source, model, language: 'en' });
+
+    expect(stub.request).toHaveBeenCalledTimes(1);
+    expect(stub.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'POST',
+        path: '/api/v1/services/aigc/multimodal-generation/generation',
+        body: {
+          model: expectedModel,
+          input: { messages: [{ role: 'user', content: [{ audio: source }] }] },
+          parameters: { asr_options: { language: 'en' }, format: 'wav' },
+        },
+      }),
+    );
+    const headers = (stub.request.mock.calls[0]![0] as { headers?: Record<string, string> })
+      .headers;
+    expect(headers).toBeUndefined();
+    expect(outcome.completed).toBe(true);
+    expect(outcome.envelope.data.text).toBe('Sync transcript');
+    expect(task.request).not.toHaveBeenCalled();
+  });
+
+  it.each(['fun-asr', 'custom-asr-model'])('keeps %s on the async protocol', async (model) => {
+    const stub = makeASRClient(submit);
+    const task = makeTaskService([]);
+    const service = new ASRService(
+      makeDeps({ client: stub.client, taskService: task.taskService }),
+    );
+
+    const outcome = await service.generate({ source, model, language: 'en', wait: false });
+
+    expectAsyncRequest(stub.request, {
+      model,
+      input: { file_urls: [source] },
+      parameters: { language_hints: ['en'] },
+    });
+    expect(outcome.completed).toBe(false);
+    expect(outcome.envelope.data.task_id).toBe('filetrans-1');
+    expect(task.request).not.toHaveBeenCalled();
   });
 });

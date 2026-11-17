@@ -222,7 +222,7 @@ export function truncateByDisplayWidth(
  * Retained for callers that need a width-based hard splitter independent of
  * word boundaries (the word-aware path lives in {@link wrapText}).
  */
-function breakByDisplayWidth(str: string, maxWidth: number): string[] {
+export function breakByDisplayWidth(str: string, maxWidth: number): string[] {
   if (maxWidth <= 0) return str ? [str] : [];
   const lines: string[] = [];
   let chunk = '';

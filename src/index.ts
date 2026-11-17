@@ -1,8 +1,4 @@
-// Version is injected at build time via tsup `define: { __VERSION__ }`.
-// Falls back to the literal string for test/dev environments where the
-// define replacement has not been applied.
-declare const __VERSION__: string;
-export const VERSION: string = typeof __VERSION__ !== 'undefined' ? __VERSION__ : '1.0.0';
+export { VERSION } from './version.js';
 
 // UI Components
 export * from './ui/index.js';

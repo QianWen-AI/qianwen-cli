@@ -16,8 +16,6 @@ export const API_PRODUCT_GATEWAY = 'sfm_bailian';
 export const API_PRODUCT_SEARCH = 'aliyun-search-maas';
 /** Product identifier for support ticket service. */
 export const API_PRODUCT_WORKORDER = 'Workorder';
-/** Product identifier for the website portal (SkillHub search/install). */
-export const API_PRODUCT_WEBSITE_PORTAL = 'WebsitePortal';
 /** Product identifier for yunqi (forum) service. */
 export const API_PRODUCT_MAAS_PORTAL = 'MaasPortal';
 
@@ -60,13 +58,7 @@ export type OrchestrationPath =
   | typeof API_ORCHESTRATION_PATH
   | typeof API_PUBLIC_ORCHESTRATION_PATH;
 
-// SkillHub actions (WebsitePortal) — search plus the two install-side actions.
-export const API_ACTION_SEARCH_HUB = 'SearchHub';
-export const API_ACTION_GET_HUB_SKILL = 'GetHubSkill';
-export const API_ACTION_GET_HUB_SKILL_DOWNLOAD = 'GetHubSkillDownload';
-
-// Pack actions (WebsitePortal) — skill collection download.
-export const API_ACTION_HUB_COLLECTION_DOWNLOAD = 'HubSkillCollectionDownload';
-
-// Products with optional authentication (public search API, etc.)
-export const AUTH_OPTIONAL_PRODUCTS: ReadonlySet<string> = new Set([API_PRODUCT_SEARCH]);
+/** Default anonymous capabilities when a caller does not set authOptional. */
+export const PUBLIC_ANONYMOUS_CAPABILITIES: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  [API_PRODUCT_SEARCH, new Set([API_ACTION_SEARCH_ALL])],
+]);

@@ -404,10 +404,12 @@ export function tryExtractUserFromToken(accessToken: string): UserInfo | null {
 /**
  * Ensure user has valid (non-expired) credentials.
  * If token is expired, throw auth error (no refresh mechanism).
+ * @param resolved A fresh resolveCredentials() result from the current synchronous
+ * authentication check; never reuse a cached result from an earlier call.
  */
-export function ensureAuthenticated(): Credentials {
-  const resolved = resolveCredentials();
-
+export function ensureAuthenticated(
+  resolved: ResolvedCredential | null = resolveCredentials(),
+): Credentials {
   if (!resolved) {
     throw authRequiredError();
   }

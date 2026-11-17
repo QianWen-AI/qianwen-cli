@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { VERSION } from '../index.js';
+import { VERSION } from '../version.js';
 import { createClient } from '../api/client.js';
 import { getConfigValue } from '../config/manager.js';
 import { resolveFormat, outputJSON } from '../output/format.js';

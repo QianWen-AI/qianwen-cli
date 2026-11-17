@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from 'fs';
 import { dirname } from 'path';
 import { getGlobalConfigPath, getLocalConfigPath, getMigrationStatePath } from './paths.js';
-import { CONFIG_DEFAULTS, PUBLIC_KEYS, validateConfigValue } from './schema.js';
+import { CONFIG_DEFAULTS, PUBLIC_KEYS, isValidKey, validateConfigValue } from './schema.js';
 import type { ConfigKey, ConfigSchema, ConfigEntry } from '../types/config.js';
 import { site } from '../site.js';
 
@@ -21,8 +21,13 @@ function readConfigFile(filePath: string): Partial<ConfigSchema> {
     for (const [section, values] of Object.entries(parsed)) {
       if (typeof values === 'object' && values !== null) {
         for (const [key, value] of Object.entries(values as Record<string, unknown>)) {
-          if (typeof value === 'string') {
-            result[`${section}.${key}`] = value;
+          const configKey = `${section}.${key}`;
+          if (
+            isValidKey(configKey) &&
+            typeof value === 'string' &&
+            validateConfigValue(configKey, value) === null
+          ) {
+            result[configKey] = value;
           }
         }
       }
@@ -125,6 +130,8 @@ function migrateLegacyProjectConfigOnce(): void {
 
     for (const [key, value] of Object.entries(legacy)) {
       if (typeof value !== 'string') continue;
+      // A repository must not persist internal endpoints or credentials into user config.
+      if (!PUBLIC_KEYS.includes(key as ConfigKey)) continue;
       if (key in current) continue;
       writeConfigFile(globalPath, key as ConfigKey, value, true);
     }

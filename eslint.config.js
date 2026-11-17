@@ -10,14 +10,7 @@ const prettierConfig = /** @type {{ rules: import('eslint').Linter.RulesRecord }
 
 export default tseslint.config(
   {
-    ignores: [
-      'dist/**',
-      'node_modules/**',
-      'release/**',
-      'coverage/**',
-      'ref/**',
-      '*.tsbuildinfo',
-    ],
+    ignores: ['dist/**', 'node_modules/**', 'release/**', 'coverage/**', 'ref/**', '*.tsbuildinfo'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -81,6 +74,31 @@ export default tseslint.config(
           message: 'Use safeRemove() from skills-removal.ts for guarded deletion.',
         },
       ],
+    },
+  },
+  // Node runtime globals for example plugins (.mjs handlers) and tests (vitest
+  // runs on Node): they legitimately use process/console/Buffer/etc.
+  {
+    files: ['examples/**/*.{mjs,js}', 'tests/**/*.{ts,tsx,mjs,js}'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        Buffer: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        TextEncoder: 'readonly',
+        TextDecoder: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+      },
+    },
+    rules: {
+      'no-console': 'off',
     },
   },
   // Disable format rules that conflict with Prettier; must be placed last

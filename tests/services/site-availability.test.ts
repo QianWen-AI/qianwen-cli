@@ -22,13 +22,13 @@ describe('SiteAvailabilityGuard.assertAvailable', () => {
   });
 
   it('raises an INVALID_ARGUMENT error when the current site has no model', () => {
-    const guard = makeGuard('qwencloud', ['qianwen']);
+    const guard = makeGuard('othersite', ['qianwen']);
 
     expect(() => guard.assertAvailable()).toThrowError();
   });
 
   it('tags the not-available error with exit code 4', () => {
-    const guard = makeGuard('qwencloud', ['qianwen']);
+    const guard = makeGuard('othersite', ['qianwen']);
 
     try {
       guard.assertAvailable();
@@ -40,7 +40,7 @@ describe('SiteAvailabilityGuard.assertAvailable', () => {
   });
 
   it('names the command in the not-available message', () => {
-    const guard = makeGuard('qwencloud', ['qianwen']);
+    const guard = makeGuard('othersite', ['qianwen']);
 
     try {
       guard.assertAvailable();
@@ -51,7 +51,7 @@ describe('SiteAvailabilityGuard.assertAvailable', () => {
   });
 
   it('names the supported site and suggests the concrete CLI to use', () => {
-    const guard = makeGuard('qwencloud', ['qianwen']);
+    const guard = makeGuard('othersite', ['qianwen']);
 
     try {
       guard.assertAvailable();
@@ -65,7 +65,7 @@ describe('SiteAvailabilityGuard.assertAvailable', () => {
   });
 
   it('falls back gracefully when no site offers the model', () => {
-    const guard = makeGuard('qwencloud', []);
+    const guard = makeGuard('othersite', []);
 
     try {
       guard.assertAvailable();
