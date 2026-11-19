@@ -256,6 +256,10 @@ describe('plugin import state', () => {
     const child = spawnSync(
       process.execPath,
       [
+        // Exclude the reported runtime deprecation while keeping other stderr output checked.
+        ...(process.allowedNodeEnvironmentFlags.has('--disable-warning')
+          ? ['--disable-warning=DEP0205']
+          : []),
         '--import',
         'tsx',
         '--input-type=module',

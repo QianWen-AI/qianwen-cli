@@ -10,6 +10,7 @@ export interface SectionProps {
   children: React.ReactNode;
   footer?: string; // e.g., "5 models with free tier"
   paddingLeft?: number;
+  borderStyle?: 'single' | 'double';
   /**
    * Cap the section's display width and truncate title/footer to fit.
    * Only interactive full-screen consumers pass this (wrapped lines break
@@ -34,11 +35,13 @@ export function Section({
   children,
   footer,
   paddingLeft = 2,
+  borderStyle = 'single',
   maxWidth,
 }: SectionProps) {
   const { columns } = useTerminalSize();
   const effectiveColumns = maxWidth != null ? Math.min(columns, maxWidth) : columns;
   const sectionWidth = effectiveColumns - paddingLeft;
+  const border = borderStyle === 'double' ? '═' : '─';
 
   const rawTitle = subtitle ? `${title}  ${theme.symbols.dot}  ${subtitle}` : title;
   // Reserve one column for the mandatory trailing dash so the line never wraps.
@@ -62,7 +65,7 @@ export function Section({
         <Text bold color={colors.brand}>
           {titlePart}
         </Text>
-        <Text color={colors.border}>{'─'.repeat(Math.max(1, dashesAfter))}</Text>
+        <Text color={colors.border}>{border.repeat(Math.max(1, dashesAfter))}</Text>
       </Text>
 
       {/* Content */}
@@ -71,7 +74,7 @@ export function Section({
       {/* Footer separator */}
       {footer && (
         <Text color={colors.border} wrap="truncate-end">
-          {'─'.repeat(Math.max(0, sectionWidth))}
+          {border.repeat(Math.max(0, sectionWidth))}
         </Text>
       )}
 

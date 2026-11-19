@@ -76,6 +76,7 @@ export class TokenPlanCatalogPricing {
       edition: TokenPlanEdition;
       specCode: string;
       authenticated: boolean;
+      includeListPrice?: boolean;
       signal?: AbortSignal;
     },
   ): Promise<TokenPlanCatalogPrice> {
@@ -93,6 +94,7 @@ export class TokenPlanCatalogPricing {
         parseTokenPlanCatalogPrice(data, configuration, {
           edition: options.edition,
           specCode: options.specCode,
+          includeListPrice: options.includeListPrice,
         }),
     });
     signal?.throwIfAborted();

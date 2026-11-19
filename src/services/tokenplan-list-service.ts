@@ -1,7 +1,10 @@
 import type { ApiClient } from '../api/api-client.js';
+import { isResponseParseError } from '../api/base-client.js';
 import {
   parseSoloCatalogBillingCycle,
   parseSoloCatalogSubscription,
+  parseSoloSubscriptionCore,
+  parseSoloStatusUsage,
 } from '../api/parsers/solo-subscription.js';
 import { GatewayShapeError } from '../api/request-adapter.js';
 import {
@@ -19,6 +22,8 @@ import type {
   TokenPlanListResult,
   TokenPlanListRow,
   TokenPlanListSection,
+  TokenPlanCatalogPlan,
+  TokenPlanCurrentPlanDetails,
 } from '../types/tokenplan-catalog.js';
 import {
   TOKEN_PLAN_INDIVIDUAL_TIERS,
@@ -30,6 +35,14 @@ import {
   TokenPlanCatalogPricing,
 } from './tokenplan-catalog-pricing.js';
 import { safeSubscriptionDiagnostic } from './subscription-diagnostics.js';
+import { createTokenPlanBenefitsReader } from './tokenplan-benefits.js';
+import { DecimalAmount } from '../utils/decimal-amount.js';
+import {
+  parseTeamSeatTypeSummaries,
+  subscriptionTimestamp,
+  teamResponseData,
+} from './tokenplan-service.js';
+import { API_TOKENPLAN_SOLO_USAGE } from '../types/api-routes.js';
 
 const SOLO_SUBSCRIPTION_API = 'zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/subscription';
 const SOLO_QUOTA_API = 'zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/quota-config';
@@ -45,6 +58,75 @@ interface CatalogSubscription {
   currentBillingCycle: TokenPlanBillingCycle | null;
   subscribedPlans: ReadonlySet<string>;
   diagnostics: SubscriptionDiagnostic[];
+  details?: TokenPlanCurrentPlanDetails;
+  instanceCode?: string | null;
+}
+
+function catalogSubscriptionDetails(value: unknown): TokenPlanCurrentPlanDetails {
+  return {
+    ...parseSoloSubscriptionCore(record(value)?.data),
+    totalCredits: null,
+    remainingCredits: null,
+  };
+}
+
+function preciseQuota(value: number | null | undefined): string | null {
+  if (value == null) return null;
+  try {
+    return DecimalAmount.fromApi(value).toCanonicalString();
+  } catch {
+    return null;
+  }
+}
+
+function teamCatalogDetails(
+  value: unknown,
+  diagnostics: SubscriptionDiagnostic[],
+): TokenPlanCurrentPlanDetails {
+  const details: TokenPlanCurrentPlanDetails = {
+    subscriptionId: null,
+    endAt: null,
+    totalCredits: null,
+    remainingCredits: null,
+  };
+  const data = teamResponseData(value, 'GetSeatSubscriptionSummary', diagnostics);
+  if (data === null) return details;
+  details.endAt = subscriptionTimestamp(data.EndTime);
+  const summaries = parseTeamSeatTypeSummaries(value, diagnostics);
+  if (summaries === null) return details;
+  // A seat ID cannot stand in for a subscription ID. Aggregate only complete
+  // Credits snapshots whose refresh windows agree across seat types.
+  const sameWindow =
+    summaries.length === 1 ||
+    (summaries.length > 1 &&
+      summaries[0]!.resetAt !== null &&
+      summaries.every((summary) => summary.resetAt === summaries[0]!.resetAt));
+  if (
+    sameWindow &&
+    diagnostics.length === 0 &&
+    summaries.every((summary) => summary.totalCredits !== null && summary.remainingCredits !== null)
+  ) {
+    details.totalCredits = summaries
+      .reduce(
+        (total, summary) => total.add(DecimalAmount.parse(summary.totalCredits!)),
+        DecimalAmount.parse('0'),
+      )
+      .toCanonicalString();
+    details.remainingCredits = summaries
+      .reduce(
+        (total, summary) => total.add(DecimalAmount.parse(summary.remainingCredits!)),
+        DecimalAmount.parse('0'),
+      )
+      .toCanonicalString();
+  } else if (diagnostics.length === 0) {
+    diagnostics.push({
+      api: 'GetSeatSubscriptionSummary',
+      errorCode: 'INCOMPLETE_CREDIT_SUMMARY',
+      errorMessage:
+        'Team credit totals are unavailable because the quota snapshots are incomplete or use different refresh windows.',
+    });
+  }
+  return details;
 }
 
 const TEAM_TIERS = ['standard', 'pro', 'max'] as const;
@@ -172,7 +254,29 @@ function unavailableSection(edition: TokenPlanEdition, error: unknown): TokenPla
     subscriptionUrl: null,
     rows: [],
     diagnostics: [failureDiagnostic(`TokenPlanList/${edition}`, error)],
+    currentPlanDetails: null,
+    plans: [],
   };
+}
+
+/** Keep the retry wait inside the command budget and release its timer on cancellation. */
+function waitForCatalogRetry(signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, 200);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 async function query<T>(
@@ -195,9 +299,32 @@ async function query<T>(
   try {
     return await Promise.race([
       Promise.resolve()
-        .then(() => {
+        .then(async () => {
           signal.throwIfAborted();
-          return request();
+          try {
+            return await request();
+          } catch (error) {
+            // Only catalog reads recover from a dropped connection; business and parse
+            // failures keep their original diagnostics, and trade/write paths are unchanged.
+            const catalogRead =
+              api === 'GetCommodity' ||
+              api.startsWith('TokenPlanPrice/') ||
+              api.startsWith('CheckInventory/');
+            if (
+              !catalogRead ||
+              signal.aborted ||
+              !(error instanceof Error) ||
+              error.name !== 'Error' ||
+              isResponseParseError(error) ||
+              !/^Network request failed:/.test(error.message)
+            ) {
+              throw error;
+            }
+            // The single silent retry shares the command deadline and remains abortable.
+            await waitForCatalogRetry(signal);
+            signal.throwIfAborted();
+            return request();
+          }
         })
         .then(
           (value): QueryResult<T> => ({ value, diagnostics: [] }),
@@ -231,10 +358,18 @@ export class TokenPlanListService {
     const cancel = () => controller.abort(options.signal?.reason);
     options.signal?.addEventListener('abort', cancel, { once: true });
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const benefits = createTokenPlanBenefitsReader(this.apiClient, controller.signal);
     try {
       const results = await Promise.allSettled(
         editions.map((requested) =>
-          this.loadEdition(requested, billingCycle, authenticated, controller.signal),
+          this.loadEdition(
+            requested,
+            billingCycle,
+            authenticated,
+            controller.signal,
+            options,
+            benefits,
+          ),
         ),
       );
       options.signal?.throwIfAborted();
@@ -270,11 +405,78 @@ export class TokenPlanListService {
     }
   }
 
+  private async loadSubscription(
+    edition: TokenPlanEdition,
+    commodityCode: string,
+    signal: AbortSignal,
+  ): Promise<QueryResult<CatalogSubscription>> {
+    const subscription = await query<CatalogSubscription>(
+      edition === 'individual' ? SOLO_SUBSCRIPTION_API : 'GetUserInstanceSummary',
+      signal,
+      async () => {
+        if (edition === 'individual') {
+          const result = await this.apiClient.callCsDataApi({
+            api: SOLO_SUBSCRIPTION_API,
+            data: { commodityCode },
+            signal,
+            parse: (data) => ({
+              ...parseSoloCatalogSubscription(data),
+              details: catalogSubscriptionDetails(data),
+            }),
+          });
+          return {
+            status: result.status === 'active' ? 'active' : 'not_subscribed',
+            currentPlan: result.specCode,
+            currentBillingCycle: null,
+            subscribedPlans: new Set(result.specCode ? [result.specCode] : []),
+            diagnostics: [],
+            details: result.details,
+            instanceCode: result.instanceCode,
+          };
+        }
+        const response = await this.apiClient.callFlatApi<unknown>({
+          product: 'BssOpenAPI-V3',
+          action: 'GetUserInstanceSummary',
+          version: '2023-09-30',
+          params: { ProductCode: commodityCode },
+          signal,
+        });
+        const subscribedPlans = parseTeamCatalogSubscription(response);
+        return {
+          status: subscribedPlans.size > 0 ? 'active' : 'not_subscribed',
+          currentPlan: null,
+          currentBillingCycle: null,
+          subscribedPlans,
+          diagnostics: [],
+        };
+      },
+    );
+    const instanceCode = subscription.value?.instanceCode;
+    if (edition === 'individual' && subscription.value?.status === 'active' && instanceCode) {
+      // Instance details share the deadline but cannot erase an already confirmed subscription.
+      const cycle = await query('QueryInstance', signal, () =>
+        this.apiClient.callOrchestrationApi({
+          action: 'QueryInstance',
+          path: '/data/custom.json',
+          authMode: 'required',
+          params: { instanceId: instanceCode, commodityCode, orderType: 'RENEW' },
+          signal,
+          parse: parseSoloCatalogBillingCycle,
+        }),
+      );
+      subscription.value.currentBillingCycle = cycle.value;
+      subscription.diagnostics.push(...cycle.diagnostics);
+    }
+    return subscription;
+  }
+
   private async loadEdition(
     edition: TokenPlanEdition,
     billingCycle: TokenPlanBillingCycle,
     authenticated: boolean,
     signal: AbortSignal,
+    options: TokenPlanListOptions,
+    benefits: ReturnType<typeof createTokenPlanBenefitsReader>,
   ): Promise<TokenPlanListSection> {
     if (edition === 'team' && billingCycle === 'quarterly') {
       return {
@@ -286,6 +488,8 @@ export class TokenPlanListService {
         subscriptionUrl: null,
         rows: [],
         diagnostics: [],
+        currentPlanDetails: null,
+        plans: [],
       };
     }
     const commodityCode =
@@ -294,68 +498,17 @@ export class TokenPlanListService {
         : site.features.tokenPlanCommodityCodes.teams;
     const trade = new TokenPlanTradeService(this.apiClient);
     const pricing = new TokenPlanCatalogPricing(this.apiClient);
-    const [commodity, subscription, quota] = await Promise.all([
+    // Public reads must progress even if the account query consumes the whole command budget.
+    const subscriptionPromise = authenticated
+      ? this.loadSubscription(edition, commodityCode, signal)
+      : skipped<CatalogSubscription>();
+    const modelsPromise = options.includeModels
+      ? query('TokenPlanSupportedModels', signal, () => benefits.loadModels(edition))
+      : skipped<Awaited<ReturnType<typeof benefits.loadModels>>>();
+    const [commodity, quota] = await Promise.all([
       query('GetCommodity', signal, () =>
         authenticated ? trade.getCommodity(edition, signal) : pricing.getCommodity(edition, signal),
       ),
-      authenticated
-        ? query<CatalogSubscription>(
-            edition === 'individual' ? SOLO_SUBSCRIPTION_API : 'GetUserInstanceSummary',
-            signal,
-            async () => {
-              if (edition === 'individual') {
-                const result = await this.apiClient.callCsDataApi({
-                  api: SOLO_SUBSCRIPTION_API,
-                  data: { commodityCode },
-                  signal,
-                  parse: parseSoloCatalogSubscription,
-                });
-                let currentBillingCycle: TokenPlanBillingCycle | null = null;
-                if (result.status === 'active' && result.instanceCode) {
-                  try {
-                    currentBillingCycle = await this.apiClient.callOrchestrationApi({
-                      action: 'QueryInstance',
-                      path: '/data/custom.json',
-                      authMode: 'required',
-                      params: {
-                        instanceId: result.instanceCode,
-                        commodityCode,
-                        orderType: 'RENEW',
-                      },
-                      signal,
-                      parse: parseSoloCatalogBillingCycle,
-                    });
-                  } catch {
-                    // Keep the cycle unresolved when instance details cannot determine it;
-                    // the confirmed VALID subscription remains active.
-                  }
-                }
-                return {
-                  status: result.status === 'active' ? 'active' : 'not_subscribed',
-                  currentPlan: result.specCode,
-                  currentBillingCycle,
-                  subscribedPlans: new Set(result.specCode ? [result.specCode] : []),
-                  diagnostics: [],
-                };
-              }
-              const response = await this.apiClient.callFlatApi<unknown>({
-                product: 'BssOpenAPI-V3',
-                action: 'GetUserInstanceSummary',
-                version: '2023-09-30',
-                params: { ProductCode: commodityCode },
-                signal,
-              });
-              const subscribedPlans = parseTeamCatalogSubscription(response);
-              return {
-                status: subscribedPlans.size > 0 ? 'active' : 'not_subscribed',
-                currentPlan: null,
-                currentBillingCycle: null,
-                subscribedPlans,
-                diagnostics: [],
-              };
-            },
-          )
-        : skipped<CatalogSubscription>(),
       edition === 'individual'
         ? query(SOLO_QUOTA_API, signal, () =>
             this.apiClient.callCsDataApi({
@@ -372,19 +525,14 @@ export class TokenPlanListService {
           parseTokenPlanCatalogMetadata(commodity.value, edition, commodityCode),
         )
       : { value: null, diagnostics: commodity.diagnostics };
-    const subscriptionStatus = subscription.value?.status ?? 'unknown';
     const catalog = metadata.value ?? fallbackCatalogMetadata(edition);
     const catalogCommodity = metadata.value ? commodity.value : null;
     const tiers = catalog.tiers;
     const seats: Record<string, string> = { standard: 'standard', pro: 'pro', max: 'max' };
-    const diagnostics = [
-      ...metadata.diagnostics,
-      ...subscription.diagnostics,
-      ...(subscription.value?.diagnostics ?? []),
-      ...quota.diagnostics,
-    ];
+    const diagnostics = [...metadata.diagnostics, ...quota.diagnostics];
+    const plans: TokenPlanCatalogPlan[] = [];
     const rows = await Promise.all(
-      tiers.map(async (tier) => {
+      tiers.map(async (tier, index) => {
         const { specCode } = tier;
         const limits =
           specCode !== 'max'
@@ -403,6 +551,7 @@ export class TokenPlanListService {
                   specCode,
                   authenticated,
                   signal,
+                  includeListPrice: true,
                 }),
               ),
               query(`CheckInventory/${specCode}`, signal, () =>
@@ -418,13 +567,23 @@ export class TokenPlanListService {
           ...price.diagnostics,
           ...inventory.diagnostics,
         );
+        for (const [invalid, code, window] of [
+          [limits?.weeklyInvalid, 'INVALID_WEEKLY_QUOTA', 'weekly'],
+          [limits?.monthlyInvalid, 'INVALID_MONTHLY_QUOTA', 'monthly'],
+        ] as const) {
+          if (invalid) {
+            diagnostics.push(
+              diagnostic(SOLO_QUOTA_API, code, `The ${window} credit limit is invalid.`),
+            );
+          }
+        }
         const seatType = edition === 'team' ? seats[specCode] : null;
         const individualTier = findTokenPlanIndividualTierBySpecCode(specCode);
         // quota-config is the only personal credit-limit source: weekly first, monthly as
         // fallback (pricing page card semantics: useMonthly = !hasWeekly && hasMonthly).
         const personalMonthlyCredits =
           limits != null && limits.weekly == null && limits.monthly != null ? limits.monthly : null;
-        return {
+        const row: TokenPlanListRow = {
           type:
             edition === 'individual'
               ? (individualTier?.type ?? `token_plan_individual_${specCode}`)
@@ -447,21 +606,59 @@ export class TokenPlanListService {
             tier?.monthlyCredits ??
             price.value?.monthlyCredits ??
             (personalMonthlyCredits === null ? null : String(personalMonthlyCredits)),
-          status:
-            edition === 'individual'
-              ? individualCatalogStatus(
-                  subscription.value,
-                  billingCycle,
-                  specCode,
-                  price.value,
-                  inventory.value,
-                )
-              : teamCatalogStatus(subscription.value, price.value, inventory.value),
+          status: baseCatalogStatus(price.value, inventory.value),
         };
+        const quotaWindows: TokenPlanCatalogPlan['quotaWindows'] = [];
+        if (edition === 'individual') {
+          const weekly = preciseQuota(limits?.weekly);
+          const monthly = preciseQuota(limits?.monthly);
+          if (weekly !== null) quotaWindows.push({ windowType: 'weekly', totalCredits: weekly });
+          if (monthly !== null) quotaWindows.push({ windowType: 'monthly', totalCredits: monthly });
+        } else if (row.monthlyCredits !== null) {
+          // The catalog configuration prices one seat with an explicit byDynamicMonth quota.
+          quotaWindows.push({
+            windowType: 'monthly',
+            totalCredits: DecimalAmount.fromApi(row.monthlyCredits).toCanonicalString(),
+          });
+        }
+        plans[index] = {
+          ...(edition === 'individual' ? { tier: specCode } : { seatType: specCode }),
+          billingTerm: billingCycle,
+          listPrice: price.value?.listPrice ?? null,
+          promoPrice: price.value?.price ?? null,
+          currency: price.value?.currency ?? null,
+          quotaWindows,
+        };
+        return row;
       }),
     );
+    const subscription = await subscriptionPromise;
+    const subscriptionStatus = subscription.value?.status ?? 'unknown';
+    diagnostics.push(...subscription.diagnostics, ...(subscription.value?.diagnostics ?? []));
+    for (const row of rows) {
+      const price = row.price === null ? null : { price: row.price };
+      // Public prices remain useful when eligibility cannot be confirmed for the signed-in account.
+      row.status =
+        authenticated && subscription.value === null
+          ? 'unknown'
+          : edition === 'individual'
+            ? individualCatalogStatus(
+                subscription.value,
+                billingCycle,
+                row.specCode,
+                price,
+                row.inventory,
+              )
+            : teamCatalogStatus(subscription.value, price, row.inventory);
+    }
     if (
-      rows.some((row) => row.name === null || (edition === 'team' && row.monthlyCredits === null))
+      rows.some(
+        (row) =>
+          row.name === null ||
+          (edition === 'team'
+            ? row.monthlyCredits === null
+            : row.weeklyCredits === undefined && row.monthlyCredits === null),
+      )
     ) {
       diagnostics.push(
         diagnostic('TokenPlanList', 'INCOMPLETE_FIELDS', 'Some names or credit limits are unknown'),
@@ -477,6 +674,74 @@ export class TokenPlanListService {
         ),
       );
     }
+    const [models, currentUsage, teamSummary] = await Promise.all([
+      modelsPromise,
+      edition === 'individual' && subscriptionStatus === 'active'
+        ? query(API_TOKENPLAN_SOLO_USAGE, signal, () =>
+            this.apiClient.callCsDataApi({
+              api: API_TOKENPLAN_SOLO_USAGE,
+              data: {},
+              signal,
+              parse: parseSoloStatusUsage,
+            }),
+          )
+        : skipped<ReturnType<typeof parseSoloStatusUsage>>(),
+      edition === 'team' && subscriptionStatus === 'active'
+        ? query('GetSeatSubscriptionSummary', signal, () =>
+            this.apiClient.callFlatApi<unknown>({
+              product: 'BssOpenAPI-V3',
+              action: 'GetSeatSubscriptionSummary',
+              params: { productCode: commodityCode },
+              signal,
+            }),
+          )
+        : skipped<unknown>(),
+    ]);
+    diagnostics.push(
+      ...models.diagnostics,
+      ...currentUsage.diagnostics,
+      ...teamSummary.diagnostics,
+    );
+    for (const plan of plans) {
+      if (options.includeModels) plan.supportedModels = models.value;
+    }
+    let currentPlanDetails =
+      subscriptionStatus === 'active'
+        ? (subscription.value?.details ?? {
+            subscriptionId: null,
+            endAt: null,
+            totalCredits: null,
+            remainingCredits: null,
+          })
+        : null;
+    if (currentPlanDetails && edition === 'individual' && subscription.value?.currentPlan) {
+      const currentQuota =
+        quota.value?.[subscription.value.currentPlan as keyof TokenPlanCatalogQuota];
+      currentPlanDetails.usedPct =
+        currentUsage.value === null ? null : currentUsage.value.usedRatio * 100;
+      currentPlanDetails.remainingPct =
+        currentUsage.value === null ? null : (1 - currentUsage.value.usedRatio) * 100;
+      currentPlanDetails.quotaWindowType = currentUsage.value?.cycle ?? null;
+      if (currentUsage.value && currentQuota) {
+        currentPlanDetails.totalCredits = preciseQuota(currentQuota[currentUsage.value.cycle]);
+      } else if (currentQuota && (currentQuota.weekly == null) !== (currentQuota.monthly == null)) {
+        currentPlanDetails.totalCredits = preciseQuota(currentQuota.weekly ?? currentQuota.monthly);
+      }
+      if (currentUsage.value === null && currentUsage.diagnostics.length === 0) {
+        diagnostics.push(
+          diagnostic(
+            API_TOKENPLAN_SOLO_USAGE,
+            'MISSING_USAGE_RATIO',
+            'Remaining personal quota percentage is unavailable.',
+          ),
+        );
+      }
+    }
+    if (currentPlanDetails && edition === 'team' && teamSummary.value !== null) {
+      const summaryDiagnostics: SubscriptionDiagnostic[] = [];
+      currentPlanDetails = teamCatalogDetails(teamSummary.value, summaryDiagnostics);
+      diagnostics.push(...summaryDiagnostics);
+    }
     return {
       edition,
       billingCycleSupported: cycles ? cycles.includes(billingCycle) : null,
@@ -489,6 +754,8 @@ export class TokenPlanListService {
           : null,
       rows,
       diagnostics,
+      currentPlanDetails,
+      plans,
     };
   }
 }

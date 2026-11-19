@@ -7,6 +7,7 @@ import { tokenPlanRecord } from './tokenplan-trade.js';
 export interface TokenPlanCatalogPrice {
   price: string;
   originalPrice: string | null;
+  listPrice?: string | null;
   currency: 'CNY';
   monthlyCredits: string | null;
 }
@@ -231,6 +232,29 @@ function articleOriginalAmount(
   }
 }
 
+function catalogListAmount(
+  edition: TokenPlanEdition,
+  article: CatalogEntry | null,
+  order: Record<string, unknown> | null,
+): DecimalAmount | null {
+  if (!article) return null;
+  try {
+    if (edition === 'individual') {
+      const price = tokenPlanRecord(article.raw.price);
+      return price?.totalPrice === undefined ? null : minorAmount(price.totalPrice);
+    }
+    if (order?.standPrice !== undefined) {
+      // The order-level team amount is already in yuan; zero is a placeholder that
+      // requires the matched article's cent-denominated list amount.
+      const orderAmount = DecimalAmount.fromApi(order.standPrice);
+      if (orderAmount.compare(DecimalAmount.parse('0')) > 0) return orderAmount;
+    }
+    return article.raw.standPrice === undefined ? null : minorAmount(article.raw.standPrice);
+  } catch {
+    return null;
+  }
+}
+
 function monthlyCredits(
   article: CatalogEntry | null,
   lines: CatalogEntry[],
@@ -251,7 +275,7 @@ function monthlyCredits(
 export function parseTokenPlanCatalogPrice(
   data: unknown,
   configuration: Record<string, unknown>,
-  options: { edition: TokenPlanEdition; specCode: string },
+  options: { edition: TokenPlanEdition; specCode: string; includeListPrice?: boolean },
 ): TokenPlanCatalogPrice {
   const target = catalogTarget(configuration, options);
   const raw = requireRecord(data);
@@ -295,6 +319,12 @@ export function parseTokenPlanCatalogPrice(
   return {
     price: amount.toCanonicalString(),
     originalPrice: articleOriginalAmount(article, amount)?.toCanonicalString() ?? null,
+    ...(options.includeListPrice
+      ? {
+          listPrice:
+            catalogListAmount(options.edition, article, order)?.toCanonicalString() ?? null,
+        }
+      : {}),
     currency: 'CNY',
     monthlyCredits: monthlyCredits(article, lines, target),
   };

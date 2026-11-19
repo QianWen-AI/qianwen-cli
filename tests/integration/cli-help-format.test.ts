@@ -12,7 +12,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createProgram } from '../../src/cli.js';
+import { parseTokenPlanSelection } from '../../src/commands/subscription/tokenplan/purchase.js';
 import { stripAnsi, visibleWidth } from '../../src/ui/textWrap.js';
+import { buildTokenPlanListViewModel } from '../../src/view-models/subscription/tokenplan-list.js';
 import { runCommand } from './helpers.js';
 
 const configPaths = vi.hoisted(() => ({ root: '' }));
@@ -122,16 +124,54 @@ describe('help width stays inside the terminal', () => {
 });
 
 describe('Token Plan purchase help', () => {
+  it('S01 and S02 help register their flags, examples and edition scope without business requests', async () => {
+    const list = await runCommand(['subscription', 'tokenplan', 'list', '--help']);
+    expect(list.exitCode).toBe(0);
+    expect(list.stdout).toContain('--include-models');
+    expect(list.stdout).not.toContain('--include-harness');
+    expect(list.stdout).not.toContain('Harness');
+    expect(list.stdout).toContain('Examples:');
+    const status = await runCommand(['subscription', 'tokenplan', 'status', '--help']);
+    expect(status.exitCode).toBe(0);
+    expect(status.stdout).toContain('--edition');
+    expect(status.stdout.replace(/\s+/g, ' ')).toContain('seatSummaries grouped by seatType');
+    expect(status.stdout).not.toContain('--subscription-id');
+    expect(status.stdout.replace(/\s+/g, ' ')).toContain(
+      'subscription tokenplan status --edition team --format json',
+    );
+    for (const args of [['subscription'], ['subscription', 'tokenplan']]) {
+      const parent = await runCommand(args);
+      expect(parent.exitCode).toBe(0);
+      expect(parent.stdout).toContain('Usage:');
+    }
+    expect(list.stderr + status.stderr).toBe('');
+  });
+  it('rejects the removed list Harness flag before making business requests', async () => {
+    const program = createProgram();
+    program.exitOverride();
+    program.configureOutput({ writeErr: () => {} });
+    await expect(
+      program.parseAsync([
+        'node',
+        'qianwen',
+        'subscription',
+        'tokenplan',
+        'list',
+        '--include-harness',
+      ]),
+    ).rejects.toMatchObject({
+      code: 'commander.unknownOption',
+      exitCode: 1,
+      message: "error: unknown option '--include-harness'",
+    });
+  });
   it('matches the PRD content and section order', async () => {
     const result = await runCommand(['subscription', 'tokenplan', 'purchase', '--help']);
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
     const helpContent = `Usage:
-  qianwen subscription tokenplan purchase <token-plan-type> \\
-    --billing-cycle <cycle> \\
-    --channel <channel> \\
-    (--auto-renew | --no-auto-renew) [options]
+  qianwen subscription tokenplan purchase <token-plan-type> --channel <channel> --billing-cycle <cycle> (--auto-renew | --no-auto-renew) [options]
 
 Purchase an Individual or Team Token Plan.
 
@@ -210,19 +250,9 @@ Interactive steps:
   or remove the selected coupon.
 
 Examples:
-  qianwen subscription tokenplan purchase \\
-    token_plan_individual_standard \\
-    --billing-cycle quarterly \\
-    --channel alipay \\
-    --no-auto-renew
+  qianwen subscription tokenplan purchase <individual-token-plan-type> --channel alipay --billing-cycle <cycle> --no-auto-renew
 
-  qianwen subscription tokenplan purchase \\
-    token_plan_team \\
-    --billing-cycle yearly \\
-    --channel alipay \\
-    --standard-seat-count 2 \\
-    --max-seat-count 1 \\
-    --auto-renew`;
+  qianwen subscription tokenplan purchase token_plan_team --channel alipay --billing-cycle <cycle> --standard-seat-count <n> --no-auto-renew`;
     const expected = helpContent
       .split('\n')
       .map((line) => (line === '' ? line : `  ${line}`))
@@ -240,6 +270,112 @@ Examples:
     expect(ttyResult.stdout).toContain('\u001B[');
     expect(stripAnsi(ttyResult.stdout)).toBe(result.stdout);
   });
+
+  it.each([40, 60, 120])(
+    'keeps placeholder examples on one line at %s columns and accepts substituted arguments',
+    async (columns) => {
+      setTerminalColumns(columns);
+      const help = await runCommand(['subscription', 'tokenplan', 'purchase', '--help']);
+      const prefix = 'qianwen subscription tokenplan purchase ';
+      const examples = stripAnsi(help.stdout)
+        .split('Examples:')[1]!
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith(prefix));
+      expect(examples).toEqual([
+        `${prefix}<individual-token-plan-type> --channel alipay --billing-cycle <cycle> --no-auto-renew`,
+        `${prefix}token_plan_team --channel alipay --billing-cycle <cycle> --standard-seat-count <n> --no-auto-renew`,
+      ]);
+
+      for (const edition of ['all', 'individual', 'team'] as const) {
+        const viewModel = buildTokenPlanListViewModel({
+          authenticated: true,
+          edition,
+          billingCycle: 'monthly',
+          completeness: 'complete',
+          sections: [],
+        });
+        const listedExamples = viewModel.note
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line.startsWith(prefix));
+        expect(listedExamples).toEqual(
+          edition === 'all' ? examples : [examples[edition === 'individual' ? 0 : 1]],
+        );
+      }
+
+      for (const [index, example] of examples.entries()) {
+        const program = createProgram();
+        const purchase = program.commands
+          .find((command) => command.name() === 'subscription')!
+          .commands.find((command) => command.name() === 'tokenplan')!
+          .commands.find((command) => command.name() === 'purchase')!;
+        let selection: ReturnType<typeof parseTokenPlanSelection> | undefined;
+        purchase.action((type: string) => {
+          selection = parseTokenPlanSelection(type, purchase.opts());
+        });
+        const filledExample = example
+          .replace('<individual-token-plan-type>', 'token_plan_individual_standard')
+          .replace('<cycle>', index === 0 ? 'quarterly' : 'yearly')
+          .replace('<n>', '2');
+        await program.parseAsync(['node', ...filledExample.split(' ')]);
+        expect(selection).toMatchObject(
+          index === 0
+            ? { edition: 'individual', billingCycle: 'quarterly', autoRenew: false }
+            : {
+                edition: 'team',
+                billingCycle: 'yearly',
+                autoRenew: false,
+                seats: [{ specCode: 'standard', quantity: 2 }],
+              },
+        );
+      }
+    },
+  );
+});
+
+describe('Token Plan status help', () => {
+  it.each([40, 60, 120])(
+    'omits the JSON output heading and aligns all status notes at %s columns',
+    async (columns) => {
+      setTerminalColumns(columns);
+      const result = await runCommand(['subscription', 'tokenplan', 'status', '--help']);
+      const help = stripAnsi(result.stdout).replace(/\s+/g, ' ');
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(help).toContain(
+        'Show Token Plan subscriptions, validity, auto-renewal and remaining quotas.',
+      );
+      expect(help).not.toContain('JSON output:');
+      expect(help).toContain('Individual results include tiers and harnessAllowances.');
+      expect(help).toContain('Team results include seatSummaries grouped by seatType.');
+      expect(help).toContain('endAt is subscription validity; resetAt is the Credit reset time.');
+      expect(help).not.toContain('Collections may be empty or omitted');
+      expect(help).not.toContain('unavailable values are null');
+      expect(help).toContain('--format <fmt>');
+      expect(help).toContain('Output format: table, json, text');
+      expect(help).toContain('qianwen subscription tokenplan status --edition team --format json');
+      expect(help).not.toContain('Show your Token Plan subscriptions, quota windows');
+      expect(help).not.toContain('Team Credits are totals for all seats of the same type');
+      const lines = helpLines(stripAnsi(result.stdout));
+      const noteStart = lines.findIndex((line) =>
+        line.trimStart().startsWith('Individual results'),
+      );
+      const notes = lines.slice(noteStart).filter((line) => line.trim());
+      expect(noteStart).toBeGreaterThan(0);
+      expect(notes.length).toBeGreaterThanOrEqual(5);
+      for (const line of notes) {
+        expect(line).toMatch(/^ {4}\S/);
+      }
+      for (const line of lines) {
+        // Copyable command examples intentionally remain on one line.
+        if (line.trimStart().startsWith('qianwen ')) continue;
+        expect(visibleWidth(line)).toBeLessThanOrEqual(
+          Math.min(MAX_HELP_WIDTH, columns - HELP_RIGHT_MARGIN),
+        );
+      }
+    },
+  );
 });
 
 describe('Token Plan list help', () => {
@@ -253,11 +389,14 @@ describe('Token Plan list help', () => {
     expect(help).toContain('Team: monthly, yearly (default: monthly)');
     expect(help).toContain('You can view Token Plan prices without logging in.');
     expect(help).toContain(
-      'Log in to also view your subscription status and account-specific availability.',
+      'To view your subscription status and account-specific availability, run:',
     );
+    expect(help).toContain('qianwen auth login');
     expect(help).toContain(
-      'Availability shown here is for reference. Your eligibility will be verified again before purchase.',
+      'Your purchase status shown here is for reference only. Your eligibility will be verified again before purchase.',
     );
+    expect(help).not.toContain('Log in to also view');
+    expect(help).not.toContain('Availability shown here is for reference.');
   });
 });
 

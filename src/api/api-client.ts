@@ -42,7 +42,13 @@ import {
 import { CliError, authRequiredError } from '../utils/errors.js';
 import { site } from '../site.js';
 import { isCredentialToken } from '../auth/credential-token.js';
-import { buildEnvelopePayload, isSuccessRet, parseRetError } from './adapters/gateway-adapter.js';
+import {
+  buildEnvelopePayload,
+  buildFlatEnvelopePayload,
+  unwrapFlatEnvelopeResponse,
+  isSuccessRet,
+  parseRetError,
+} from './adapters/gateway-adapter.js';
 import {
   buildOrchestrationRequest,
   unwrapOrchestrationResponse,
@@ -137,7 +143,7 @@ export interface CallFlatApiOptions {
 export interface CallCsDataApiOptions<T> {
   api: string;
   data?: Record<string, unknown>;
-  /** Only the explicitly allowlisted account-scoped API may opt out of authentication. */
+  /** Only explicitly allowlisted public APIs may opt out of authentication. */
   authMode?: 'required' | 'none';
   signal?: AbortSignal;
   parse: (business: unknown) => T;
@@ -146,6 +152,8 @@ export interface CallCsDataApiOptions<T> {
 export interface CallEnvelopeApiOptions {
   api: string;
   data: Record<string, unknown>;
+  /** Flat Data is limited to the two read-only Token Plan Harness APIs. */
+  dataMode?: 'reqDTO' | 'flat';
   cornerstoneParam?: Record<string, unknown>;
   /** Tenant ID for cross-workspace queries. */
   switchAgent?: number;
@@ -255,8 +263,17 @@ export function createApiClient(opts?: CreateApiClientOptions): ApiClient {
     },
 
     async callEnvelopeApi<T>(input: CallEnvelopeApiOptions): Promise<T> {
-      // Build the proper envelope structure: { reqDTO, cornerstoneParam }
-      const envelopePayload = buildEnvelopePayload({
+      if (
+        input.dataMode !== undefined &&
+        input.dataMode !== 'reqDTO' &&
+        input.dataMode !== 'flat'
+      ) {
+        throw new GatewayShapeError('Unsupported envelope Data mode');
+      }
+      // Keep the old reqDTO contract unless a Harness read explicitly opts into flat Data.
+      const buildPayload =
+        input.dataMode === 'flat' ? buildFlatEnvelopePayload : buildEnvelopePayload;
+      const envelopePayload = buildPayload({
         api: input.api,
         data: input.data,
         cornerstoneParam: input.cornerstoneParam,
@@ -284,6 +301,7 @@ export function createApiClient(opts?: CreateApiClientOptions): ApiClient {
       // .data payload are missing, but does NOT throw for empty/non-success
       // ret; we surface those here as standard Error instances.
       try {
+        if (input.dataMode === 'flat') return unwrapFlatEnvelopeResponse(raw, input.api) as T;
         const result = unwrapResponse<T>('B', raw);
         const business = result.business;
         if (!business) {
@@ -327,7 +345,7 @@ export function createApiClient(opts?: CreateApiClientOptions): ApiClient {
         try {
           checkCsDataSignal(budget.signal);
           raw = await requestCsDataWithRetry<unknown>(base, adapted, budget.signal);
-          const business = unwrapCsDataResponse(raw);
+          const business = unwrapCsDataResponse(raw, input.api);
           return await awaitCsDataOperation(Promise.resolve(input.parse(business)), budget.signal);
         } catch (error) {
           throw registerProtocolErrorContext(error, adapted.body ?? '', raw);
@@ -368,7 +386,7 @@ export function createApiClient(opts?: CreateApiClientOptions): ApiClient {
             },
             budget.signal,
           );
-          const business = unwrapCsDataResponse(raw);
+          const business = unwrapCsDataResponse(raw, input.api);
           const parsed = await awaitCsDataOperation(
             Promise.resolve(input.parse(business)),
             budget.signal,

@@ -268,7 +268,11 @@ export function readCredentials(): Credentials | null {
 export function writeCredentials(credentials: Credentials): void {
   // Clear cache to ensure subsequent reads reflect the new credentials
   clearCredentialsCache();
-  clearCsDataCredentialCache();
+  try {
+    clearCsDataCredentialCache();
+  } catch {
+    // A disposable account-bound cache cannot prevent saving the root login.
+  }
 
   const payload = JSON.stringify({ ...credentials, auth_mode: 'device_flow' });
 

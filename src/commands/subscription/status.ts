@@ -67,7 +67,11 @@ export function subscriptionStatusAction(cmd: Command) {
       const { subscriptionService } = createServices();
       const result = await withSpinner(
         'Loading subscription status',
-        () => subscriptionService.getStatus(plan ? { plan } : {}),
+        () =>
+          subscriptionService.getStatus({
+            ...(plan ? { plan } : {}),
+            ...(format !== 'json' ? { includeIndividualDetails: true } : {}),
+          }),
         format,
       );
 

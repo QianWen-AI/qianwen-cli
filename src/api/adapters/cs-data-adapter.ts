@@ -6,6 +6,8 @@ import {
   API_TOKENPLAN_SOLO_QUOTA_CONFIG,
   API_TOKENPLAN_SOLO_SUBSCRIPTION,
   API_TOKENPLAN_SOLO_USAGE,
+  API_TOKENPLAN_SUPPORTED_MODELS,
+  API_TOKENPLAN_MODEL_PROVIDERS,
   API_VERSION_GATEWAY,
 } from '../../types/api-routes.js';
 import { CliError } from '../../utils/errors.js';
@@ -40,24 +42,41 @@ export function buildCsDataRequest(input: CsDataRequestOptions): RequestOptions 
   if (
     input.api !== API_TOKENPLAN_SOLO_SUBSCRIPTION &&
     input.api !== API_TOKENPLAN_SOLO_QUOTA_CONFIG &&
-    input.api !== API_TOKENPLAN_SOLO_USAGE
+    input.api !== API_TOKENPLAN_SOLO_USAGE &&
+    input.api !== API_TOKENPLAN_SUPPORTED_MODELS &&
+    input.api !== API_TOKENPLAN_MODEL_PROVIDERS
   ) {
     throw new GatewayShapeError('Unsupported cs-data API');
   }
   const authMode = input.authMode ?? 'required';
   if (
     (authMode !== 'required' && authMode !== 'none') ||
-    (authMode === 'none' && input.api !== API_TOKENPLAN_SOLO_QUOTA_CONFIG)
+    (authMode === 'none' &&
+      input.api !== API_TOKENPLAN_SOLO_QUOTA_CONFIG &&
+      input.api !== API_TOKENPLAN_SUPPORTED_MODELS &&
+      input.api !== API_TOKENPLAN_MODEL_PROVIDERS)
   ) {
     throw new GatewayShapeError('Unsupported cs-data authentication mode');
   }
   const data = input.data === undefined ? {} : record(input.data, 'parameters');
-  if (
-    input.api === API_TOKENPLAN_SOLO_SUBSCRIPTION
-      ? Object.keys(data).length !== 1 ||
-        data.commodityCode !== site.features.tokenPlanCommodityCodes.soloBuy
-      : Object.keys(data).length !== 0
-  ) {
+  let validParameters = Object.keys(data).length === 0;
+  if (input.api === API_TOKENPLAN_SOLO_SUBSCRIPTION) {
+    validParameters =
+      Object.keys(data).length === 1 &&
+      data.commodityCode === site.features.tokenPlanCommodityCodes.soloBuy;
+  } else if (input.api === API_TOKENPLAN_SUPPORTED_MODELS) {
+    const query = record(data.input, 'model query');
+    validParameters =
+      Object.keys(data).length === 1 &&
+      Object.keys(query).length === 3 &&
+      Number.isSafeInteger(query.pageNo) &&
+      Number(query.pageNo) >= 1 &&
+      Number.isSafeInteger(query.pageSize) &&
+      Number(query.pageSize) >= 1 &&
+      Number(query.pageSize) <= 100 &&
+      (query.edition === 'PERSONAL' || query.edition === 'TEAM');
+  }
+  if (!validParameters) {
     throw new GatewayShapeError('Invalid cs-data API parameters');
   }
   let url: URL;
@@ -107,7 +126,7 @@ export function buildCsDataRequest(input: CsDataRequestOptions): RequestOptions 
   };
 }
 
-export function unwrapCsDataResponse(raw: unknown): unknown {
+export function unwrapCsDataResponse(raw: unknown, api?: string): unknown {
   const outer = record(raw, 'response');
   if (typeof outer.code !== 'string' || typeof outer.successResponse !== 'boolean') {
     throw new GatewayShapeError('Invalid cs-data response status');
@@ -131,7 +150,11 @@ export function unwrapCsDataResponse(raw: unknown): unknown {
     throw new GatewayShapeError('cs-data response missing successful ret');
   }
   const business = record(payload.data, 'business envelope');
-  if (business.code !== 'SUCCESS' || business.success !== true) {
+  const expectedCode =
+    api === API_TOKENPLAN_SUPPORTED_MODELS || api === API_TOKENPLAN_MODEL_PROVIDERS
+      ? '200'
+      : 'SUCCESS';
+  if (business.code !== expectedCode || business.success !== true) {
     throw new GatewayShapeError('cs-data business response did not confirm success');
   }
   return business;

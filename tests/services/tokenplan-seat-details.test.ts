@@ -11,7 +11,7 @@ const seat = (n: number, extra: Record<string, unknown> = {}) => ({
   SpecType: 'standard',
   Status: 'NORMAL',
   MemberId: '',
-  EquityList: [{ CycleTotalValue: '25000', CycleSurplusValue: '20000' }],
+  EquityList: [{ EquityType: 'CREDITS', CycleTotalValue: '25000', CycleSurplusValue: '20000' }],
   ...extra,
 });
 const page = (items: unknown[], total: unknown = items.length, current = 1) => ({
@@ -23,6 +23,98 @@ const page = (items: unknown[], total: unknown = items.length, current = 1) => (
 afterEach(() => vi.useRealTimers());
 
 describe('status seat detail collection', () => {
+  it.each([
+    {
+      name: 'Credits after Requests',
+      equities: [
+        { EquityType: 'REQUESTS', TotalValue: '10', SurplusValue: '5' },
+        { EquityType: 'CREDITS', CycleTotalValue: '99', CycleSurplusValue: '88' },
+      ],
+      total: '99',
+      remaining: '88',
+    },
+    {
+      name: 'a code marker only when type is absent',
+      equities: [{ EquityCode: 'CREDITS', TotalValue: '100', SurplusValue: '50' }],
+      total: '100',
+      remaining: '50',
+    },
+    {
+      name: 'a Credits type with an independent identifier',
+      equities: [
+        {
+          EquityType: 'CREDITS',
+          EquityCode: 'seat-credit-right',
+          Unit: ' credits ',
+          UnitName: 'Credit',
+          TotalValue: '100',
+          SurplusValue: '50',
+        },
+      ],
+      total: '100',
+      remaining: '50',
+    },
+    {
+      name: 'real zero Credits',
+      equities: [{ EquityType: 'CREDITS', TotalValue: '0', SurplusValue: '0' }],
+      total: '0',
+      remaining: '0',
+    },
+  ])(
+    'selects $name without changing collection completeness',
+    async ({ equities, total, remaining }) => {
+      const api = makeMockApiClient({
+        flat: async () => page([seat(1, { EquityList: equities })]),
+      });
+      const result = await fetchTokenPlanSeatDetails(api);
+      expect(result.items[0]).toMatchObject({ totalValue: total, surplusValue: remaining });
+      expect(result).toMatchObject({
+        collectionCompleteness: 'complete',
+        completeness: 'complete',
+        diagnostics: [],
+      });
+    },
+  );
+
+  const credit = { EquityType: 'CREDITS', TotalValue: '100', SurplusValue: '50' };
+  it.each([
+    { name: 'Requests', EquityList: [{ ...credit, EquityType: 'REQUESTS' }] },
+    {
+      name: 'Requests with a Credits code',
+      EquityList: [{ ...credit, EquityType: 'REQUESTS', EquityCode: 'CREDITS' }],
+    },
+    {
+      name: 'an explicit null type with a Credits code',
+      EquityList: [{ ...credit, EquityType: null, EquityCode: 'CREDITS' }],
+    },
+    {
+      name: 'an unmarked equity even with a Credits unit',
+      EquityList: [{ TotalValue: '100', SurplusValue: '50', Unit: 'Credits' }],
+    },
+    {
+      name: 'multiple Credits candidates',
+      EquityList: [credit, { EquityCode: 'CREDITS', TotalValue: '200', SurplusValue: '100' }],
+    },
+    { name: 'a conflicting equity unit', EquityList: [{ ...credit, Unit: 'Requests' }] },
+    {
+      name: 'a conflicting equity unit name',
+      EquityList: [{ ...credit, Unit: 'Credits', UnitName: 'Requests' }],
+    },
+    { name: 'a conflicting seat unit', EquityList: [credit], Unit: 'Tokens' },
+    { name: 'a conflicting seat unit name', EquityList: [credit], UnitName: 'Requests' },
+  ])('keeps $name unknown with a credit diagnostic', async ({ name: _name, ...fields }) => {
+    const api = makeMockApiClient({ flat: async () => page([seat(1, fields)]) });
+    const result = await fetchTokenPlanSeatDetails(api);
+    expect(result.items[0]).toMatchObject({ totalValue: null, surplusValue: null });
+    expect(result).toMatchObject({
+      collectionCompleteness: 'complete',
+      completeness: 'partial',
+      diagnostics: [
+        expect.objectContaining({ api: 'GetSubscriptionDetail', errorCode: 'IncompleteCredits' }),
+      ],
+    });
+  });
+
   it('collects all 150 records with a shared signal and omits confirmed historical seats', async () => {
     const api = makeMockApiClient({
       flat: async ({ params }) => {
@@ -101,7 +193,7 @@ describe('status seat detail collection', () => {
             seat(1, { MemberId: undefined, SpecType: 'future', Status: 'future', EquityList: [] }),
             seat(2, {
               MemberId: 'member-test',
-              EquityList: [{ CycleTotalValue: '0', CycleSurplusValue: '0' }],
+              EquityList: [{ EquityType: 'CREDITS', CycleTotalValue: '0', CycleSurplusValue: '0' }],
             }),
             seat(3),
             null,
@@ -139,7 +231,7 @@ describe('status seat detail collection', () => {
     expect(result).toMatchObject({
       collectionCompleteness: 'complete',
       completeness: 'partial',
-      diagnostics: [],
+      diagnostics: [expect.objectContaining({ errorCode: 'IncompleteCredits' })],
     });
     expect(result.items[0].assignment).toBe('unknown');
     expect(result.items[1].totalValue).toBeNull();
@@ -190,7 +282,9 @@ describe('status seat detail collection', () => {
     [{ TotalValue: '1e6', SurplusValue: '-1' }, null],
     [{ TotalValue: '25', SurplusValue: '10', Unit: 'Tokens' }, null],
   ])('does not invent or mix quota values: %j', async (equity, total) => {
-    const api = makeMockApiClient({ flat: async () => page([seat(1, { EquityList: [equity] })]) });
+    const api = makeMockApiClient({
+      flat: async () => page([seat(1, { EquityList: [{ EquityType: 'CREDITS', ...equity }] })]),
+    });
     const result = await fetchTokenPlanSeatDetails(api);
     expect(result.items[0]).toMatchObject({ totalValue: total, surplusValue: null });
     expect(result.completeness).toBe('partial');

@@ -2,12 +2,50 @@ import { describe, expect, it } from 'vitest';
 import {
   buildTokenPlanSeatDetailsViewModel,
   formatTeamSeatAllocation,
+  sortTokenPlanSeats,
 } from '../../../src/view-models/subscription/tokenplan-seat-details.js';
 import { buildTokenPlanStatusViewModel } from '../../../src/view-models/subscription/tokenplan-status.js';
 import { buildSubscriptionStatusViewModel } from '../../../src/view-models/subscription/status.js';
 import { teamWithSeatDetails } from '../../helpers/tokenplan-status.js';
 
 describe('seat allocation and details presentation', () => {
+  it('orders seat types as Standard, Pro, Max while keeping duplicate/unknown order and input intact', () => {
+    const source = [
+      { id: 'max', type: 'max' },
+      { id: 'unknown-a', type: null },
+      { id: 'standard-a', type: 'standard' },
+      { id: 'pro', type: 'PRO' },
+      { id: 'standard-b', type: 'standard' },
+      { id: 'unknown-b', type: 'custom' },
+    ];
+    const before = structuredClone(source);
+    expect(sortTokenPlanSeats(source, (seat) => seat.type).map((seat) => seat.id)).toEqual([
+      'standard-a',
+      'standard-b',
+      'pro',
+      'max',
+      'unknown-a',
+      'unknown-b',
+    ]);
+    expect(source).toEqual(before);
+  });
+
+  it('orders both status commands seat details without modifying the backend collection', () => {
+    const team = teamWithSeatDetails();
+    const standard = team.seatDetails!.items[0]!;
+    const max = team.seatDetails!.items[2]!;
+    team.seatDetails!.items = [
+      max,
+      { ...standard, instanceCode: 'pro', specType: 'pro' },
+      standard,
+    ];
+    const before = structuredClone(team);
+    for (const variant of ['subscription', 'tokenplan'] as const) {
+      const vm = buildTokenPlanSeatDetailsViewModel(team.seatDetails, variant);
+      expect(vm?.rows.map((row) => row[1])).toEqual(['Standard', 'Pro', 'Max']);
+    }
+    expect(team).toEqual(before);
+  });
   it('uses current seat summary for allocation even when details contain more historical rows', () => {
     const team = teamWithSeatDetails();
     team.seatDetails!.fetchedCount = team.seatDetails!.totalCount = 4;
@@ -33,6 +71,10 @@ describe('seat allocation and details presentation', () => {
         quota: null,
         autoRenew: null,
         renewable: null,
+        remainingDays: null,
+        seatTiers: [],
+        creditPacks: [],
+        recentOrders: [],
       },
       [],
     );
@@ -62,12 +104,13 @@ describe('seat allocation and details presentation', () => {
     expect(dedicated.seatDetails?.rows).toHaveLength(3);
     expect(dedicated.seatDetails?.rows[0]).toEqual([
       'subs-standard-0123456789abcdef',
-      'Standard Seat',
+      'Standard',
       'active',
       'assigned',
       '20,000 / 25,000',
+      '80%',
     ]);
-    expect(dedicated.seatDetails?.note).toContain('historical');
+    expect(dedicated.seatDetails?.note).toBe('');
     expect(dedicated.seatDetails?.title).toBe('SEAT DETAILS');
     expect(dedicated.seatDetails?.headers).toEqual([
       'SEAT ID',
@@ -75,34 +118,57 @@ describe('seat allocation and details presentation', () => {
       'STATUS',
       'ASSIGNMENT',
       'CREDITS (REMAINING / TOTAL)',
+      'REMAINING (%)',
     ]);
   });
 
   it.each([
-    ['standard', 'Standard Seat'],
-    ['pro', 'Pro Seat'],
-    ['max', 'Max Seat'],
+    ['standard', 'Standard'],
+    ['pro', 'Pro'],
+    ['max', 'Max'],
     [null, 'unknown'],
   ])('uses current seat names in the dedicated details: %s', (specType, name) => {
     const details = teamWithSeatDetails().seatDetails!;
     details.items[0].specType = specType;
     const vm = buildTokenPlanSeatDetailsViewModel(details, 'tokenplan')!;
-    expect(vm.rows[0][1]).toBe(name);
-    expect(vm.rows[0][2]).toBe('active');
-    expect(vm.rows[0][3]).toBe('assigned');
+    const row = vm.rows.find((row) => row[0] === details.items[0].instanceCode)!;
+    expect(row[1]).toBe(name);
+    expect(row[2]).toBe('active');
+    expect(row[3]).toBe('assigned');
     expect(vm.noteAfterRows).toBe(true);
-    if (specType === null) expect(vm.note).toContain('Some seat fields are unknown.');
-    else expect(vm.note).toBe('');
+    expect(vm.note).toBe('');
   });
 
-  it('keeps incomplete-query and unknown-field notices in the dedicated details', () => {
+  it.each([
+    ['25000', '25000', '100%'],
+    ['25000', '0', '0%'],
+    ['3', '1', '33.33%'],
+    ['0.3', '0.2', '66.67%'],
+    ['0', '0', '—'],
+    [null, '0', '—'],
+    ['25000', null, '—'],
+    ['25000', '25001', '—'],
+  ])(
+    'shows remaining percentage for %s total and %s remaining',
+    (totalValue, surplusValue, pct) => {
+      const details = teamWithSeatDetails().seatDetails!;
+      details.items[0].totalValue = totalValue;
+      details.items[0].surplusValue = surplusValue;
+      const before = structuredClone(details);
+      expect(buildTokenPlanSeatDetailsViewModel(details, 'tokenplan')!.rows[0][5]).toBe(pct);
+      expect(buildTokenPlanSeatDetailsViewModel(details)!.rows[0]).toHaveLength(5);
+      expect(details).toEqual(before);
+    },
+  );
+
+  it('keeps incomplete-query notices and unknown values without a generic field notice', () => {
     const details = teamWithSeatDetails().seatDetails!;
     details.collectionCompleteness = details.completeness = 'partial';
     details.totalCount = 4;
     details.items[0].assignment = 'unknown';
     const vm = buildTokenPlanSeatDetailsViewModel(details, 'tokenplan')!;
     expect(vm.note).toContain('Seat query incomplete: 3 / 4 records retrieved.');
-    expect(vm.note).toContain('Some seat fields are unknown.');
+    expect(vm.note).not.toContain('Some seat fields are unknown.');
     expect(vm.rows[0][3]).toBe('unknown');
   });
 
@@ -152,7 +218,7 @@ describe('seat allocation and details presentation', () => {
       ['subs  forged ', 'unknown', 'unknown', 'unknown', 'unknown / 123,456,789,012,345,678.1234'],
     ]);
     expect(vm.note).toContain('Seat query incomplete: 1 / unknown records retrieved.');
-    expect(vm.note).toContain('Some seat fields are unknown.');
+    expect(vm.note).not.toContain('Some seat fields are unknown.');
   });
 
   it('distinguishes an unavailable query from a confirmed empty response', () => {
@@ -184,8 +250,8 @@ describe('seat allocation and details presentation', () => {
     details.fetchedCount = details.totalCount = 18;
     const vm = buildTokenPlanSeatDetailsViewModel(details)!;
     expect(vm.note).toContain('3 current seats.');
-    expect(vm.note).toContain('Some seat fields are unknown.');
-    expect(vm.note).toContain('15 historical seats hidden.');
+    expect(vm.note).not.toContain('Some seat fields are unknown.');
+    expect(vm.note).not.toContain('historical seats hidden');
     expect(vm.note).not.toMatch(/incomplete|unavailable|Try again/);
     expect(vm.rows).toHaveLength(3);
   });

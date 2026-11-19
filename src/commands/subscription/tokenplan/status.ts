@@ -4,16 +4,16 @@ import { getEffectiveConfig } from '../../../config/manager.js';
 import { ensureAuthenticated } from '../../../auth/credentials.js';
 import { withSpinner } from '../../../ui/spinner.js';
 import { createServices } from '../../../services/index.js';
-import { buildTokenPlanStatusViewModel } from '../../../view-models/subscription/tokenplan-status.js';
+import {
+  buildTokenPlanStatusViewModel,
+  type TokenPlanStatusViewModel,
+} from '../../../view-models/subscription/tokenplan-status.js';
 import { formatSubscriptionStatusJson } from '../../../view-models/subscription/shared.js';
 import { renderSubscriptionTokenPlanStatusInk } from '../../../ui/SubscriptionTokenPlanStatus.js';
-import { formatTokenPlanSeatDetails } from '../../../output/text/tokenplan-seat-details.js';
 import { CliError, handleError, HandledError } from '../../../utils/errors.js';
 import type { SubscriptionDiagnostic } from '../../../types/subscription.js';
-import type {
-  TokenPlanStatusViewModel,
-  TokenPlanStatusResult,
-} from '../../../types/tokenplan-subscription.js';
+import type { TokenPlanStatusResult } from '../../../types/tokenplan-subscription.js';
+import { registerCommandInterrupt } from '../../../utils/command-interrupt.js';
 
 function isTotalFailure(result: TokenPlanStatusResult): boolean {
   const hasKnownEdition = [result.individual, result.team].some(
@@ -63,15 +63,30 @@ export function subscriptionTokenPlanStatusAction(cmd: Command) {
   return async function (this: Command) {
     const config = getEffectiveConfig();
     const format = resolveFormatFromCommand(this ?? cmd, config);
+    const current = this ?? cmd;
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    process.on('SIGINT', cancel);
+    const unregister = registerCommandInterrupt(cancel);
 
     try {
+      const edition = current.opts<{ edition?: string }>().edition ?? 'all';
+      if (edition !== 'all' && edition !== 'individual' && edition !== 'team') {
+        throw new CliError({
+          code: 'INVALID_ARGUMENT',
+          message: '--edition must be all, individual or team.',
+          exitCode: 4,
+        });
+      }
       ensureAuthenticated();
       const { subscriptionTokenPlanService } = createServices();
       const result = await withSpinner(
         'Loading Token Plan status',
-        () => subscriptionTokenPlanService.getTokenPlanStatus(),
-        format,
+        () =>
+          subscriptionTokenPlanService.getTokenPlanStatus({ edition, signal: controller.signal }),
+        format === 'text' ? 'json' : format,
       );
+      controller.signal.throwIfAborted();
 
       if (format === 'json') {
         const vm = buildTokenPlanStatusViewModel(result, 'json');
@@ -98,54 +113,66 @@ export function subscriptionTokenPlanStatusAction(cmd: Command) {
       } else {
         await renderSubscriptionTokenPlanStatusInk(vm);
       }
+      controller.signal.throwIfAborted();
       if (isTotalFailure(result)) handleError(totalFailureError(result.diagnostics), format);
     } catch (error) {
       if (error instanceof HandledError) throw error;
+      if (controller.signal.aborted)
+        handleError(
+          new CliError({
+            code: 'INTERRUPTED',
+            message: 'Token Plan status query cancelled.',
+            exitCode: 130,
+          }),
+          format,
+        );
       handleError(error, format);
+    } finally {
+      controller.abort();
+      process.off('SIGINT', cancel);
+      unregister();
     }
   };
 }
 
 function renderTextTokenPlanStatus(vm: TokenPlanStatusViewModel): void {
-  console.log('Token Plan Subscription');
-  for (const section of vm.editionSections) {
+  const indent = (value: string) =>
+    value
+      .split('\n')
+      .map((line) => `    ${line}`)
+      .join('\n');
+  const renderTables = (tables: TokenPlanStatusViewModel['detailTables']) => {
+    for (const table of tables ?? []) {
+      console.log(`\n    ${table.title}`);
+      console.log(
+        table.rows.length
+          ? formatTextTable(table.headers, table.rows, 4)
+          : indent(table.emptyMessage),
+      );
+      if (table.note) console.log(indent(table.note));
+    }
+  };
+  console.log('TOKEN PLAN STATUS');
+  for (const [index, section] of vm.editionSections.entries()) {
+    if (index > 0) console.log('');
     console.log(`  ${section.title}`);
     for (const field of section.fields) console.log(`    ${field.label.padEnd(18)}${field.value}`);
+    renderTables(section.detailTables);
+    if (section.purchaseHint) console.log(indent(section.purchaseHint));
   }
-  if (vm.header) {
-    console.log(`  ${'Product:'.padEnd(14)}${vm.header.product}`);
-    console.log(`  ${'Period:'.padEnd(14)}${vm.header.period}`);
-    console.log(`  ${'Auto-Renew:'.padEnd(14)}${vm.header.autoRenew}`);
-    console.log(`  ${'Renewable:'.padEnd(14)}${vm.header.renewable}`);
+  if (vm.editionSections.length === 0) {
+    if (vm.header) {
+      console.log(`  ${'Product:'.padEnd(14)}${vm.header.product}`);
+      console.log(`  ${'Period:'.padEnd(14)}${vm.header.period}`);
+      console.log(`  ${'Auto-Renew:'.padEnd(14)}${vm.header.autoRenew}`);
+      console.log(`  ${'Renewable:'.padEnd(14)}${vm.header.renewable}`);
+    }
+    renderTables(vm.detailTables);
   }
-
-  if (vm.seatLines && vm.seatLines.length > 0) {
-    console.log('');
-    console.log('SEAT SUMMARY');
-    console.log('');
-    console.log(
-      formatTextTable(
-        ['SEAT TYPE', 'QUANTITY'],
-        vm.seatLines.map((row) => [row.specType, row.seats]),
-        0,
-      ),
-    );
-  }
-
-  if (vm.seatDetails) {
-    console.log('');
-    console.log(vm.seatDetails.title);
-    console.log('');
-    console.log(formatTokenPlanSeatDetails(vm.seatDetails, process.stdout.columns ?? 80));
-  }
-
   if (vm.warnings && vm.warnings.length > 0) {
     console.log('');
-    for (const w of vm.warnings) {
-      console.log(`  ${w}`);
-    }
+    for (const warning of vm.warnings) console.log(`  ${warning}`);
   }
-
   if (vm.footnote) {
     console.log('');
     console.log(`  ${vm.footnote}`);

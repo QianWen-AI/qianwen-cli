@@ -143,10 +143,23 @@ function exceeds(remaining: string, total: string): boolean {
 function parseSeat(entry: Record<string, unknown>, instanceCode: string): TokenPlanSeatDetail {
   const spec = nonempty(entry.SpecType)?.toLowerCase();
   const status = nonempty(entry.Status)?.toUpperCase();
-  const equity = Array.isArray(entry.EquityList) ? subscriptionObject(entry.EquityList[0]) : null;
+  const equities = Array.isArray(entry.EquityList)
+    ? entry.EquityList.map(subscriptionObject).filter((item) => item !== null)
+    : [];
+  const credits = equities.filter(
+    (item) =>
+      item.EquityType === 'CREDITS' ||
+      (item.EquityType === undefined && item.EquityCode === 'CREDITS'),
+  );
+  const equity = credits.length === 1 ? credits[0] : null;
   // Never pair a cycle value with a lifetime value when one cycle field is missing.
   const cycle = equity && ('CycleTotalValue' in equity || 'CycleSurplusValue' in equity);
-  const isCredits = equity?.Unit === undefined || /^(?:credit|credits)$/i.test(String(equity.Unit));
+  const isCredits =
+    equity !== null &&
+    [equity.Unit, equity.UnitName, entry.Unit, entry.UnitName].every(
+      (value) =>
+        value == null || (typeof value === 'string' && /^(?:credit|credits)$/i.test(value.trim())),
+    );
   const totalValue = isCredits
     ? subscriptionDecimal(cycle ? equity?.CycleTotalValue : equity?.TotalValue)
     : null;
@@ -289,6 +302,16 @@ export async function fetchTokenPlanSeatDetails(
   const current = items.filter((item) => !HISTORICAL_STATUSES.has(item.status ?? ''));
   const collectionCompleteness =
     covered && diagnostics.length === 0 ? 'complete' : items.length ? 'partial' : 'unknown';
+  // Unknown current Credits do not invalidate a fully collected seat list.
+  if (current.some((item) => item.totalValue === null || item.surplusValue === null)) {
+    diagnostics.push(
+      subscriptionProtocolDiagnostic(
+        API,
+        'IncompleteCredits',
+        'Seat credit limits or balances are unknown. Try again later.',
+      ),
+    );
+  }
   return withFieldCompleteness({
     items: current,
     fetchedCount: items.length,

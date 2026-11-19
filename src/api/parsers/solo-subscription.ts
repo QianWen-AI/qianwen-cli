@@ -31,6 +31,11 @@ export interface SoloCatalogSubscription {
   specCode: SoloTier | null;
 }
 
+export interface SoloSubscriptionCore {
+  subscriptionId: string | null;
+  endAt: string | null;
+}
+
 export type SoloQuotaConfig = Partial<Record<SoloTier, { weekly?: number; monthly?: number }>>;
 
 export interface SoloUsage {
@@ -54,6 +59,19 @@ function nonNegativeNumber(value: unknown): value is number {
 
 function timestamp(value: unknown): value is number {
   return nonNegativeNumber(value) && Number.isSafeInteger(value) && value <= 8_640_000_000_000_000;
+}
+
+/** Map source identity fields only; each caller retains its own subscription-state validation. */
+export function parseSoloSubscriptionCore(value: unknown): SoloSubscriptionCore {
+  const entity = record(value);
+  const endTime = entity?.endTime;
+  return {
+    subscriptionId:
+      typeof entity?.instanceCode === 'string' && entity.instanceCode.trim()
+        ? entity.instanceCode
+        : null,
+    endAt: timestamp(endTime) && endTime > 0 ? new Date(endTime).toISOString() : null,
+  };
 }
 
 function unknownSubscription(reason: string): SoloSubscriptionResult {
@@ -260,6 +278,27 @@ export function parseSoloUsage(business: unknown): SoloUsage | null {
     if (reset !== undefined && reset !== null && !timestamp(reset)) {
       throw new GatewayShapeError('Personal Token Plan usage is invalid');
     }
+    return {
+      cycle,
+      usedRatio: ratio,
+      ...(timestamp(reset) ? { resetTime: reset } : {}),
+    };
+  }
+  return null;
+}
+
+/** Status extensions use the actual weekly window first without changing legacy selection. */
+export function parseSoloStatusUsage(business: unknown): SoloUsage | null {
+  const envelope = object(business);
+  if (!Object.hasOwn(envelope, 'data') || envelope.data === null) return null;
+  const entity = object(envelope.data);
+  for (const { cycle, percentage, resetTime } of [...USAGE_CYCLES].reverse()) {
+    if (!Object.hasOwn(entity, percentage)) continue;
+    const ratio = entity[percentage];
+    if (!nonNegativeNumber(ratio) || ratio > 1) {
+      throw new GatewayShapeError('Personal Token Plan status usage is invalid');
+    }
+    const reset = entity[resetTime];
     return {
       cycle,
       usedRatio: ratio,

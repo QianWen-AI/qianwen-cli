@@ -193,4 +193,35 @@ describe('TokenPlanCatalogPricing.getPrice', () => {
     expect(calls[0].action).toBe('QueryOrderLight');
     expect(calls[0].authMode).toBe('optional');
   });
+
+  it.each([false, true])(
+    'only includes the new list price when opted in: %s',
+    async (includeListPrice) => {
+      const data = lightResponse('team', 'standard', 15000) as {
+        price: { order?: Record<string, unknown> };
+      };
+      data.price.order = { standPrice: 198 };
+      const { apiClient, calls } = makeClient((opts) => opts.parse(data));
+
+      const result = await new TokenPlanCatalogPricing(apiClient).getPrice(
+        config('team', 'standard'),
+        {
+          edition: 'team',
+          specCode: 'standard',
+          authenticated: false,
+          includeListPrice,
+        },
+      );
+
+      expect(result.price).toBe('150');
+      expect(result.originalPrice).toBeNull();
+      expect(Object.hasOwn(result, 'listPrice')).toBe(includeListPrice);
+      if (includeListPrice) expect(result.listPrice).toBe('198');
+      expect(calls[0]).toMatchObject({
+        action: 'QueryOrderLight',
+        path: '/data/publicCustom.json',
+        authMode: 'none',
+      });
+    },
+  );
 });

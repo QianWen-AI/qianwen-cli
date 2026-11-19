@@ -19,6 +19,7 @@ import type {
   TokenPlanSeatDetails,
   TokenPlanSeatsResult,
   TokenPlanStatusResult,
+  TokenPlanStatusOptions,
 } from '../types/tokenplan-subscription.js';
 import { site } from '../site.js';
 import {
@@ -26,6 +27,9 @@ import {
   enrichTeamTokenPlan,
   fetchIndividualTokenPlan,
   fetchTeamTokenPlan,
+  confirmedTeamAutoRenew,
+  teamResponseData,
+  subscriptionTimestamp,
   unknownTokenPlanEdition,
   type TeamTokenPlanResult,
 } from './tokenplan-service.js';
@@ -41,6 +45,8 @@ import {
   safeSubscriptionError,
   subscriptionProtocolDiagnostic,
 } from './subscription-diagnostics.js';
+import { createTokenPlanBenefitsReader } from './tokenplan-benefits.js';
+import type { TokenPlanHarnessBenefits } from './tokenplan-benefits.js';
 
 const API_PRODUCT_BSS = 'BssOpenAPI-V3';
 const API_PRODUCT_BSS_LEGACY = 'BssOpenApi';
@@ -61,14 +67,12 @@ interface SubCallResult<T> {
   diagnostic: SubscriptionDiagnostic | null;
 }
 
-function toDiagnostic(api: string, error: unknown): SubscriptionDiagnostic {
-  return safeSubscriptionDiagnostic(api, error);
-}
-
 async function runWithSoftTimeout(
   calls: Array<SubCallSpec<unknown>>,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<Array<SubCallResult<unknown>>> {
+  if (signal?.aborted) throw signal.reason;
   const controller = new AbortController();
   let active = true;
   const settled = new Set<number>();
@@ -83,7 +87,7 @@ async function runWithSoftTimeout(
       const data = await c.invoke(controller.signal);
       if (active) results[idx]!.data = data;
     } catch (error) {
-      if (active) results[idx]!.diagnostic = toDiagnostic(c.api, error);
+      if (active) results[idx]!.diagnostic = safeSubscriptionDiagnostic(c.api, error);
     } finally {
       settled.add(idx);
     }
@@ -93,11 +97,26 @@ async function runWithSoftTimeout(
   const timeoutPromise = new Promise<void>((resolve) => {
     timeoutHandle = setTimeout(() => resolve(), timeoutMs);
   });
-
-  await Promise.race([Promise.allSettled(tasks), timeoutPromise]);
-  active = false;
-  controller.abort();
-  if (timeoutHandle) clearTimeout(timeoutHandle);
+  let abortHandler: (() => void) | undefined;
+  const abortPromise = new Promise<void>((_resolve, reject) => {
+    abortHandler = () => {
+      controller.abort(signal?.reason);
+      reject(
+        signal?.reason ??
+          new CliError({ code: 'USER_INTERRUPTED', message: 'Query interrupted.', exitCode: 130 }),
+      );
+    };
+    signal?.addEventListener('abort', abortHandler, { once: true });
+    if (signal?.aborted) abortHandler();
+  });
+  try {
+    await Promise.race([Promise.allSettled(tasks), timeoutPromise, abortPromise]);
+  } finally {
+    active = false;
+    controller.abort();
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+    if (abortHandler) signal?.removeEventListener('abort', abortHandler);
+  }
 
   for (const [index, result] of results.entries()) {
     if (!settled.has(index)) {
@@ -124,78 +143,100 @@ function toIsoString(value: string | number | null | undefined): string | null {
 export class SubscriptionTokenPlanService {
   constructor(private readonly apiClient: ApiClient) {}
 
-  async getTokenPlanStatus(): Promise<TokenPlanStatusResult> {
+  async getTokenPlanStatus(options: TokenPlanStatusOptions = {}): Promise<TokenPlanStatusResult> {
+    const edition = options.edition ?? 'all';
+    if (!['individual', 'team', 'all'].includes(edition)) {
+      throw new CliError({
+        code: 'INVALID_ARGUMENT',
+        message: 'Invalid Token Plan edition.',
+        exitCode: 4,
+      });
+    }
+    if (options.signal?.aborted) throw options.signal.reason;
     const productCode = site.features.tokenPlanCommodityCodes.teams;
     const diagnostics: SubscriptionDiagnostic[] = [];
 
     let teamPromise: Promise<TeamTokenPlanResult> | undefined;
     const getTeam = (signal: AbortSignal) =>
       (teamPromise ??= fetchTeamTokenPlan(this.apiClient, signal));
+    let individualPromise: Promise<TokenPlanEditionStatus> | undefined;
+    const getIndividual = (signal: AbortSignal) =>
+      (individualPromise ??= fetchIndividualTokenPlan(this.apiClient, signal, { enhanced: true }));
 
     // Phase 1: run independent summary APIs in parallel.
-    const phase1Calls: Array<SubCallSpec<unknown>> = [
-      {
-        api: 'IndividualSubscription',
-        invoke: (signal) => fetchIndividualTokenPlan(this.apiClient, signal),
-      },
-      { api: 'TeamInstances', invoke: getTeam },
-      {
-        api: 'TeamSeatDetails',
-        invoke: (signal) => fetchTokenPlanSeatDetails(this.apiClient, signal),
-      },
-      {
-        api: 'GetSeatSubscriptionSummary',
-        invoke: (signal) =>
-          this.apiClient.callFlatApi<GetSeatSubscriptionSummaryResponse>({
-            product: API_PRODUCT_BSS,
-            action: 'GetSeatSubscriptionSummary',
-            signal,
-            params: { productCode },
-          }),
-      },
-      {
-        api: 'GetSubscriptionSummary',
-        invoke: (signal) =>
-          this.apiClient.callFlatApi<GetSubscriptionSummaryResponse>({
-            product: API_PRODUCT_BSS,
-            action: 'GetSubscriptionSummary',
-            signal,
-            params: { productCode },
-          }),
-      },
-    ];
-
-    phase1Calls.push(
-      {
-        api: 'CheckTokenPlanAutoRenewal',
-        invoke: (signal) =>
-          this.apiClient.callFlatApi<CheckTokenPlanAutoRenewalResponse>({
-            product: API_PRODUCT_BSS_LEGACY,
-            action: 'CheckTokenPlanAutoRenewal',
-            signal,
-            params: { CommodityCode: productCode },
-          }),
-      },
-      {
-        api: 'CheckInstancesRenewable',
-        invoke: async (signal) => {
-          const { instanceId } = await getTeam(signal);
-          if (!instanceId) return null;
-          return this.apiClient.callFlatApi<CheckInstancesRenewableResponse>({
-            product: API_PRODUCT_BSS,
-            action: 'CheckInstancesRenewable',
-            signal,
-            params: {
-              'instanceIdentities.1.InstanceId': instanceId,
-              'instanceIdentities.1.CommodityCode': productCode,
-              'instanceIdentities.1.ResourceType': 'subscription',
-            },
-          });
+    const phase1Calls: Array<SubCallSpec<unknown>> = [];
+    if (edition !== 'team')
+      phase1Calls.push(
+        {
+          api: 'IndividualSubscription',
+          invoke: getIndividual,
         },
-      },
-    );
+        {
+          api: 'HarnessAllowances',
+          invoke: async (signal) => {
+            const individual = await getIndividual(signal);
+            if (individual.status !== 'active') return null;
+            return createTokenPlanBenefitsReader(this.apiClient, signal).loadHarnessBenefits();
+          },
+        },
+      );
+    if (edition !== 'individual')
+      phase1Calls.push(
+        { api: 'TeamInstances', invoke: getTeam },
+        {
+          api: 'TeamSeatDetails',
+          invoke: (signal) => fetchTokenPlanSeatDetails(this.apiClient, signal),
+        },
+        {
+          api: 'GetSeatSubscriptionSummary',
+          invoke: (signal) =>
+            this.apiClient.callFlatApi<GetSeatSubscriptionSummaryResponse>({
+              product: API_PRODUCT_BSS,
+              action: 'GetSeatSubscriptionSummary',
+              signal,
+              params: { productCode },
+            }),
+        },
+        {
+          api: 'GetSubscriptionSummary',
+          invoke: (signal) =>
+            this.apiClient.callFlatApi<GetSubscriptionSummaryResponse>({
+              product: API_PRODUCT_BSS,
+              action: 'GetSubscriptionSummary',
+              signal,
+              params: { productCode },
+            }),
+        },
+        {
+          api: 'CheckTokenPlanAutoRenewal',
+          invoke: (signal) =>
+            this.apiClient.callFlatApi<CheckTokenPlanAutoRenewalResponse>({
+              product: API_PRODUCT_BSS_LEGACY,
+              action: 'CheckTokenPlanAutoRenewal',
+              signal,
+              params: { CommodityCode: productCode },
+            }),
+        },
+        {
+          api: 'CheckInstancesRenewable',
+          invoke: async (signal) => {
+            const { instanceId } = await getTeam(signal);
+            if (!instanceId) return null;
+            return this.apiClient.callFlatApi<CheckInstancesRenewableResponse>({
+              product: API_PRODUCT_BSS,
+              action: 'CheckInstancesRenewable',
+              signal,
+              params: {
+                'instanceIdentities.1.InstanceId': instanceId,
+                'instanceIdentities.1.CommodityCode': productCode,
+                'instanceIdentities.1.ResourceType': 'subscription',
+              },
+            });
+          },
+        },
+      );
 
-    const results = await runWithSoftTimeout(phase1Calls, STATUS_SOFT_TIMEOUT_MS);
+    const results = await runWithSoftTimeout(phase1Calls, STATUS_SOFT_TIMEOUT_MS, options.signal);
 
     const lookup = new Map<string, unknown>();
     for (const r of results) {
@@ -203,44 +244,72 @@ export class SubscriptionTokenPlanService {
       if (r.data !== null) lookup.set(r.api, r.data);
     }
 
-    return this.assembleTokenPlanStatus(lookup, diagnostics);
+    return this.assembleTokenPlanStatus(lookup, diagnostics, edition);
   }
 
   private assembleTokenPlanStatus(
     lookup: Map<string, unknown>,
     diagnostics: SubscriptionDiagnostic[],
+    edition: 'individual' | 'team' | 'all',
   ): TokenPlanStatusResult {
     const individual =
-      (lookup.get('IndividualSubscription') as TokenPlanEditionStatus | undefined) ??
-      unknownTokenPlanEdition('individual');
+      edition === 'team'
+        ? undefined
+        : ((lookup.get('IndividualSubscription') as TokenPlanEditionStatus | undefined) ??
+          unknownTokenPlanEdition('individual'));
+    if (individual && lookup.has('HarnessAllowances')) {
+      const benefits = lookup.get('HarnessAllowances') as TokenPlanHarnessBenefits;
+      individual.harnessAllowances = benefits.allowances;
+      individual.harnessHasResourcePack = benefits.hasResourcePack;
+    }
     const teamInstances = lookup.get('TeamInstances') as TeamTokenPlanResult | undefined;
-    const team = enrichTeamTokenPlan(
-      teamInstances?.team ?? unknownTokenPlanEdition('team'),
-      lookup.get('GetSeatSubscriptionSummary'),
-      lookup.get('GetSubscriptionSummary'),
-      lookup.get('CheckTokenPlanAutoRenewal'),
-    );
-    const renewable = buildTeamRenewable(
-      lookup.get('CheckInstancesRenewable'),
-      teamInstances?.instanceId ?? null,
-    );
-    team.seatDetails = resolveTokenPlanSeatAssignments(
-      lookup.get('TeamSeatDetails') as TokenPlanSeatDetails | undefined,
-      team,
-    );
+    const team =
+      edition === 'individual'
+        ? undefined
+        : enrichTeamTokenPlan(
+            teamInstances?.team ?? unknownTokenPlanEdition('team'),
+            lookup.get('GetSeatSubscriptionSummary'),
+            lookup.get('GetSubscriptionSummary'),
+            lookup.get('CheckTokenPlanAutoRenewal'),
+          );
+    const renewable =
+      edition === 'individual'
+        ? null
+        : buildTeamRenewable(
+            lookup.get('CheckInstancesRenewable'),
+            teamInstances?.instanceId ?? null,
+          );
+    if (team) {
+      team.seatDetails = resolveTokenPlanSeatAssignments(
+        lookup.get('TeamSeatDetails') as TokenPlanSeatDetails | undefined,
+        team,
+      );
+      team.subscriptionId = null;
+      // Response diagnostics are already collected by enrichTeamTokenPlan.
+      const seatData = teamResponseData(
+        lookup.get('GetSeatSubscriptionSummary'),
+        'GetSeatSubscriptionSummary',
+        [],
+      );
+      team.confirmedAutoRenew =
+        team.status === 'not_subscribed'
+          ? null
+          : confirmedTeamAutoRenew(lookup.get('CheckTokenPlanAutoRenewal'));
+      team.endAt = subscriptionTimestamp(seatData?.EndTime);
+    }
     return {
-      individual,
-      team,
-      product: PRODUCT_LABEL,
-      period: team.period,
-      autoRenew: team.autoRenew,
+      ...(individual ? { individual } : {}),
+      ...(team ? { team } : {}),
+      product: team ? PRODUCT_LABEL : 'Token Plan Individual Edition',
+      period: team ? team.period : (individual?.period ?? null),
+      autoRenew: team ? team.autoRenew : (individual?.autoRenew ?? null),
       renewable,
-      seatSummary: team.seatSummary,
+      seatSummary: team?.seatSummary ?? null,
       diagnostics: [
         ...diagnostics,
-        ...individual.diagnostics,
-        ...team.diagnostics,
-        ...(team.seatDetails?.diagnostics ?? []),
+        ...(individual?.diagnostics ?? []),
+        ...(team?.diagnostics ?? []),
+        ...(team?.seatDetails?.diagnostics ?? []),
       ],
     };
   }

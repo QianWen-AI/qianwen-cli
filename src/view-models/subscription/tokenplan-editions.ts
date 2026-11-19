@@ -12,19 +12,26 @@ export { formatAsiaShanghaiDate };
 const TEAM_PLAN_NAME = 'Token Plan Team Edition';
 const INDIVIDUAL_PLAN_NAME = 'Token Plan Individual Edition';
 
+/** Personal usage is ratio-only; missing ratios must not be inferred from Credits amounts. */
+export function individualCreditPercentages(value: unknown): {
+  usedPct: number | null;
+  remainingPct: number | null;
+} {
+  const usedPct =
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100
+      ? value
+      : null;
+  return { usedPct, remainingPct: usedPct === null ? null : 100 - usedPct };
+}
+
 function credits(window: TokenPlanCreditWindow): string {
-  const value = (amount: number | null) => (amount === null ? 'unknown' : String(amount));
-  if (window.usedPct !== undefined && window.usedPct !== null) {
-    const formatPercent = (percentage: number) =>
-      String(Math.round((percentage + Number.EPSILON) * 100) / 100);
-    const remainingPct = Math.max(0, 100 - window.usedPct);
-    const reset = window.resetTime
-      ? `; resets ${formatAsiaShanghaiDate(window.resetTime, 'datetime')}`
-      : '';
-    const total = window.total === null ? '' : `${value(window.total)} total; `;
-    return `${total}${formatPercent(window.usedPct)}% used (${formatPercent(remainingPct)}% remaining)${reset}`;
-  }
-  return `${value(window.remaining)} remaining / ${value(window.total)} total; ${value(window.used)} used`;
+  const { usedPct, remainingPct } = individualCreditPercentages(window.usedPct);
+  const formatPercent = (percentage: number | null) =>
+    percentage === null ? 'unknown' : `${Math.round((percentage + Number.EPSILON) * 100) / 100}%`;
+  const reset = window.resetTime
+    ? `; resets ${formatAsiaShanghaiDate(window.resetTime, 'datetime')}`
+    : '';
+  return `${formatPercent(usedPct)} used (${formatPercent(remainingPct)} remaining)${reset}`;
 }
 
 function period(start: string, end: string, remainingDays: number | null): string {

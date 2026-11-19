@@ -62,9 +62,66 @@ describe('SubscriptionStatusInk', () => {
       }),
     );
     expect(out).toContain('Token Plans');
+    expect(out).toMatch(/Subscription Status═+/);
+    expect(out).toMatch(/─── Token Plans ─+/);
+    expect(out).not.toMatch(/═══ Token Plans/);
     expect(out).toContain('Individual');
     expect(out).not.toContain('Account');
     expect(out).not.toContain('Gray');
+  });
+
+  it('keeps one separator between editions, seat details and recent orders', () => {
+    const out = frame(
+      makeVm({
+        fields: [],
+        sections: [
+          {
+            id: 'tokenplan-individual',
+            title: 'Individual',
+            fields: [{ label: 'Status', value: 'active' }],
+          },
+          { id: 'tokenplan-team', title: 'Team', fields: [{ label: 'Status', value: 'active' }] },
+        ],
+        tokenPlanSection: {
+          status: 'active',
+          autoRenew: 'On',
+          expires: '2027-01-01',
+          tiers: [
+            { label: 'Standard (1 seat)', bar: '50%', remaining: 50, total: 100, usedPct: 50 },
+          ],
+        },
+        seatDetails: {
+          title: 'Seat Details',
+          headers: ['SEAT ID'],
+          rows: [['fixture-seat']],
+          note: '',
+          noteAfterRows: false,
+        },
+        recentOrdersSection: {
+          orders: [
+            {
+              id: 'fixture-order',
+              type: 'purchase',
+              typeLabel: 'Purchase',
+              date: '2026-11-13',
+              amount: '100',
+              statusLabel: 'Paid',
+              statusColor: 'green',
+            },
+          ],
+        },
+      }),
+    );
+    const lines = out.split('\n');
+    for (const title of ['Team', 'Seat Details', 'Recent Token Plan Orders']) {
+      const at = lines.findIndex((line) =>
+        title === 'Recent Token Plan Orders' ? line.includes(title) : line.trim() === title,
+      );
+      expect(at).toBeGreaterThan(1);
+      expect(lines[at - 1].trim()).toBe('');
+      expect(lines[at - 2].trim()).not.toBe('');
+    }
+    expect(out).not.toMatch(/\n[ \t]*\n[ \t]*\n/);
   });
 
   it('renders the unavailable banner when banner is set', () => {
@@ -75,6 +132,7 @@ describe('SubscriptionStatusInk', () => {
       }),
     );
     expect(out).toContain('Subscription unavailable');
+    expect(out).toMatch(/Subscription Status═+/);
   });
 
   it('lists safe diagnostic messages without API names or internal codes', () => {
@@ -177,16 +235,56 @@ describe('SubscriptionStatusInk', () => {
     expect(out).toContain('Seat Usage');
     expect(out).toContain('Standard (2 seats)');
     expect(out).not.toContain('Expires:');
-    expect(out).toMatch(/═══\s+Recent Token Plan Orders/);
+    expect(out).toMatch(/───\s+Recent Token Plan Orders/);
     expect(out).toContain('ord-101');
     expect(out).toContain('Purchase');
     expect(out).toContain('2026-04-15');
     expect(out).toContain('199.00');
   });
+
+  it.each([true, false])(
+    'uses single lines for every sibling section, including the legacy fallback (editions=%s)',
+    (editions) => {
+      const out = frame(
+        makeVm({
+          sections: editions
+            ? [{ id: 'tokenplan-individual', title: 'Individual', fields: [] }]
+            : [],
+          tokenPlanSection: { status: 'Active', autoRenew: 'On', expires: '2027-01-01', tiers: [] },
+          creditPackSection: {
+            count: 1,
+            totalRemaining: '80 credits',
+            packs: [{ id: 'pack-1', remaining: '80 / 100', bar: '', expires: '2027-01-01' }],
+          },
+          recentOrdersSection: {
+            orders: Array.from({ length: 3 }, (_, index) => ({
+              id: `order-${index}`,
+              type: 'purchase',
+              typeLabel: 'Purchase',
+              date: '2026-11-12',
+              amount: '¥10.00',
+              statusLabel: 'Paid',
+              statusColor: 'green' as const,
+            })),
+          },
+        }),
+      );
+      expect(out).toMatch(/Subscription Status═+/);
+      for (const title of [
+        editions ? 'Token Plans' : 'Token Plan',
+        'Add-on Credit Packs',
+        'Recent Token Plan Orders (latest 3)',
+      ]) {
+        const line = out.split('\n').find((entry) => entry.includes(` ${title} `));
+        expect(line).toContain(`─── ${title} ─`);
+        expect(line).not.toContain('═');
+      }
+    },
+  );
 });
 
 describe('SubscriptionTokenPlanStatusInk', () => {
-  it('shows only seat types and quantities in the dedicated summary', () => {
+  it('omits the duplicate dedicated seat summary while preserving view-model data', () => {
     const vm = buildTokenPlanStatusViewModel(
       {
         product: 'Token Plan Team Edition',
@@ -213,9 +311,8 @@ describe('SubscriptionTokenPlanStatusInk', () => {
     );
 
     const out = stripAnsi(render(<SubscriptionTokenPlanStatusInk vm={vm} />).lastFrame() ?? '');
-    expect(out).toContain('SEAT SUMMARY');
-    expect(out).toMatch(/SEAT TYPE\s+QUANTITY/);
-    expect(out).toMatch(/Standard Seat\s+1/);
+    expect(out).not.toContain('SEAT SUMMARY');
+    expect(vm.seatSummary?.groups[0].seats).toBe(1);
     expect(out).not.toMatch(/Total Credits|Remaining Credits|25,000/);
     expect(out).not.toContain('Next Cycle');
   });
@@ -247,7 +344,7 @@ describe('SubscriptionTokenPlanStatusInk', () => {
     );
 
     const out = stripAnsi(render(<SubscriptionTokenPlanStatusInk vm={vm} />).lastFrame() ?? '');
-    expect(out).toMatch(/Standard Seat\s+1/);
+    expect(out).not.toContain('SEAT SUMMARY');
     expect(out).not.toContain('Next Cycle');
     expect(out).not.toContain('2026-10-16');
     expect(vm.seatSummary?.groups[0].nextCycleFlushTime).toBe('2026-10-16T00:00:00+08:00');

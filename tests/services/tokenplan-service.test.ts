@@ -5,6 +5,11 @@ import {
   fetchIndividualTokenPlan,
   fetchTeamTokenPlan,
   resolveIndividualAutoRenewFlag,
+  confirmedTeamAutoRenew,
+  parseTeamSeatGroups,
+  parseTeamSeatTypeSummaries,
+  enrichTeamTokenPlan,
+  unknownTokenPlanEdition,
 } from '../../src/services/tokenplan-service.js';
 import { makeMockApiClient, makeMockCachedFetcher } from '../helpers/service-mocks.js';
 import { site } from '../../src/site.js';
@@ -17,6 +22,11 @@ import type {
 } from '../../src/types/api-models.js';
 import { TokenPlanListService } from '../../src/services/tokenplan-list-service.js';
 import { unwrapCsDataResponse } from '../../src/api/adapters/cs-data-adapter.js';
+import type { SubscriptionDiagnostic } from '../../src/types/subscription.js';
+import {
+  API_TOKENPLAN_SOLO_QUOTA_CONFIG,
+  API_TOKENPLAN_SOLO_USAGE,
+} from '../../src/types/api-routes.js';
 
 // Test fixtures
 
@@ -1169,6 +1179,312 @@ describe('fetchIndividualTokenPlan — subscription tri-state', () => {
 
     expect(result.status).toBe('unknown');
     expect(result.diagnostics.some((d) => d.errorCode === 'UnconfirmedState')).toBe(true);
+  });
+});
+
+describe('fetchIndividualTokenPlan — status extensions', () => {
+  function personalApi(renewalInstanceId = 'sub-1', weekly: unknown = 0.25) {
+    const now = Date.now();
+    const entity = {
+      instanceCode: 'sub-1',
+      specCode: 'lite',
+      remainingDays: 30,
+      startTime: now - 60_000,
+      endTime: now + 2_592_000_000,
+      autoRenewFlag: false,
+      status: 'VALID',
+    };
+    const api = makeMockApiClient({
+      csData: async (opts) => {
+        if (opts.api.endsWith('/subscription')) return opts.parse({ data: entity });
+        if (opts.api.endsWith('/quota-config'))
+          return opts.parse({ data: { lite: { weekly: 1000, monthly: 5000 } } });
+        return opts.parse({
+          data: {
+            per1WeekPercentage: weekly,
+            per1MonthPercentage: 0.5,
+            per1WeekResetTime: now + 60_000,
+          },
+        });
+      },
+      flat: async () =>
+        availableInstancesResponse([
+          availableInstance({
+            InstanceID: renewalInstanceId,
+            EndTime: new Date(entity.endTime).toISOString(),
+            RenewStatus: 'AutoRenewal',
+            RenewalDuration: 3,
+            RenewalDurationUnit: 'M',
+          }),
+        ]),
+    });
+    return { api, entity };
+  }
+
+  it('keeps legacy monthly values and adds a weekly tier without estimating absolute balances', async () => {
+    const { api, entity } = personalApi();
+    const controller = new AbortController();
+    const result = await fetchIndividualTokenPlan(api, controller.signal, { enhanced: true });
+    expect(result.subscriptionId).toBe(entity.instanceCode);
+    expect(result.endAt).toBe(new Date(entity.endTime).toISOString());
+    expect(result.monthlyCredits).toMatchObject({
+      total: 1000,
+      used: null,
+      remaining: null,
+      usedPct: 50,
+    });
+    expect(result.tiers).toEqual([
+      {
+        tier: 'lite',
+        windowType: 'weekly',
+        totalCredits: '1000',
+        remainingCredits: null,
+        remainingPct: 75,
+        usedPct: 25,
+        resetAt: new Date(entity.startTime + 120_000).toISOString(),
+      },
+    ]);
+    expect(result.confirmedAutoRenew).toEqual({ enabled: true, period: 3, periodUnit: 'M' });
+    expect(api.callFlatApi).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'QueryAvailableInstances',
+        signal: controller.signal,
+        params: {
+          InstanceIDs: 'sub-1',
+          ProductCode: 'sfm',
+          ProductType: CODES.soloBuy,
+          PageNum: 1,
+          PageSize: 20,
+        },
+      }),
+    );
+  });
+
+  it('keeps legacy renewal fallback but does not confirm an unrelated instance with the same end time', async () => {
+    const { api } = personalApi('sub-other');
+    const result = await fetchIndividualTokenPlan(api, undefined, { enhanced: true });
+    expect(result.autoRenew?.enabled).toBe(true);
+    expect(result.confirmedAutoRenew).toBeNull();
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ errorCode: 'UnconfirmedRenewal' }),
+    );
+  });
+
+  it('does not emit monthly tiers when the present weekly value is invalid', async () => {
+    const { api } = personalApi('sub-1', null);
+    const result = await fetchIndividualTokenPlan(api, undefined, { enhanced: true });
+    expect(result.monthlyCredits?.usedPct).toBe(50);
+    expect(result).not.toHaveProperty('tiers');
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ api: API_TOKENPLAN_SOLO_USAGE, errorCode: 'PROTOCOL_ERROR' }),
+    );
+  });
+
+  it('does not use a monthly quota as the total of a confirmed weekly window', async () => {
+    const { api } = personalApi();
+    const original = api.callCsDataApi.getMockImplementation()!;
+    api.callCsDataApi.mockImplementation(async (opts) =>
+      opts.api.endsWith('/quota-config')
+        ? opts.parse({ data: { lite: { monthly: 5000 } } })
+        : original(opts),
+    );
+    const result = await fetchIndividualTokenPlan(api, undefined, { enhanced: true });
+    expect(result.tiers?.[0]).toMatchObject({
+      windowType: 'weekly',
+      totalCredits: null,
+      remainingCredits: null,
+      usedPct: 25,
+    });
+    expect(result.monthlyCredits?.total).toBe(5000);
+  });
+
+  it('keeps a valid weekly ratio when legacy monthly parsing and quota loading both fail', async () => {
+    const { api } = personalApi();
+    const original = api.callCsDataApi.getMockImplementation()!;
+    api.callCsDataApi.mockImplementation(async (opts) => {
+      if (opts.api.endsWith('/quota-config')) throw new Error('quota unavailable');
+      if (opts.api.endsWith('/usage'))
+        return opts.parse({ data: { per1WeekPercentage: 0.25, per1MonthPercentage: 'invalid' } });
+      return original(opts);
+    });
+    const result = await fetchIndividualTokenPlan(api, undefined, { enhanced: true });
+    expect(result.tiers?.[0]).toMatchObject({
+      windowType: 'weekly',
+      totalCredits: null,
+      remainingCredits: null,
+      usedPct: 25,
+      remainingPct: 75,
+    });
+    expect(result).not.toHaveProperty('monthlyCredits');
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ api: API_TOKENPLAN_SOLO_USAGE, errorCode: 'PROTOCOL_ERROR' }),
+    );
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        api: API_TOKENPLAN_SOLO_QUOTA_CONFIG,
+        errorCode: 'SERVICE_UNAVAILABLE',
+      }),
+    );
+  });
+
+  it('does not confirm renewal when the exact identity is duplicated', async () => {
+    const { api } = personalApi();
+    api.callFlatApi.mockResolvedValue(
+      availableInstancesResponse([
+        availableInstance({ RenewStatus: 'AutoRenewal' }),
+        availableInstance({ RenewStatus: 'ManualRenewal' }),
+      ]),
+    );
+    const result = await fetchIndividualTokenPlan(api, undefined, { enhanced: true });
+    expect(result.confirmedAutoRenew).toBeNull();
+  });
+});
+
+describe('additive team seat summaries', () => {
+  const reset = '2026-11-01T00:00:00Z';
+  const group = (overrides: Record<string, unknown> = {}) => ({
+    SpecType: 'standard',
+    SubscriptionTotalNumber: 2,
+    SubscriptionAssignedNumber: 1,
+    NextCycleFlushTime: reset,
+    EquityList: [
+      { EquityType: 'OTHER', TotalValue: '999', SurplusValue: '998' },
+      { EquityType: 'CREDITS', TotalValue: '100.1', SurplusValue: '80.1', Unit: 'Credits' },
+    ],
+    ...overrides,
+  });
+  const response = (groups: unknown[]) => ({
+    Success: true,
+    Code: 'Success',
+    Data: { SubscriptionGroupList: groups },
+  });
+
+  it.each([0, 1])(
+    'enriches exact summaries independently of renewal display rules (%s)',
+    (renewal) => {
+      const source = { ...unknownTokenPlanEdition('team'), status: 'active' as const };
+      const raw = response([group(), group()]);
+      const before = structuredClone({ source, raw });
+      const result = enrichTeamTokenPlan(
+        source,
+        raw,
+        { Success: true, Code: 'Success', Data: {} },
+        { Success: true, Code: 'Success', Data: { AutoRenewal: renewal } },
+      );
+      expect(result.seatSummaries).toEqual([
+        {
+          seatType: 'standard',
+          seatCount: 4,
+          assignedCount: 2,
+          totalCredits: '200.2',
+          remainingCredits: '160.2',
+          remainingPct: (160.2 / 200.2) * 100,
+          resetAt: new Date(reset).toISOString(),
+        },
+      ]);
+      expect(result.seatSummary?.groups).toHaveLength(2);
+      expect(result.seatSummary?.groups[0].nextCycleFlushTime).toBe(
+        renewal === 0 ? null : new Date(reset).toISOString(),
+      );
+      expect(result.diagnostics).toEqual([]);
+      expect({ source, raw }).toEqual(before);
+    },
+  );
+
+  it('enriches incomplete summaries without duplicating legacy Credit diagnostics', () => {
+    const incomplete = group({ EquityList: [{ EquityType: 'CREDITS', TotalValue: '100' }] });
+    const result = enrichTeamTokenPlan(
+      { ...unknownTokenPlanEdition('team'), status: 'active' },
+      response([group(), incomplete]),
+      { Success: true, Code: 'Success', Data: {} },
+      { Success: true, Code: 'Success', Data: { AutoRenewal: 0 } },
+    );
+    expect(result.seatSummaries?.[0]).toMatchObject({
+      seatCount: 4,
+      totalCredits: null,
+      remainingCredits: null,
+      remainingPct: null,
+      resetAt: new Date(reset).toISOString(),
+    });
+    expect(
+      result.diagnostics.filter((entry) => entry.errorCode === 'IncompleteCredits'),
+    ).toHaveLength(1);
+    expect(
+      result.diagnostics.filter((entry) => entry.errorCode === 'ConflictingCreditGroups'),
+    ).toHaveLength(1);
+  });
+
+  it('selects the same Credits right for legacy and additive summaries and sums equal windows exactly', () => {
+    const raw = response([group(), group()]);
+    const before = structuredClone(raw);
+    const diagnostics: SubscriptionDiagnostic[] = [];
+    expect(parseTeamSeatGroups(raw, [])?.[0]).toMatchObject({
+      totalValue: '100.1',
+      surplusValue: '80.1',
+    });
+    expect(parseTeamSeatTypeSummaries(raw, diagnostics)).toEqual([
+      {
+        seatType: 'standard',
+        seatCount: 4,
+        assignedCount: 2,
+        totalCredits: '200.2',
+        remainingCredits: '160.2',
+        remainingPct: (160.2 / 200.2) * 100,
+        resetAt: new Date(reset).toISOString(),
+      },
+    ]);
+    expect(diagnostics).toEqual([]);
+    expect(raw).toEqual(before);
+  });
+
+  it.each([
+    { NextCycleFlushTime: '2026-12-01T00:00:00Z' },
+    {
+      EquityList: [
+        { EquityType: 'CREDITS', TotalValue: '100', SurplusValue: '50', Unit: 'Tokens' },
+      ],
+    },
+    { EquityList: [{ EquityType: 'CREDITS', TotalValue: '100' }] },
+  ])('does not merge incompatible or incomplete Credits groups: %j', (override) => {
+    const summaries = parseTeamSeatTypeSummaries(response([group(), group(override)]), []);
+    expect(summaries?.[0]).toMatchObject({
+      totalCredits: null,
+      remainingCredits: null,
+      remainingPct: null,
+    });
+  });
+
+  it('retains confirmed zero without dividing by zero, and rejects a balance greater than its total', () => {
+    const zero = group({
+      EquityList: [{ EquityType: 'CREDITS', TotalValue: '0', SurplusValue: '0' }],
+    });
+    expect(parseTeamSeatTypeSummaries(response([zero]), [])?.[0]).toMatchObject({
+      totalCredits: '0',
+      remainingCredits: '0',
+      remainingPct: null,
+    });
+    const invalid = group({
+      EquityList: [{ EquityType: 'CREDITS', TotalValue: '1', SurplusValue: '2' }],
+    });
+    expect(parseTeamSeatTypeSummaries(response([invalid]), [])?.[0]).toMatchObject({
+      totalCredits: '1',
+      remainingCredits: null,
+      remainingPct: null,
+    });
+    expect(parseTeamSeatTypeSummaries(response([null]), [])).toBeNull();
+    expect(parseTeamSeatTypeSummaries({ Success: true, Code: 'Success', Data: {} }, [])).toEqual(
+      [],
+    );
+  });
+
+  it.each([true, false, '1', 2, null])(
+    'does not confirm team auto-renewal from %p',
+    (AutoRenewal) => {
+      expect(confirmedTeamAutoRenew({ Data: { AutoRenewal } })).toBeNull();
+    },
+  );
+  it.each([0, 1])('confirms the documented numeric team value %p', (AutoRenewal) => {
+    expect(confirmedTeamAutoRenew({ Data: { AutoRenewal } })?.enabled).toBe(AutoRenewal === 1);
   });
 });
 

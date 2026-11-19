@@ -36,6 +36,7 @@ import type { TokenPlan } from '../types/usage.js';
 import type {
   TokenPlanEditionStatus,
   TokenPlanSeatDetails,
+  TokenPlanSeatTypeSummary,
 } from '../types/tokenplan-subscription.js';
 import {
   fetchTokenPlanSeatDetails,
@@ -45,6 +46,8 @@ import type { TokenplanService } from './tokenplan-service.js';
 import {
   buildTeamRenewable,
   enrichTeamTokenPlan,
+  parseTeamCreditValues,
+  subscriptionObject,
   type TokenPlanEditionResult,
 } from './tokenplan-service.js';
 import { site } from '../site.js';
@@ -52,7 +55,14 @@ import { API_PRODUCT_ACCOUNT_CENTER } from '../types/api-routes.js';
 import { CliError } from '../utils/errors.js';
 import { EXIT_CODES } from '../utils/exit-codes.js';
 import { sumAmountStrings } from '../utils/amount.js';
-import { safeSubscriptionDiagnostic, safeSubscriptionError } from './subscription-diagnostics.js';
+import { DecimalAmount } from '../utils/decimal-amount.js';
+import { createTokenPlanBenefitsReader } from './tokenplan-benefits.js';
+import type { TokenPlanHarnessBenefits } from './tokenplan-benefits.js';
+import {
+  safeSubscriptionDiagnostic,
+  safeSubscriptionError,
+  subscriptionProtocolDiagnostic,
+} from './subscription-diagnostics.js';
 
 const API_PRODUCT_BSS = 'BssOpenAPI-V3';
 const API_PRODUCT_BSS_LEGACY = 'BssOpenApi';
@@ -90,10 +100,6 @@ interface SubCallResult<T> {
   diagnostic: SubscriptionDiagnostic | null;
 }
 
-function toDiagnostic(api: string, error: unknown): SubscriptionDiagnostic {
-  return safeSubscriptionDiagnostic(api, error);
-}
-
 function totalFailureExitCode(diagnostics: SubscriptionDiagnostic[]): 1 | 2 | 3 | 4 {
   const codes = new Set(diagnostics.map((diagnostic) => diagnostic.errorCode));
   if (codes.has('CONFIG_ERROR') || codes.has('PROTOCOL_ERROR')) return 4;
@@ -125,7 +131,7 @@ async function runWithSoftTimeout(
       const data = await c.invoke(controller.signal);
       if (active) results[idx]!.data = data;
     } catch (error) {
-      if (active) results[idx]!.diagnostic = toDiagnostic(c.api, error);
+      if (active) results[idx]!.diagnostic = safeSubscriptionDiagnostic(c.api, error);
     } finally {
       settled.add(idx);
     }
@@ -245,6 +251,7 @@ function syntheticSeatTierFromTokenPlan(dto: TokenPlan | null | undefined): Subs
       totalCredits: total,
       remainingCredits: safeRemaining,
       usedPct,
+      remainingPct: total > 0 ? (safeRemaining / total) * 100 : null,
       nextCycleFlushTime: dto.resetDate ?? null,
     },
   ];
@@ -310,11 +317,15 @@ export class SubscriptionService {
     private readonly tokenplanService: TokenplanService,
   ) {}
 
-  async getStatus(opts: { plan?: 'token' } = {}): Promise<SubscriptionStatusResult> {
+  async getStatus(
+    opts: { plan?: 'token'; includeIndividualDetails?: boolean } = {},
+  ): Promise<SubscriptionStatusResult> {
     const wantToken = opts.plan === undefined || opts.plan === 'token';
     let tokenPlanPromise: Promise<TokenPlanEditionResult> | undefined;
     const getTokenPlan = (signal: AbortSignal) =>
-      (tokenPlanPromise ??= this.tokenplanService.fetchTokenPlanEditions(signal));
+      (tokenPlanPromise ??= opts.includeIndividualDetails
+        ? this.tokenplanService.fetchTokenPlanEditions(signal, { enhancedIndividual: true })
+        : this.tokenplanService.fetchTokenPlanEditions(signal));
 
     const calls: Array<SubCallSpec<unknown>> = [
       {
@@ -349,6 +360,16 @@ export class SubscriptionService {
         api: 'TokenPlan',
         invoke: getTokenPlan,
       });
+      if (opts.includeIndividualDetails) {
+        calls.push({
+          api: 'HarnessAllowances',
+          invoke: async (signal) => {
+            const { tokenPlan } = await getTokenPlan(signal);
+            if (tokenPlan.individual?.status !== 'active') return null;
+            return createTokenPlanBenefitsReader(this.apiClient, signal).loadHarnessBenefits();
+          },
+        });
+      }
       calls.push({
         api: 'GetSubscriptionSummary',
         invoke: (signal) =>
@@ -417,8 +438,12 @@ export class SubscriptionService {
       if (r.data !== null) lookup.set(r.api, r.data);
     }
 
-    // Supplementary seat details cannot turn a failed status query into success.
-    if (results.filter((r) => r.api !== 'TeamSeatDetails').every((r) => r.diagnostic !== null)) {
+    // Supplementary details cannot turn a failed status query into success.
+    if (
+      results
+        .filter((r) => r.api !== 'TeamSeatDetails' && r.api !== 'HarnessAllowances')
+        .every((r) => r.diagnostic !== null)
+    ) {
       const details = lookup.get('TeamSeatDetails') as TokenPlanSeatDetails | undefined;
       diagnostics.push(...(details?.diagnostics ?? []));
       return {
@@ -457,6 +482,11 @@ export class SubscriptionService {
     }
 
     const data = this.assembleStatus(lookup, recentOrders);
+    if (data.individual && lookup.has('HarnessAllowances')) {
+      const benefits = lookup.get('HarnessAllowances') as TokenPlanHarnessBenefits;
+      data.individual.harnessAllowances = benefits.allowances;
+      data.individual.harnessHasResourcePack = benefits.hasResourcePack;
+    }
     diagnostics.push(...(data.individual?.diagnostics ?? []), ...(data.team?.diagnostics ?? []));
     diagnostics.push(...(data.team?.seatDetails?.diagnostics ?? []));
     if (!hasConfirmedStatusData(data)) {
@@ -667,11 +697,9 @@ export class SubscriptionService {
     // nulled to prevent it being read as a quota-reset date. null autoRenew is
     // "unknown" and must not trigger clearing.
     const seatTiersRaw = extractSeatTiers(seatInner, autoRenewDto.autoRenew);
-    const seatTiers = seatTiersRaw.some(
-      (tier) => tier.totalCredits !== null && tier.totalCredits > 0,
-    )
-      ? seatTiersRaw
-      : syntheticSeatTierFromTokenPlan(tokenPlanDto);
+    // Preserve confirmed zero and unknown group quotas instead of replacing them with legacy totals.
+    const seatTiers =
+      seatTiersRaw.length > 0 ? seatTiersRaw : syntheticSeatTierFromTokenPlan(tokenPlanDto);
     const remainingDays = extractRemainingDays(seatInner);
     const creditPacks = extractCreditPacks(frAddonRaw);
     return {
@@ -685,21 +713,11 @@ export class SubscriptionService {
       renewable: renewable?.canRenew ?? null,
       remainingDays: team ? team.remainingDays : remainingDays,
       seatTiers: team
-        ? (team.seatSummary?.groups ?? []).map((group) => {
-            const total = group.totalValue === null ? null : Number(group.totalValue);
-            const remaining = group.surplusValue === null ? null : Number(group.surplusValue);
-            return {
-              specType: group.specType,
-              seats: group.seats,
-              totalCredits: total !== null && Number.isFinite(total) ? total : null,
-              remainingCredits: remaining !== null && Number.isFinite(remaining) ? remaining : null,
-              usedPct:
-                total !== null && remaining !== null && total > 0 && remaining <= total
-                  ? (1 - remaining / total) * 100
-                  : null,
-              nextCycleFlushTime: group.nextCycleFlushTime,
-            };
-          })
+        ? projectSeatTiers(
+            team.seatSummaries ?? [],
+            team.autoRenew?.enabled ?? null,
+            team.diagnostics,
+          )
         : seatTiers,
       creditPacks,
       recentOrders,
@@ -732,14 +750,17 @@ function extractSeatTiers(
   const tiers: SubscriptionSeatTier[] = [];
   for (const group of groups) {
     if (!group) continue;
-    const equity = group.EquityList?.[0];
-    const total = parseFloat(equity?.TotalValue ?? group.TotalValue ?? '0');
-    const remaining = parseFloat(equity?.SurplusValue ?? group.SurplusValue ?? '0');
-    const safeTotal = Number.isFinite(total) ? total : 0;
-    const safeRemaining = Number.isFinite(remaining) ? remaining : 0;
-    const used = Math.max(0, safeTotal - safeRemaining);
+    const credits = parseTeamCreditValues(subscriptionObject(group) ?? {}, []);
+    const total = credits.totalCredits === null ? null : Number(credits.totalCredits);
+    const remaining = credits.remainingCredits === null ? null : Number(credits.remainingCredits);
+    const safeTotal = total !== null && Number.isFinite(total) ? total : null;
+    const safeRemaining = remaining !== null && Number.isFinite(remaining) ? remaining : null;
     const usedPct =
-      safeTotal > 0 ? Math.min(100, Math.max(0, Math.round((used / safeTotal) * 100))) : 0;
+      safeTotal !== null && safeRemaining !== null
+        ? safeTotal > 0
+          ? Math.round(((safeTotal - safeRemaining) / safeTotal) * 100)
+          : 0
+        : null;
     let flush: string | null = null;
     // Only resolve a flush time when auto-renewal is not explicitly disabled.
     if (autoRenewEnabled !== false) {
@@ -750,16 +771,65 @@ function extractSeatTiers(
         flush = rawFlush;
       }
     }
+    const remainingPct =
+      safeTotal !== null && safeRemaining !== null && safeTotal > 0
+        ? (safeRemaining / safeTotal) * 100
+        : null;
     tiers.push({
       specType: group.SpecType ?? '',
       seats: typeof group.SubscriptionTotalNumber === 'number' ? group.SubscriptionTotalNumber : 0,
       totalCredits: safeTotal,
       remainingCredits: safeRemaining,
       usedPct,
+      remainingPct,
       nextCycleFlushTime: flush,
     });
   }
   return tiers;
+}
+
+function legacyCreditNumber(value: string | null): number | null {
+  if (value === null) return null;
+  const number = Number(value);
+  try {
+    return DecimalAmount.fromApi(number).compare(DecimalAmount.parse(value)) === 0 ? number : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Preserve legacy numeric fields without rounding the exact, shared summaries. */
+function projectSeatTiers(
+  summaries: TokenPlanSeatTypeSummary[],
+  autoRenewEnabled: boolean | null,
+  diagnostics: SubscriptionDiagnostic[],
+): SubscriptionSeatTier[] {
+  return summaries.map((summary) => {
+    const totalCredits = legacyCreditNumber(summary.totalCredits);
+    const remainingCredits = legacyCreditNumber(summary.remainingCredits);
+    if (
+      ((summary.totalCredits !== null && totalCredits === null) ||
+        (summary.remainingCredits !== null && remainingCredits === null)) &&
+      !diagnostics.some((diagnostic) => diagnostic.errorCode === 'UnrepresentableCredits')
+    ) {
+      diagnostics.push(
+        subscriptionProtocolDiagnostic(
+          'GetSeatSubscriptionSummary',
+          'UnrepresentableCredits',
+          'Some Credits cannot be represented exactly in numeric fields.',
+        ),
+      );
+    }
+    return {
+      specType: summary.seatType,
+      seats: summary.seatCount,
+      totalCredits,
+      remainingCredits,
+      usedPct: summary.remainingPct === null ? null : 100 - summary.remainingPct,
+      remainingPct: summary.remainingPct,
+      nextCycleFlushTime: autoRenewEnabled === false ? null : summary.resetAt,
+    };
+  });
 }
 
 function extractCreditPacks(raw: FrInstanceResponse | null | undefined): SubscriptionCreditPack[] {

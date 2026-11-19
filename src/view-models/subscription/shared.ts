@@ -5,7 +5,10 @@ import type {
   TokenPlanEditionStatus,
 } from '../../types/tokenplan-subscription.js';
 import type { ViewContext } from '../billing/shared.js';
-import { buildTokenPlanEditionSections } from './tokenplan-editions.js';
+import {
+  buildTokenPlanEditionSections,
+  individualCreditPercentages,
+} from './tokenplan-editions.js';
 import { formatAsiaShanghaiDate } from '../../utils/date.js';
 
 export const NA = '—';
@@ -56,15 +59,17 @@ const STATUS_TIME_FIELDS = new Set([
   'orderTime',
 ]);
 
-/** Normalize status JSON timestamps and omit unknown individual usage without changing service data. */
+/** Normalize status JSON timestamps and hide personal Credits amounts without changing service data. */
 export function formatSubscriptionStatusJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(formatSubscriptionStatusJson);
   if (value === null || typeof value !== 'object') return value;
   const isIndividual = 'edition' in value && value.edition === 'individual';
   return Object.fromEntries(
     Object.entries(value).flatMap(([key, entry]): Array<[string, unknown]> => {
+      if (isIndividual && key === 'harnessHasResourcePack') return [];
       const isIndividualCredits =
-        isIndividual && (key === 'monthlyCredits' || key === 'weeklyCredits');
+        isIndividual &&
+        (key === 'monthlyCredits' || key === 'weeklyCredits' || key === 'fiveHourCredits');
       if (isIndividualCredits && entry === null) return [];
       if (
         isIndividualCredits &&
@@ -74,10 +79,36 @@ export function formatSubscriptionStatusJson(value: unknown): unknown {
       ) {
         const credits = Object.fromEntries(
           Object.entries(entry).filter(
-            ([field, amount]) => amount !== null || (field !== 'used' && field !== 'remaining'),
+            ([field]) => !['total', 'used', 'remaining'].includes(field),
           ),
         );
-        return [[key, formatSubscriptionStatusJson(credits)]];
+        return [
+          [
+            key,
+            formatSubscriptionStatusJson({
+              ...credits,
+              ...individualCreditPercentages(credits.usedPct),
+            }),
+          ],
+        ];
+      }
+      if (isIndividual && key === 'tiers' && Array.isArray(entry)) {
+        return [
+          [
+            key,
+            entry.map((tier) =>
+              formatSubscriptionStatusJson(
+                tier !== null && typeof tier === 'object' && !Array.isArray(tier)
+                  ? Object.fromEntries(
+                      Object.entries(tier).filter(
+                        ([field]) => !['totalCredits', 'remainingCredits'].includes(field),
+                      ),
+                    )
+                  : tier,
+              ),
+            ),
+          ],
+        ];
       }
       if (
         STATUS_TIME_FIELDS.has(key) &&

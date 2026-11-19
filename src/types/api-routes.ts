@@ -51,6 +51,13 @@ export const API_TOKENPLAN_SOLO_SUBSCRIPTION =
 export const API_TOKENPLAN_SOLO_QUOTA_CONFIG =
   'zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/quota-config';
 export const API_TOKENPLAN_SOLO_USAGE = 'zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/usage';
+export const API_TOKENPLAN_SUPPORTED_MODELS =
+  'zeldaHttp.dashscopeModel./zelda/api/v1/modelCenter/listTokenPlanModels';
+export const API_TOKENPLAN_MODEL_PROVIDERS =
+  'zeldaHttp.dashscopeModel./zelda/api/v1/modelCenter/listModelProviders';
+export const API_TOKENPLAN_TOOL_CATALOG = 'zeldaEasy.broadscope-bailian.token-plan.detail';
+export const API_TOKENPLAN_TOOL_EQUITY =
+  'zeldaEasy.bailian-commerce.tokenPlan.queryTokenPlanEquityInfo';
 
 export const API_ORCHESTRATION_PATH = '/data/custom.json';
 export const API_PUBLIC_ORCHESTRATION_PATH = '/data/publicCustom.json';

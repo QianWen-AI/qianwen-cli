@@ -54,7 +54,11 @@ export function subscriptionTokenPlanListAction(cmd: Command) {
     process.on('SIGINT', cancel);
     const unregister = registerCommandInterrupt(cancel);
     try {
-      const options = current.opts<{ edition?: string; billingCycle?: string }>();
+      const options = current.opts<{
+        edition?: string;
+        billingCycle?: string;
+        includeModels?: boolean;
+      }>();
       const edition = options.edition ?? 'all';
       const billingCycle = options.billingCycle ?? 'monthly';
       if (edition !== 'all' && edition !== 'individual' && edition !== 'team') {
@@ -81,6 +85,7 @@ export function subscriptionTokenPlanListAction(cmd: Command) {
             edition,
             billingCycle,
             authenticated,
+            includeModels: options.includeModels === true,
             signal: controller.signal,
           }),
         format === 'table' ? 'table' : 'json',
@@ -92,6 +97,7 @@ export function subscriptionTokenPlanListAction(cmd: Command) {
       if (format === 'json') outputJSON(vm.data);
       else if (format === 'text') renderTextTokenPlanList(vm);
       else await renderTokenPlanListInk(vm);
+      controller.signal.throwIfAborted();
       if (result.completeness === 'unknown') {
         const codes = new Set(
           result.sections.flatMap((section) => section.diagnostics.map((entry) => entry.errorCode)),

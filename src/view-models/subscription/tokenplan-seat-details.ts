@@ -31,7 +31,7 @@ function safe(value: string): string {
   return stripVTControlCharacters(value).replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ');
 }
 
-function amount(value: string | null): string {
+export function formatTokenPlanCredits(value: string | null): string {
   if (value === null) return 'unknown';
   const [integer = '0', fraction = ''] = value.split('.');
   const trimmed = fraction.replace(/0+$/, '');
@@ -48,9 +48,36 @@ const STATUS: Record<string, string> = {
 };
 const TYPES: Record<string, string> = { standard: 'Standard', pro: 'Pro', max: 'Max' };
 
+export function sortTokenPlanSeats<T>(
+  seats: readonly T[],
+  type: (seat: T) => string | null | undefined,
+): T[] {
+  const order = ['standard', 'pro', 'max'];
+  const rank = (value: string | null | undefined) => {
+    const index = order.indexOf(value?.toLowerCase() ?? '');
+    return index < 0 ? order.length : index;
+  };
+  return [...seats].sort((a, b) => rank(type(a)) - rank(type(b)));
+}
+
 export function formatTokenPlanSeatName(specType: string | null): string {
-  const name = TYPES[specType?.toLowerCase() ?? ''];
-  return name ? `${name} Seat` : 'unknown';
+  return TYPES[specType?.toLowerCase() ?? ''] ?? 'unknown';
+}
+
+function remainingPercent(totalValue: string | null, surplusValue: string | null): string {
+  if (totalValue === null || surplusValue === null) return '—';
+  const total = Number(totalValue);
+  const remaining = Number(surplusValue);
+  // A zero or unknown total cannot establish a remaining percentage.
+  if (
+    !Number.isFinite(total) ||
+    !Number.isFinite(remaining) ||
+    total <= 0 ||
+    remaining < 0 ||
+    remaining > total
+  )
+    return '—';
+  return `${Math.round((remaining / total) * 10_000) / 100}%`;
 }
 
 export function buildTokenPlanSeatDetailsViewModel(
@@ -60,14 +87,6 @@ export function buildTokenPlanSeatDetailsViewModel(
   if (!details) return undefined;
   const dedicated = variant === 'tokenplan';
   const hasUnknownStatus = details.items.some((seat) => seat.status === null);
-  const hasUnknownFields = details.items.some(
-    (seat) =>
-      seat.specType === null ||
-      seat.status === null ||
-      seat.assignment === 'unknown' ||
-      seat.totalValue === null ||
-      seat.surplusValue === null,
-  );
   const label = hasUnknownStatus ? 'seat record' : 'current seat';
   const count = `${details.items.length} ${label}${details.items.length === 1 ? '' : 's'}`;
   const notes: string[] = [];
@@ -86,12 +105,6 @@ export function buildTokenPlanSeatDetailsViewModel(
       details.items.length ? `${count}. Credits: remaining / total.` : 'No current seats.',
     );
   }
-  if (hasUnknownFields) notes.push('Some seat fields are unknown.');
-  if (details.historicalCount > 0) {
-    notes.push(
-      `${details.historicalCount} historical seats hidden. View: qianwen subscription tokenplan seats`,
-    );
-  }
   return {
     title: dedicated ? 'SEAT DETAILS' : 'Seat Details',
     headers: [
@@ -100,10 +113,11 @@ export function buildTokenPlanSeatDetailsViewModel(
       'STATUS',
       'ASSIGNMENT',
       dedicated ? 'CREDITS (REMAINING / TOTAL)' : 'CREDITS',
+      ...(dedicated ? ['REMAINING (%)'] : []),
     ],
     note: notes.join('\n'),
     noteAfterRows: dedicated,
-    rows: details.items.map((seat) => [
+    rows: sortTokenPlanSeats(details.items, (seat) => seat.specType).map((seat) => [
       safe(seat.instanceCode),
       dedicated
         ? formatTokenPlanSeatName(seat.specType)
@@ -118,7 +132,8 @@ export function buildTokenPlanSeatDetailsViewModel(
           : seat.assignment === 'unassigned'
             ? 'Unassigned'
             : 'unknown',
-      `${amount(seat.surplusValue)} / ${amount(seat.totalValue)}`,
+      `${formatTokenPlanCredits(seat.surplusValue)} / ${formatTokenPlanCredits(seat.totalValue)}`,
+      ...(dedicated ? [remainingPercent(seat.totalValue, seat.surplusValue)] : []),
     ]),
   };
 }
