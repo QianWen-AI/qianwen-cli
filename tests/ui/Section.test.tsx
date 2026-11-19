@@ -1,10 +1,11 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { Text } from 'ink';
+import { Box, Text } from 'ink';
 import { render } from 'ink-testing-library';
 import stripAnsi from 'strip-ansi';
 import { Section } from '../../src/ui/Section.js';
 import { site } from '../../src/site.js';
+import { visibleWidth } from '../../src/ui/textWrap.js';
 
 const s = {
   ...site,
@@ -28,6 +29,26 @@ afterEach(() => {
 });
 
 describe('Section', () => {
+  it('supports double rules within the width limit while retaining single rules by default', () => {
+    const screen = render(
+      <Box width={60}>
+        <Section title="CATALOG" maxWidth={60} borderStyle="double" footer="note">
+          <Section title="Individual" paddingLeft={0} maxWidth={58}>
+            <Text>content</Text>
+          </Section>
+        </Section>
+      </Box>,
+    );
+    try {
+      const output = stripAnsi(screen.lastFrame() ?? '');
+      expect(output).toMatch(/^ {2}CATALOG═+$/m);
+      expect(output).toMatch(/^ {2}Individual─+$/m);
+      expect(output).toMatch(/^ {2}═+$/m);
+      expect(output.split('\n').every((line) => visibleWidth(line) <= 60)).toBe(true);
+    } finally {
+      screen.unmount();
+    }
+  });
   it('renders the title in the top bar', () => {
     const out = frame(
       <Section title="Free Tier Quota">

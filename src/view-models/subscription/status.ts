@@ -20,7 +20,13 @@ import { buildProgressBar, theme } from '../../ui/theme.js';
 import { ORDER_STATUS_COLOR, ORDER_STATUS_LABEL, TYPE_LABEL } from './orders.js';
 import type { OrderStatusColor } from './orders.js';
 import type { TokenPlanSeatDetailsViewModel } from '../../types/tokenplan-subscription.js';
-import { buildTokenPlanSeatDetailsViewModel } from './tokenplan-seat-details.js';
+import {
+  buildTokenPlanSeatDetailsViewModel,
+  formatTokenPlanCredits,
+  sortTokenPlanSeats,
+} from './tokenplan-seat-details.js';
+import { buildTokenPlanStatusViewModel } from './tokenplan-status.js';
+import type { TokenPlanDisplayTable } from './tokenplan-details.js';
 
 export interface SubscriptionStatusFieldViewModel {
   label: string;
@@ -31,6 +37,7 @@ export interface SubscriptionStatusSectionViewModel {
   id: string;
   title: string;
   fields: SubscriptionStatusFieldViewModel[];
+  detailTables?: TokenPlanDisplayTable[];
   placeholder?: string;
 }
 
@@ -165,20 +172,29 @@ function buildTokenPlanSection(data: SubscriptionStatus): TokenPlanSectionViewMo
   const autoRenew = data.autoRenew === true ? 'On' : data.autoRenew === false ? 'Off' : NA;
   const expires = formatExpires(data.period, data.remainingDays);
 
-  const tiers: TokenPlanSectionTierViewModel[] = data.seatTiers.map((tier) => {
-    const remainingPct =
+  const tiers: TokenPlanSectionTierViewModel[] = sortTokenPlanSeats(
+    data.seatTiers,
+    (tier) => tier.specType,
+  ).map((tier) => {
+    const summary = data.team?.seatSummaries?.find((seat) => seat.seatType === tier.specType);
+    const legacyRemainingPct =
       tier.totalCredits !== null && tier.remainingCredits !== null && tier.totalCredits > 0
         ? Math.min(100, Math.max(0, (tier.remainingCredits / tier.totalCredits) * 100))
         : 0;
-    const bar =
-      tier.totalCredits === null || tier.remainingCredits === null
-        ? 'unknown'
-        : buildProgressBar(remainingPct, 24, theme.data, true);
+    const remainingPct = summary ? (summary.remainingPct ?? 0) : legacyRemainingPct;
+    const unknownCredits = summary
+      ? summary.totalCredits === null || summary.remainingCredits === null
+      : tier.totalCredits === null || tier.remainingCredits === null;
+    const bar = unknownCredits ? 'unknown' : buildProgressBar(remainingPct, 24, theme.data, true);
     const labelType = tier.specType ? capitalize(tier.specType) : 'Tier';
     const seatNoun = tier.seats === 1 ? 'seat' : 'seats';
     const label = `${labelType} (${tier.seats ?? 'unknown'} ${seatNoun})`;
-    const remainingStr = formatInteger(tier.remainingCredits);
-    const totalStr = formatInteger(tier.totalCredits);
+    const remainingStr = summary
+      ? formatTokenPlanCredits(summary.remainingCredits)
+      : formatInteger(tier.remainingCredits);
+    const totalStr = summary
+      ? formatTokenPlanCredits(summary.totalCredits)
+      : formatInteger(tier.totalCredits);
     const decorated = `${bar} ${remainingStr} / ${totalStr}`;
     return {
       label,
@@ -292,11 +308,31 @@ export function buildSubscriptionStatusViewModel(
   const { quota, bar: quotaBar } = buildQuota(data, ctx);
 
   const sections: SubscriptionStatusSectionViewModel[] = [];
+  const individualSection = data.individual
+    ? buildTokenPlanStatusViewModel(
+        {
+          individual: data.individual,
+          product: 'Token Plan Individual Edition',
+          period: null,
+          autoRenew: null,
+          renewable: null,
+          seatSummary: null,
+          diagnostics,
+        },
+        'text',
+      ).editionSections[0]
+    : undefined;
   for (const section of editionSections) {
     sections.push({
       id: `tokenplan-${section.edition}`,
       title: section.title,
-      fields: section.fields,
+      fields: (section.edition === 'individual'
+        ? (individualSection?.fields ?? section.fields)
+        : section.fields
+      ).filter((field) => field.label !== 'Name'),
+      ...(section.edition === 'individual'
+        ? { detailTables: individualSection?.detailTables }
+        : {}),
     });
   }
   if (quota) {

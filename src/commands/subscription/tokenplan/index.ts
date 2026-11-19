@@ -8,6 +8,7 @@ import { addCommandErrorSupplement, addExamples } from '../../../utils/commander
 import { formatCmd } from '../../../utils/runtime-mode.js';
 import { getChannelsForScope, SCOPE_TOKENPLAN_PURCHASE } from '../../../config/payment-channels.js';
 import { TOKEN_PLAN_PURCHASE_TYPES } from '../../../types/tokenplan-purchase.js';
+import { wrapText } from '../../../ui/textWrap.js';
 
 export function registerSubscriptionTokenPlanCommands(parent: Command): void {
   const tokenplan = parent.command('tokenplan').description('Token Plan subscription details');
@@ -16,11 +17,15 @@ export function registerSubscriptionTokenPlanCommands(parent: Command): void {
     .command('list')
     .usage('[flags]')
     .helpOption('-h, --help', 'Show this help')
-    .description('List Token Plan prices and availability for your account.')
+    .description('List Token Plan prices, quota windows and optional supported models.')
     .option(
       '--edition <edition>',
       'Edition to display: all, individual, team (default: all)',
       'all',
+    )
+    .option(
+      '--include-models',
+      'Include supported models for the selected editions (default: false)',
     )
     .option(
       '--billing-cycle <cycle>',
@@ -30,9 +35,15 @@ export function registerSubscriptionTokenPlanCommands(parent: Command): void {
     .option('--format <fmt>', 'Output format: table, json, text (default: auto)')
     .addHelpText(
       'after',
-      '\n  You can view Token Plan prices without logging in.\n  Log in to also view your subscription status and account-specific availability.\n  Availability shown here is for reference. Your eligibility will be verified again before purchase.',
+      '\n  You can view Token Plan prices without logging in.\n  To view your subscription status and account-specific availability, run:\n    qianwen auth login\n\n  Your purchase status shown here is for reference only. Your eligibility will be verified again before purchase.',
     );
   list.action(subscriptionTokenPlanListAction(list));
+  addExamples(list, [
+    formatCmd('subscription tokenplan list'),
+    formatCmd(
+      'subscription tokenplan list --edition individual --billing-cycle monthly --include-models --format json',
+    ),
+  ]);
 
   const allowedTypes = [
     'Allowed values:',
@@ -133,10 +144,41 @@ export function registerSubscriptionTokenPlanCommands(parent: Command): void {
 function registerTokenPlanStatusCommand(parent: Command): void {
   const status = parent
     .command('status')
-    .description('Show individual and team subscription status with seat-type breakdown')
-    .option('--format <fmt>', 'Output format: table, json, text (default: auto)');
+    .description('Show Token Plan subscriptions, validity, auto-renewal and remaining quotas.')
+    .option(
+      '--edition <edition>',
+      'Edition to display: all, individual, team (default: all)',
+      'all',
+    )
+    .option('--format <fmt>', 'Output format: table, json, text (default: auto)')
+    .addHelpText('after', ({ command }) => {
+      const columns = process.stdout.columns;
+      const helpWidth = Math.min(
+        80,
+        command.createHelp().helpWidth ?? 80,
+        Number.isFinite(columns) && columns > 1 ? Math.floor(columns) - 1 : 80,
+      );
+      return [
+        '',
+        'Individual results include tiers and harnessAllowances.',
+        'Team results include seatSummaries grouped by seatType.',
+        'Each seat summary includes seatType, seatCount, totalCredits, remainingCredits, remainingPct and resetAt.',
+        '',
+        'endAt is subscription validity; resetAt is the Credit reset time.',
+      ]
+        .flatMap((paragraph) =>
+          wrapText(paragraph, Math.max(1, helpWidth - 4)).map((line) =>
+            line ? `    ${line}` : '',
+          ),
+        )
+        .join('\n');
+    });
 
   status.action(subscriptionTokenPlanStatusAction(status));
+  addExamples(status, [
+    formatCmd('subscription tokenplan status'),
+    formatCmd('subscription tokenplan status --edition team --format json'),
+  ]);
 }
 
 function registerTokenPlanSeatsCommand(parent: Command): void {

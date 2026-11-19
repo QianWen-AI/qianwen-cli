@@ -13,6 +13,17 @@ import {
 import { stripAnsi } from '../../src/ui/textWrap.js';
 
 describe('stripOptionalCliPrefix', () => {
+  it('completes S01 expansion flags and S02 edition values', () => {
+    expect(COMMAND_FLAGS['subscription tokenplan list']).toEqual(
+      expect.arrayContaining(['--include-models']),
+    );
+    expect(COMMAND_FLAGS['subscription tokenplan list']).not.toContain('--include-harness');
+    expect(COMMAND_FLAGS['subscription tokenplan status']).toContain('--edition');
+    expect(tabCompleter('subscription tokenplan status --edition ')).toEqual([
+      expect.arrayContaining(['individual', 'team', 'all']),
+      '',
+    ]);
+  });
   it('removes only the first exact qianwen token', () => {
     expect(stripOptionalCliPrefix(['qianwen', 'billing', 'balance'])).toEqual([
       'billing',

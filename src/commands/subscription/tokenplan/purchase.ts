@@ -25,6 +25,7 @@ import { CliError, HandledError, handleError } from '../../../utils/errors.js';
 import { NO_TOKENPLAN_COUPON } from '../../../api/parsers/tokenplan-trade.js';
 import { buildTokenPlanPurchaseResult } from '../../../view-models/subscription/tokenplan-purchase.js';
 import { getChannelsForScope, SCOPE_TOKENPLAN_PURCHASE } from '../../../config/payment-channels.js';
+import { TOKEN_PLAN_PURCHASE_EXAMPLES } from '../../../config/tokenplan-purchase-examples.js';
 import { findTokenPlanIndividualTierByType } from '../../../types/tokenplan-tiers.js';
 
 interface PurchaseOptions {
@@ -201,10 +202,7 @@ export function registerPurchaseHelp(purchase: Command): void {
     formatHelp: () =>
       [
         styleHelpSectionTitle('Usage:'),
-        '  qianwen subscription tokenplan purchase <token-plan-type> \\',
-        '    --billing-cycle <cycle> \\',
-        '    --channel <channel> \\',
-        '    (--auto-renew | --no-auto-renew) [options]',
+        '  qianwen subscription tokenplan purchase <token-plan-type> --channel <channel> --billing-cycle <cycle> (--auto-renew | --no-auto-renew) [options]',
         '',
         'Purchase an Individual or Team Token Plan.',
         '',
@@ -279,19 +277,9 @@ export function registerPurchaseHelp(purchase: Command): void {
         '  or remove the selected coupon.',
         '',
         styleHelpSectionTitle('Examples:'),
-        '  qianwen subscription tokenplan purchase \\',
-        '    token_plan_individual_standard \\',
-        '    --billing-cycle quarterly \\',
-        '    --channel alipay \\',
-        '    --no-auto-renew',
+        `  ${TOKEN_PLAN_PURCHASE_EXAMPLES.individual}`,
         '',
-        '  qianwen subscription tokenplan purchase \\',
-        '    token_plan_team \\',
-        '    --billing-cycle yearly \\',
-        '    --channel alipay \\',
-        '    --standard-seat-count 2 \\',
-        '    --max-seat-count 1 \\',
-        '    --auto-renew',
+        `  ${TOKEN_PLAN_PURCHASE_EXAMPLES.team}`,
       ]
         .map((line) => (line === '' ? line : `  ${line}`))
         .join('\n') + '\n',

@@ -38,7 +38,7 @@ describe('parseTokenPlanCatalogQuota', () => {
     expect(result.pro).toEqual({ weekly: 12000, monthly: 180000 });
   });
 
-  it('normalizes absent or invalid limits to null for every whitelisted tier', () => {
+  it('distinguishes invalid limits from absent windows for every whitelisted tier', () => {
     const result = parseTokenPlanCatalogQuota({
       data: {
         lite: { monthly: 11500 },
@@ -49,7 +49,39 @@ describe('parseTokenPlanCatalogQuota', () => {
 
     expect(result).toEqual({
       lite: { weekly: null, monthly: 11500 },
-      essential: { weekly: null, monthly: null },
+      essential: { weekly: null, monthly: null, weeklyInvalid: true, monthlyInvalid: true },
+      standard: { weekly: null, monthly: null, weeklyInvalid: true },
+      pro: { weekly: null, monthly: null },
+    });
+  });
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '100', {}, []])(
+    'marks invalid window value %j while retaining the valid alternative',
+    (invalid) => {
+      const result = parseTokenPlanCatalogQuota({
+        data: {
+          lite: { weekly: invalid, monthly: 500 },
+          essential: { weekly: 100, monthly: invalid },
+        },
+      });
+      expect(result.lite).toEqual({ weekly: null, monthly: 500, weeklyInvalid: true });
+      expect(result.essential).toEqual({ weekly: 100, monthly: null, monthlyInvalid: true });
+    },
+  );
+
+  it('retains zero and treats null or undefined windows as optional missing values', () => {
+    expect(
+      parseTokenPlanCatalogQuota({
+        data: {
+          lite: { weekly: 0 },
+          essential: { weekly: null, monthly: 0 },
+          standard: { weekly: undefined, monthly: null },
+          pro: {},
+        },
+      }),
+    ).toEqual({
+      lite: { weekly: 0, monthly: null },
+      essential: { weekly: null, monthly: 0 },
       standard: { weekly: null, monthly: null },
       pro: { weekly: null, monthly: null },
     });

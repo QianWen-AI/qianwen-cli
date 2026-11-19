@@ -1,4 +1,5 @@
 import type { SubscriptionDiagnostic } from './subscription.js';
+import type { TokenPlanHarnessAllowance } from './tokenplan-benefits.js';
 
 // ────────────────────────────────────────────────────────────────────
 // Service DTO types — output of SubscriptionTokenPlanService
@@ -88,6 +89,31 @@ export interface TokenPlanCreditWindow {
   resetTime?: string | null;
 }
 
+export interface TokenPlanTierQuota {
+  tier: string;
+  windowType: 'weekly' | 'monthly';
+  totalCredits: string | null;
+  remainingCredits: string | null;
+  remainingPct: number | null;
+  usedPct: number | null;
+  resetAt: string | null;
+}
+
+export interface TokenPlanSeatTypeSummary {
+  seatType: string;
+  seatCount: number | null;
+  assignedCount: number | null;
+  totalCredits: string | null;
+  remainingCredits: string | null;
+  remainingPct: number | null;
+  resetAt: string | null;
+}
+
+export interface TokenPlanStatusOptions {
+  edition?: TokenPlanEdition | 'all';
+  signal?: AbortSignal;
+}
+
 export interface TokenPlanEditionStatus {
   edition: TokenPlanEdition;
   commodityCode: string;
@@ -100,6 +126,16 @@ export interface TokenPlanEditionStatus {
   /** Omitted until a subscription API provides a confirmed billing cycle. */
   billingCycle?: string;
   autoRenew: TokenPlanAutoRenew | null;
+  /** Additive status fields; absent from callers that use the legacy reader. */
+  subscriptionId?: string | null;
+  endAt?: string | null;
+  /** Exact-instance / documented 0-or-1 confirmation, independent of legacy fallbacks. */
+  confirmedAutoRenew?: TokenPlanAutoRenew | null;
+  tiers?: TokenPlanTierQuota[];
+  harnessAllowances?: TokenPlanHarnessAllowance[];
+  /** Catalog flag for the frontend empty-state convention; omitted from status JSON. */
+  harnessHasResourcePack?: boolean;
+  seatSummaries?: TokenPlanSeatTypeSummary[];
   /** Present only while the personal usage API reports an active seven-day window. */
   weeklyCredits?: TokenPlanCreditWindow;
   /** Present only while the personal usage API reports a monthly window (current production cycle). */

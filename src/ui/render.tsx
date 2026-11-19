@@ -1,6 +1,6 @@
 import { PassThrough } from 'stream';
 import React, { useEffect } from 'react';
-import { render, useApp } from 'ink';
+import { render, Static, useApp } from 'ink';
 import {
   attemptTerminalCleanup,
   captureStdinState,
@@ -141,7 +141,7 @@ function toInkRenderError(error: unknown): CliError {
  */
 export async function renderWithInk(
   element: React.ReactElement,
-  options?: { waitUntil?: Promise<unknown> },
+  options?: { waitUntil?: Promise<unknown>; trailingNewline?: boolean },
 ): Promise<void> {
   // Use a dummy stdin so Ink never calls setRawMode / pause / resume on the
   // real process.stdin, which would interfere with the REPL's readline state.
@@ -151,6 +151,26 @@ export async function renderWithInk(
   // Holder lets the boundary callback (created in the render() call below) reach
   // the instance's unmount, which only exists once render() returns.
   const ctl: { unmount?: () => void } = {};
+  const stdout = !options?.waitUntil
+    ? new Proxy(process.stdout, {
+        get(stream, property) {
+          if (property === 'write') {
+            return (...args: Parameters<typeof stream.write>) => {
+              // Static already ends its content with a newline; Ink's empty
+              // dynamic frame must not add a blank row before raw output.
+              if (args[0] === '\n') {
+                const callback = args[args.length - 1];
+                if (typeof callback === 'function') callback();
+                return true;
+              }
+              return stream.write(...args);
+            };
+          }
+          const value = Reflect.get(stream, property, stream);
+          return typeof value === 'function' ? value.bind(stream) : value;
+        },
+      })
+    : process.stdout;
   const instance = render(
     <InkErrorBoundary
       onError={(e) => {
@@ -158,10 +178,20 @@ export async function renderWithInk(
         ctl.unmount?.();
       }}
     >
-      <AutoExitWrapper waitUntil={options?.waitUntil}>{element}</AutoExitWrapper>
+      <AutoExitWrapper waitUntil={options?.waitUntil}>
+        {options?.waitUntil ? (
+          element
+        ) : (
+          // Static output bypasses Ink's height-triggered clearTerminal path,
+          // preserving scrollback and printing even oversized tables only once.
+          <Static items={[element]}>
+            {(item) => <React.Fragment key="content">{item}</React.Fragment>}
+          </Static>
+        )}
+      </AutoExitWrapper>
     </InkErrorBoundary>,
     {
-      stdout: process.stdout,
+      stdout,
       stdin: dummyStdin as any,
       exitOnCtrlC: false,
       patchConsole: false,
@@ -187,7 +217,7 @@ export async function renderWithInk(
   if (capturedError) throw toInkRenderError(capturedError);
 
   // Write a trailing newline so the shell prompt appears on its own line.
-  process.stdout.write('\n');
+  if (options?.trailingNewline !== false) process.stdout.write('\n');
 
   // Wait one event-loop tick so Ink's internal async handles fully close.
   // Prevents libuv assertion failures on Windows when process.exit() follows.

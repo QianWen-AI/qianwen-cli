@@ -5,7 +5,9 @@ import {
   parseSoloCatalogSubscription,
   parseSoloQuotaConfig,
   parseSoloSubscription,
+  parseSoloSubscriptionCore,
   parseSoloUsage,
+  parseSoloStatusUsage,
 } from '../../../src/api/parsers/solo-subscription.js';
 import { GatewayShapeError } from '../../../src/api/request-adapter.js';
 import { unwrapCsDataResponse } from '../../../src/api/adapters/cs-data-adapter.js';
@@ -25,6 +27,52 @@ function activeEntity(overrides: Record<string, unknown> = {}): Record<string, u
     ...overrides,
   };
 }
+
+describe('parseSoloSubscriptionCore', () => {
+  it('maps only trusted source fields without mutating the entity or deciding subscription state', () => {
+    const entity = Object.freeze({ instanceCode: 'sub-1', endTime: NOW, status: 'INVALID' });
+    expect(parseSoloSubscriptionCore(entity)).toEqual({
+      subscriptionId: 'sub-1',
+      endAt: '2026-09-10T00:00:00.000Z',
+    });
+    expect(entity).toEqual({ instanceCode: 'sub-1', endTime: NOW, status: 'INVALID' });
+  });
+
+  it.each([null, undefined, [], 'sub-1', 1, {}, { data: { instanceCode: 'sub-1', endTime: NOW } }])(
+    'keeps absent or non-entity values unknown: %j',
+    (value) =>
+      expect(parseSoloSubscriptionCore(value)).toEqual({ subscriptionId: null, endAt: null }),
+  );
+
+  it.each([undefined, null, '', '  ', 17, {}])(
+    'does not invent a subscription ID from %j',
+    (instanceCode) => {
+      expect(parseSoloSubscriptionCore({ instanceCode, endTime: NOW }).subscriptionId).toBeNull();
+    },
+  );
+
+  it.each([
+    undefined,
+    null,
+    0,
+    -1,
+    NOW + 0.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    8_640_000_000_000_001,
+    '2026-09-10T00:00:00Z',
+    String(NOW),
+  ])('does not coerce an invalid subscription expiry %j', (endTime) =>
+    expect(parseSoloSubscriptionCore({ instanceCode: 'sub-1', endTime }).endAt).toBeNull(),
+  );
+
+  it('keeps the exact identity literal and does not require the stricter status parser fields', () => {
+    const entity = { status: 'VALID', instanceCode: ' sub-1 ', specCode: 'lite' };
+    expect(parseSoloCatalogSubscription({ data: entity }).status).toBe('active');
+    expect(parseSoloSubscriptionCore(entity)).toEqual({ subscriptionId: ' sub-1 ', endAt: null });
+    expect(() => parseSoloSubscription({ data: entity })).toThrow(GatewayShapeError);
+  });
+});
 
 describe('parseSoloCatalogSubscription', () => {
   it.each([undefined, null, {}, { status: 'EXPIRED' }, { status: 'INVALID' }])(
@@ -395,6 +443,31 @@ describe('parseSoloUsage', () => {
     { per1WeekPercentage: 0.5, per1WeekResetTime: 'tomorrow' },
   ])('rejects malformed usage data: %j', (data) => {
     expect(() => parseSoloUsage({ data })).toThrow(GatewayShapeError);
+  });
+});
+
+describe('parseSoloStatusUsage — additive weekly-first contract', () => {
+  it('preserves legacy monthly selection and selects weekly for status extensions', () => {
+    const business = { data: { per1MonthPercentage: 0.5, per1WeekPercentage: 0.25 } };
+    expect(parseSoloUsage(business)?.cycle).toBe('monthly');
+    expect(parseSoloStatusUsage(business)).toEqual({ cycle: 'weekly', usedRatio: 0.25 });
+  });
+
+  it.each([null, -0.01, 1.01, Number.NaN, '0.5'])(
+    'does not replace an invalid weekly percentage %p with a valid monthly window',
+    (per1WeekPercentage) => {
+      expect(() =>
+        parseSoloStatusUsage({ data: { per1WeekPercentage, per1MonthPercentage: 0.5 } }),
+      ).toThrow(GatewayShapeError);
+    },
+  );
+
+  it.each([0, 1])('accepts weekly boundary %p and omits an invalid reset time', (usedRatio) => {
+    expect(
+      parseSoloStatusUsage({
+        data: { per1WeekPercentage: usedRatio, per1WeekResetTime: 'tomorrow' },
+      }),
+    ).toEqual({ cycle: 'weekly', usedRatio });
   });
 });
 

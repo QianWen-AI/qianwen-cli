@@ -212,7 +212,7 @@ export const COMMAND_FLAGS: Record<string, string[]> = {
   'subscription status': ['--plan', '--format'],
   'subscription orders': ['--from', '--to', '--type', '--page', '--page-size', '--format'],
   'subscription tokenplan': [],
-  'subscription tokenplan list': ['--edition', '--billing-cycle', '--format'],
+  'subscription tokenplan list': ['--edition', '--billing-cycle', '--include-models', '--format'],
   'subscription tokenplan purchase': [
     '--billing-cycle',
     '--channel',
@@ -223,7 +223,7 @@ export const COMMAND_FLAGS: Record<string, string[]> = {
     '--no-auto-renew',
     '--format',
   ],
-  'subscription tokenplan status': ['--format'],
+  'subscription tokenplan status': ['--edition', '--format'],
   'subscription tokenplan seats': ['--spec-type', '--page', '--page-size', '--format'],
   'account info': ['--format'],
   'api-key list': ['--description', '--workspace', '--page', '--page-size', '--format'],

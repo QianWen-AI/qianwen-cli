@@ -3,17 +3,32 @@ import type {
   TokenPlanListResult,
   TokenPlanListRow,
   TokenPlanListSection,
+  TokenPlanCatalogPlan,
+  TokenPlanCurrentPlanDetails,
 } from '../../types/tokenplan-catalog.js';
 import { findTokenPlanIndividualTierBySpecCode } from '../../types/tokenplan-tiers.js';
+import { TOKEN_PLAN_PURCHASE_EXAMPLES } from '../../config/tokenplan-purchase-examples.js';
+import { individualCreditPercentages } from './tokenplan-editions.js';
+import {
+  buildTokenPlanCatalogDetails,
+  tokenPlanDisplayDate,
+  type TokenPlanDisplayTable,
+} from './tokenplan-details.js';
 
 export type TokenPlanListJsonRow = Omit<TokenPlanListRow, 'status'> & {
   status?: TokenPlanListRow['status'];
 };
 
+export type TokenPlanListJsonCurrentPlanDetails = Omit<
+  TokenPlanCurrentPlanDetails,
+  'totalCredits' | 'remainingCredits'
+>;
+
 export type TokenPlanListJsonResult = Omit<TokenPlanListResult, 'sections'> & {
   sections: Array<
-    Omit<TokenPlanListSection, 'rows'> & {
+    Omit<TokenPlanListSection, 'rows' | 'currentPlanDetails'> & {
       rows: TokenPlanListJsonRow[];
+      currentPlanDetails?: TokenPlanListJsonCurrentPlanDetails | null;
     }
   >;
 };
@@ -31,6 +46,7 @@ export interface TokenPlanListViewModel {
     columns: Array<{ key: string; header: string }>;
     rows: Record<string, string>[];
     diagnostics: string[];
+    details: TokenPlanDisplayTable[];
   }>;
   note: string;
 }
@@ -43,6 +59,43 @@ function text(value: string): string {
     })
     .join('')
     .trim();
+}
+
+function nullableText(value: string | null): string | null {
+  return value === null ? null : text(value);
+}
+
+function normalizePlan(plan: TokenPlanCatalogPlan): TokenPlanCatalogPlan {
+  return {
+    ...(plan.tier === undefined ? {} : { tier: text(plan.tier) }),
+    ...(plan.seatType === undefined ? {} : { seatType: text(plan.seatType) }),
+    billingTerm: plan.billingTerm,
+    listPrice: nullableText(plan.listPrice),
+    promoPrice: nullableText(plan.promoPrice),
+    currency: plan.currency,
+    quotaWindows: plan.quotaWindows.map((window) => ({
+      windowType: window.windowType,
+      totalCredits: text(window.totalCredits),
+    })),
+    ...(plan.supportedModels === undefined
+      ? {}
+      : {
+          supportedModels:
+            plan.supportedModels === null
+              ? null
+              : plan.supportedModels.map((model) => ({
+                  modelId: text(model.modelId),
+                  modelBrand: text(model.modelBrand),
+                  modelName: text(model.modelName),
+                  capabilities: model.capabilities.map(text),
+                  ...(model.badgeLabel === undefined ? {} : { badgeLabel: text(model.badgeLabel) }),
+                  ...(model.badgeDescription === undefined
+                    ? {}
+                    : { badgeDescription: text(model.badgeDescription) }),
+                  ...(model.isNew === undefined ? {} : { isNew: model.isNew }),
+                })),
+        }),
+  };
 }
 
 const seatNames: Record<string, string> = {
@@ -101,29 +154,45 @@ function catalogDegradationMessages(section: TokenPlanListSection): string[] {
     ];
   });
 
-  return [...new Set(messages)];
+  return [
+    ...new Set([
+      ...messages,
+      ...section.diagnostics
+        .filter(
+          (entry) =>
+            entry.api === 'TokenPlanSupportedModels' ||
+            (entry.api.endsWith('/quota-config') &&
+              ['INVALID_WEEKLY_QUOTA', 'INVALID_MONTHLY_QUOTA'].includes(entry.errorCode)),
+        )
+        .map((entry) => entry.errorMessage),
+    ]),
+  ];
 }
 
-function creditText(value: string | number, seat = false): string {
-  const [integer, fraction] = String(value).split('.');
-  const amount = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (fraction ? `.${fraction}` : '');
-  return `${amount} Credits${seat ? '/seat' : ''}`;
+function displayPrice(value: string | null): string {
+  if (value === null) return '—';
+  const [integer, fraction = ''] = value.split('.');
+  return `${integer}.${fraction.padEnd(2, '0')}`;
 }
 
-function formatPriceWithComma(price: string): string {
-  const [integer, fraction] = price.split('.');
-  const formatted =
-    integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (fraction ? `.${fraction}` : '');
-  return formatted;
+function personalCurrentPlanPercentages(details: TokenPlanCurrentPlanDetails): {
+  usedPct: number | null;
+  remainingPct: number | null;
+} {
+  if (Object.hasOwn(details, 'usedPct')) return individualCreditPercentages(details.usedPct);
+  // Legacy callers may provide only the personal remaining ratio; never infer it from Credits.
+  const remainingPct =
+    typeof details.remainingPct === 'number' &&
+    Number.isFinite(details.remainingPct) &&
+    details.remainingPct >= 0 &&
+    details.remainingPct <= 100
+      ? details.remainingPct
+      : null;
+  return { usedPct: remainingPct === null ? null : 100 - remainingPct, remainingPct };
 }
 
-function priceText(
-  price: string,
-  individual: boolean,
-  cycle: TokenPlanListResult['billingCycle'],
-): string {
-  const cycleUnit = { monthly: 'month', quarterly: 'quarter', yearly: 'year' }[cycle];
-  return `¥${formatPriceWithComma(price)}${individual ? '' : '/seat'}/${cycleUnit}`;
+function displayPercentage(value: number | null | undefined): string {
+  return value == null ? '—' : `${Math.round(value * 100) / 100}%`;
 }
 
 export function buildTokenPlanListViewModel(
@@ -155,6 +224,26 @@ export function buildTokenPlanListViewModel(
       monthlyCredits: row.monthlyCredits,
       status: row.status,
     })),
+    ...(section.currentPlanDetails === undefined
+      ? {}
+      : {
+          currentPlanDetails:
+            section.currentPlanDetails === null
+              ? null
+              : {
+                  subscriptionId: nullableText(section.currentPlanDetails.subscriptionId),
+                  endAt: nullableText(section.currentPlanDetails.endAt),
+                  totalCredits: nullableText(section.currentPlanDetails.totalCredits),
+                  remainingCredits: nullableText(section.currentPlanDetails.remainingCredits),
+                  ...(section.edition === 'individual'
+                    ? personalCurrentPlanPercentages(section.currentPlanDetails)
+                    : {}),
+                  ...(section.currentPlanDetails.quotaWindowType === undefined
+                    ? {}
+                    : { quotaWindowType: section.currentPlanDetails.quotaWindowType }),
+                },
+        }),
+    ...(section.plans === undefined ? {} : { plans: section.plans.map(normalizePlan) }),
   }));
   const data: TokenPlanListJsonResult = {
     authenticated: result.authenticated,
@@ -168,6 +257,27 @@ export function buildTokenPlanListViewModel(
       currentPlan: section.currentPlan,
       currentBillingCycle: section.currentBillingCycle,
       subscriptionUrl: section.subscriptionUrl,
+      ...(section.currentPlanDetails === undefined
+        ? {}
+        : {
+            currentPlanDetails:
+              section.currentPlanDetails === null
+                ? null
+                : {
+                    subscriptionId: section.currentPlanDetails.subscriptionId,
+                    endAt: section.currentPlanDetails.endAt,
+                    ...(section.edition === 'individual'
+                      ? {
+                          usedPct: section.currentPlanDetails.usedPct ?? null,
+                          remainingPct: section.currentPlanDetails.remainingPct ?? null,
+                        }
+                      : {}),
+                    ...(section.currentPlanDetails.quotaWindowType === undefined
+                      ? {}
+                      : { quotaWindowType: section.currentPlanDetails.quotaWindowType }),
+                  },
+          }),
+      ...(section.plans === undefined ? {} : { plans: section.plans }),
       diagnostics: section.diagnostics,
       rows: section.rows.map(({ status, ...row }) =>
         section.edition === 'team' && section.subscriptionStatus === 'active'
@@ -197,28 +307,28 @@ export function buildTokenPlanListViewModel(
             ...(!individual && section.currentBillingCycle
               ? [`Billing cycle: ${section.currentBillingCycle}`]
               : []),
-            ...(section.subscriptionUrl ? [`View subscription: ${section.subscriptionUrl}`] : []),
           ]
         : [];
-      const showWeeklyCredits =
-        individual &&
-        section.rows.length > 0 &&
-        section.rows.every((row) => row.weeklyCredits !== undefined);
-      // Weekly wins; the monthly column appears only when every personal tier lacks weekly
-      // but reports a quota-config monthly limit (pricing page card fallback semantics).
-      const showMonthlyCredits =
-        individual &&
-        !showWeeklyCredits &&
-        section.rows.length > 0 &&
-        section.rows.every((row) => row.monthlyCredits !== null);
-      const creditsColumn = showWeeklyCredits
-        ? [{ key: 'weekly', header: 'WEEKLY CREDITS' }]
-        : showMonthlyCredits
-          ? [{ key: 'monthly', header: 'MONTHLY CREDITS' }]
-          : [];
+      if (section.currentPlanDetails) {
+        const current = section.currentPlanDetails;
+        subscriptionDetails.push(
+          ...(individual || current.subscriptionId
+            ? [`Subscription ID: ${current.subscriptionId ? text(current.subscriptionId) : '—'}`]
+            : []),
+          `End At: ${tokenPlanDisplayDate(current.endAt)}`,
+          ...(individual
+            ? [
+                `Used (%): ${displayPercentage(current.usedPct)}; Remaining (%): ${displayPercentage(current.remainingPct)}${current.quotaWindowType ? ` (${current.quotaWindowType})` : ''}`,
+              ]
+            : []),
+        );
+      }
+      if (active && section.subscriptionUrl) {
+        subscriptionDetails.push(`View subscription: ${section.subscriptionUrl}`);
+      }
       return {
         edition: section.edition,
-        title: individual ? 'INDIVIDUAL TOKEN PLANS' : 'TEAM TOKEN PLAN',
+        title: individual ? 'INDIVIDUAL TOKEN PLANS' : 'TEAM TOKEN PLANS',
         type: null,
         subscription: active
           ? `You're already subscribed to ${individual ? 'an Individual' : 'a Team'} Token Plan.${currentSubscription}`
@@ -239,36 +349,43 @@ export function buildTokenPlanListViewModel(
               ? 'Billing cycle support: unknown'
               : null,
         columns: [
-          { key: 'type', header: 'TOKENPLAN TYPE' },
-          ...(!individual ? [{ key: 'seatType', header: 'SEAT TYPE' }] : []),
-          { key: 'name', header: 'NAME' },
-          { key: 'price', header: individual ? 'PRICE' : 'UNIT PRICE' },
-          ...(individual ? creditsColumn : [{ key: 'monthly', header: 'MONTHLY CREDITS' }]),
-          ...(individual || !active ? [{ key: 'status', header: 'STATUS' }] : []),
+          individual ? { key: 'tier', header: 'Tier' } : { key: 'seatType', header: 'Seat Type' },
+          { key: 'billingCycle', header: 'Billing Cycle' },
+          { key: 'listPrice', header: 'List Price' },
+          { key: 'promoPrice', header: 'Promo Price' },
+          { key: 'currency', header: 'Currency' },
+          { key: 'quotaWindow', header: 'Quota Window' },
+          { key: 'totalCredits', header: 'Total Credits' },
+          ...(individual || !active ? [{ key: 'status', header: 'Status' }] : []),
         ],
-        rows: section.rows.map((row) => ({
-          type: row.type,
-          ...(!individual ? { seatType: row.seatType ?? 'unknown' } : {}),
-          name:
-            (individual
-              ? findTokenPlanIndividualTierBySpecCode(row.specCode)?.name
-              : seatNames[row.specCode]) ??
-            row.name ??
-            'unknown',
-          price:
-            row.price === null || row.currency === null
-              ? 'unknown'
-              : priceText(row.price, individual, data.billingCycle),
-          ...(showWeeklyCredits ? { weekly: creditText(row.weeklyCredits!) } : {}),
-          monthly:
-            row.monthlyCredits === null ? 'unknown' : creditText(row.monthlyCredits, !individual),
-          ...(individual
-            ? { status: individualStatusLabels[row.status] }
-            : !active
-              ? { status: row.status }
+        rows: section.rows.flatMap((row, index) => {
+          const plan = section.plans?.[index];
+          // Display verified quota windows while keeping the legacy JSON rows intact.
+          const windows = section.plans
+            ? (plan?.quotaWindows ?? [])
+            : [
+                ...(individual && row.weeklyCredits !== undefined
+                  ? [{ windowType: 'weekly', totalCredits: String(row.weeklyCredits) }]
+                  : []),
+                ...(row.monthlyCredits !== null
+                  ? [{ windowType: 'monthly', totalCredits: String(row.monthlyCredits) }]
+                  : []),
+              ];
+          return (windows.length > 0 ? windows : [null]).map((window) => ({
+            ...(individual ? { tier: row.specCode } : { seatType: row.seatType ?? row.specCode }),
+            billingCycle: plan?.billingTerm ?? data.billingCycle,
+            listPrice: displayPrice(plan?.listPrice ?? null),
+            promoPrice: displayPrice(plan?.promoPrice ?? null),
+            currency: (section.plans ? plan?.currency : row.currency) ?? '—',
+            quotaWindow: window?.windowType ?? '—',
+            totalCredits: window?.totalCredits ?? '—',
+            ...(individual || !active
+              ? { status: individual ? individualStatusLabels[row.status] : row.status }
               : {}),
-        })),
+          }));
+        }),
         diagnostics: catalogDegradationMessages(section),
+        details: buildTokenPlanCatalogDetails(section),
       };
     }),
     note: (() => {
@@ -281,12 +398,12 @@ export function buildTokenPlanListViewModel(
         ...(!data.authenticated
           ? [
               'You can view Token Plan prices without logging in.',
-              'Log in to also view your subscription status and account-specific availability.',
+              'To view your subscription status and account-specific availability, run:',
               '  qianwen auth login',
               '',
             ]
           : []),
-        'Availability shown here is for reference. Your eligibility will be verified again before purchase.',
+        'Your purchase status shown here is for reference only. Your eligibility will be verified again before purchase.',
         '',
         'To view another billing cycle, run:',
         ...supportedCycles
@@ -294,11 +411,8 @@ export function buildTokenPlanListViewModel(
           .map((c) => `  qianwen subscription tokenplan list${editionOption} --billing-cycle ${c}`),
         '',
         'To purchase a Token Plan, run:',
-        '  qianwen subscription tokenplan purchase <token-plan-type> \\',
-        '    --billing-cycle <cycle> \\',
-        '    --channel <channel> \\',
-        '    (--auto-renew | --no-auto-renew) \\',
-        '    [options]',
+        ...(data.edition === 'team' ? [] : [`  ${TOKEN_PLAN_PURCHASE_EXAMPLES.individual}`]),
+        ...(data.edition === 'individual' ? [] : [`  ${TOKEN_PLAN_PURCHASE_EXAMPLES.team}`]),
         '',
         "Run 'qianwen subscription tokenplan purchase --help' for available values and options.",
       ].join('\n');

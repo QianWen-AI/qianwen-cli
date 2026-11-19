@@ -2,8 +2,11 @@ import type { ApiClient } from '../api/api-client.js';
 import {
   parseSoloQuotaConfig,
   parseSoloSubscription,
+  parseSoloSubscriptionCore,
+  parseSoloStatusUsage,
   parseSoloUsage,
   type SoloSubscription,
+  type SoloUsage,
 } from '../api/parsers/solo-subscription.js';
 import type { CachedFetcher } from '../types/cache.js';
 import type { TokenPlan } from '../types/usage.js';
@@ -20,6 +23,8 @@ import type {
   TokenPlanEditionStatus,
   TokenPlanRenewable,
   TokenPlanSeatGroup,
+  TokenPlanAutoRenew,
+  TokenPlanSeatTypeSummary,
 } from '../types/tokenplan-subscription.js';
 import { site } from '../site.js';
 import { CliError } from '../utils/errors.js';
@@ -36,6 +41,7 @@ import {
   API_TOKENPLAN_SOLO_USAGE,
 } from '../types/api-routes.js';
 import { findTokenPlanIndividualTierBySpecCode } from '../types/tokenplan-tiers.js';
+import { DecimalAmount } from '../utils/decimal-amount.js';
 
 const API_PRODUCT_BSS = 'BssOpenAPI-V3';
 
@@ -73,6 +79,14 @@ export function subscriptionDiagnostic(api: string, errorCode: string): Subscrip
 
 function failedSubscriptionDiagnostic(api: string, error: unknown): SubscriptionDiagnostic {
   return safeSubscriptionDiagnostic(api, error);
+}
+
+function statusCreditDecimal(value: unknown): string | null {
+  try {
+    return DecimalAmount.fromApi(value).toCanonicalString();
+  } catch {
+    return null;
+  }
 }
 
 export function unknownTokenPlanEdition(
@@ -189,11 +203,51 @@ export function resolveIndividualAutoRenewFlag(
   return matchedIndividualAutoRenewFlag(subscription, value) ?? subscription.autoRenewFlag;
 }
 
+/** Confirm renewal only for the exact subscription identity, without legacy heuristics. */
+export function confirmedIndividualAutoRenew(
+  subscription: SoloSubscription,
+  value: unknown,
+): TokenPlanAutoRenew | null {
+  const raw = subscriptionObject(value);
+  const data = subscriptionObject(raw?.Data);
+  if (raw?.Success !== true || raw.Code !== 'Success' || !Array.isArray(data?.InstanceList)) {
+    return null;
+  }
+  const matches = data.InstanceList.map(subscriptionObject).filter(
+    (item) =>
+      item?.InstanceID === subscription.instanceCode &&
+      item.ProductCode === 'sfm' &&
+      item.ProductType === site.features.tokenPlanCommodityCodes.soloBuy,
+  );
+  if (matches.length !== 1) return null;
+  const item = matches[0]!;
+  const enabled =
+    item.RenewStatus === 'AutoRenewal' ? true : item.RenewStatus === 'ManualRenewal' ? false : null;
+  return enabled === null
+    ? null
+    : {
+        enabled,
+        period: subscriptionInteger(item.RenewalDuration),
+        periodUnit:
+          typeof item.RenewalDurationUnit === 'string' && item.RenewalDurationUnit.trim()
+            ? item.RenewalDurationUnit
+            : null,
+      };
+}
+
 export async function fetchIndividualTokenPlan(
   apiClient: ApiClient,
   signal?: AbortSignal,
+  options: { enhanced?: boolean } = {},
 ): Promise<TokenPlanEditionStatus> {
   const result = unknownTokenPlanEdition('individual');
+  let statusUsage: SoloUsage | null | undefined;
+  let statusUsageError: unknown;
+  if (options.enhanced) {
+    result.subscriptionId = null;
+    result.endAt = null;
+    result.confirmedAutoRenew = null;
+  }
   const subscriptionRequest = apiClient.callCsDataApi({
     api: API_TOKENPLAN_SOLO_SUBSCRIPTION,
     data: { commodityCode: result.commodityCode },
@@ -205,7 +259,15 @@ export async function fetchIndividualTokenPlan(
     return apiClient.callFlatApi<QueryAvailableInstancesResponse>({
       product: API_PRODUCT_BSS_PAYMENT,
       action: API_ACTION_QUERY_AVAILABLE_INSTANCES,
-      params: {},
+      params: options.enhanced
+        ? {
+            InstanceIDs: response.subscription.instanceCode,
+            ProductCode: 'sfm',
+            ProductType: result.commodityCode,
+            PageNum: 1,
+            PageSize: 20,
+          }
+        : {},
       signal,
     });
   });
@@ -219,7 +281,16 @@ export async function fetchIndividualTokenPlan(
     apiClient.callCsDataApi({
       api: API_TOKENPLAN_SOLO_USAGE,
       signal,
-      parse: parseSoloUsage,
+      parse: (business) => {
+        if (options.enhanced) {
+          try {
+            statusUsage = parseSoloStatusUsage(business);
+          } catch (error) {
+            statusUsageError = error;
+          }
+        }
+        return parseSoloUsage(business);
+      },
     }),
     availableInstancesRequest,
   ]);
@@ -256,6 +327,46 @@ export async function fetchIndividualTokenPlan(
     remainingDays: entity.remainingDays,
   };
   result.remainingDays = entity.remainingDays;
+  if (options.enhanced) {
+    Object.assign(result, parseSoloSubscriptionCore(entity));
+    if (availableInstances.status === 'fulfilled') {
+      result.confirmedAutoRenew = confirmedIndividualAutoRenew(entity, availableInstances.value);
+      if (result.confirmedAutoRenew === null) {
+        result.diagnostics.push(
+          subscriptionDiagnostic(API_ACTION_QUERY_AVAILABLE_INSTANCES, 'UnconfirmedRenewal'),
+        );
+      }
+    }
+    if (statusUsage !== undefined) {
+      const total =
+        statusUsage && quota.status === 'fulfilled'
+          ? quota.value[entity.specCode]?.[statusUsage.cycle]
+          : undefined;
+      result.tiers = statusUsage
+        ? [
+            {
+              tier: entity.specCode,
+              windowType: statusUsage.cycle,
+              totalCredits: statusCreditDecimal(total),
+              remainingCredits: null,
+              remainingPct: (1 - statusUsage.usedRatio) * 100,
+              usedPct: statusUsage.usedRatio * 100,
+              resetAt: subscriptionTimestamp(statusUsage.resetTime),
+            },
+          ]
+        : [];
+    }
+    if (statusUsageError) {
+      result.diagnostics.push(
+        failedSubscriptionDiagnostic(API_TOKENPLAN_SOLO_USAGE, statusUsageError),
+      );
+    }
+    if (quota.status === 'rejected') {
+      result.diagnostics.push(
+        failedSubscriptionDiagnostic(API_TOKENPLAN_SOLO_QUOTA_CONFIG, quota.reason),
+      );
+    }
+  }
   if (availableInstances.status === 'fulfilled') {
     result.autoRenew = {
       enabled: resolveIndividualAutoRenewFlag(entity, availableInstances.value),
@@ -285,7 +396,7 @@ export async function fetchIndividualTokenPlan(
     } else {
       result.weeklyCredits = window;
     }
-    if (quota.status === 'rejected') {
+    if (quota.status === 'rejected' && !options.enhanced) {
       result.diagnostics.push(
         failedSubscriptionDiagnostic(API_TOKENPLAN_SOLO_QUOTA_CONFIG, quota.reason),
       );
@@ -475,7 +586,7 @@ function totalEditionFailure(diagnostics: SubscriptionDiagnostic[]): CliError {
   });
 }
 
-function teamResponseData(
+export function teamResponseData(
   value: unknown,
   api: string,
   diagnostics: SubscriptionDiagnostic[],
@@ -501,6 +612,35 @@ function teamResponseData(
   return inner;
 }
 
+/** Validate the uniquely identified Credits right before any legacy or additive projection. */
+export function parseTeamCreditValues(
+  group: Record<string, unknown>,
+  diagnostics: SubscriptionDiagnostic[],
+): Pick<TokenPlanSeatTypeSummary, 'totalCredits' | 'remainingCredits'> {
+  const api = 'GetSeatSubscriptionSummary';
+  const rights = Array.isArray(group.EquityList)
+    ? group.EquityList.map(subscriptionObject).filter((item) => item?.EquityType === 'CREDITS')
+    : [];
+  const right = rights.length === 1 ? rights[0] : null;
+  // The Credits marker defines the default unit; every explicit unit must agree.
+  const supportedUnit = [right?.Unit, right?.UnitName, group.Unit, group.UnitName].every(
+    (unit) => unit == null || (typeof unit === 'string' && unit.trim().toLowerCase() === 'credits'),
+  );
+  const totalCredits = supportedUnit ? statusCreditDecimal(right?.TotalValue) : null;
+  let remainingCredits = supportedUnit ? statusCreditDecimal(right?.SurplusValue) : null;
+  if (
+    totalCredits !== null &&
+    remainingCredits !== null &&
+    DecimalAmount.parse(remainingCredits).compare(DecimalAmount.parse(totalCredits)) > 0
+  ) {
+    remainingCredits = null;
+    diagnostics.push(subscriptionDiagnostic(api, 'InvalidCreditBalance'));
+  }
+  if (totalCredits === null || remainingCredits === null)
+    diagnostics.push(subscriptionDiagnostic(api, 'IncompleteCredits'));
+  return { totalCredits, remainingCredits };
+}
+
 function buildTeamSeatGroups(
   seat: Record<string, unknown>,
   diagnostics: SubscriptionDiagnostic[],
@@ -513,15 +653,15 @@ function buildTeamSeatGroups(
       diagnostics.push(subscriptionDiagnostic('GetSeatSubscriptionSummary', 'InvalidGroup'));
       return [];
     }
-    const equity = Array.isArray(group.EquityList) ? subscriptionObject(group.EquityList[0]) : null;
+    const credits = parseTeamCreditValues(group, diagnostics);
     return [
       {
         specType:
           typeof group.SpecType === 'string' && group.SpecType.trim() ? group.SpecType : 'unknown',
         seats: subscriptionInteger(group.SubscriptionTotalNumber),
         assigned: subscriptionInteger(group.SubscriptionAssignedNumber),
-        totalValue: subscriptionDecimal(equity?.TotalValue ?? group.TotalValue),
-        surplusValue: subscriptionDecimal(equity?.SurplusValue ?? group.SurplusValue),
+        totalValue: credits.totalCredits,
+        surplusValue: credits.remainingCredits,
         unit: 'Credits',
         nextCycleFlushTime:
           autoRenewEnabled === false ? null : subscriptionTimestamp(group.NextCycleFlushTime),
@@ -538,6 +678,109 @@ export function parseTeamSeatGroups(
   return seat && Array.isArray(seat.SubscriptionGroupList)
     ? buildTeamSeatGroups(seat, diagnostics, null)
     : null;
+}
+
+/** Build additive summaries from the same verified Credits rights as the legacy projection. */
+export function parseTeamSeatTypeSummaries(
+  value: unknown,
+  diagnostics: SubscriptionDiagnostic[],
+): TokenPlanSeatTypeSummary[] | null {
+  const api = 'GetSeatSubscriptionSummary';
+  const seat = teamResponseData(value, api, diagnostics);
+  if (!seat) return null;
+  if (!Array.isArray(seat.SubscriptionGroupList)) {
+    if (Object.keys(seat).length === 0) return [];
+    diagnostics.push(subscriptionDiagnostic(api, 'MissingGroups'));
+    return null;
+  }
+  const groups = new Map<string, { summary: TokenPlanSeatTypeSummary; mergeable: boolean }>();
+  for (const entry of seat.SubscriptionGroupList) {
+    const group = subscriptionObject(entry);
+    if (!group || typeof group.SpecType !== 'string' || !group.SpecType.trim()) {
+      diagnostics.push(subscriptionDiagnostic(api, 'InvalidGroup'));
+      continue;
+    }
+    let { totalCredits, remainingCredits } = parseTeamCreditValues(group, diagnostics);
+    const seatCount = subscriptionInteger(group.SubscriptionTotalNumber);
+    let assignedCount = subscriptionInteger(group.SubscriptionAssignedNumber);
+    const resetAt = subscriptionTimestamp(group.NextCycleFlushTime);
+    if (seatCount !== null && assignedCount !== null && assignedCount > seatCount) {
+      assignedCount = null;
+      diagnostics.push(subscriptionDiagnostic(api, 'InvalidAssignmentCount'));
+    }
+    const mergeable = totalCredits !== null && remainingCredits !== null;
+    const summary: TokenPlanSeatTypeSummary = {
+      seatType: group.SpecType,
+      seatCount,
+      assignedCount,
+      totalCredits,
+      remainingCredits,
+      remainingPct: null,
+      resetAt,
+    };
+    const previous = groups.get(summary.seatType);
+    if (previous) {
+      const sameWindow = resetAt !== null && previous.summary.resetAt === resetAt;
+      const canMerge = previous.mergeable && mergeable && sameWindow;
+      totalCredits = canMerge
+        ? DecimalAmount.parse(previous.summary.totalCredits!)
+            .add(DecimalAmount.parse(totalCredits!))
+            .toCanonicalString()
+        : null;
+      remainingCredits = canMerge
+        ? DecimalAmount.parse(previous.summary.remainingCredits!)
+            .add(DecimalAmount.parse(remainingCredits!))
+            .toCanonicalString()
+        : null;
+      previous.summary = {
+        ...summary,
+        seatCount:
+          previous.summary.seatCount !== null && seatCount !== null
+            ? subscriptionInteger(previous.summary.seatCount + seatCount)
+            : null,
+        assignedCount:
+          previous.summary.assignedCount !== null && assignedCount !== null
+            ? subscriptionInteger(previous.summary.assignedCount + assignedCount)
+            : null,
+        totalCredits,
+        remainingCredits,
+        resetAt: sameWindow ? resetAt : null,
+      };
+      previous.mergeable = canMerge;
+      if (!canMerge) diagnostics.push(subscriptionDiagnostic(api, 'ConflictingCreditGroups'));
+    } else groups.set(summary.seatType, { summary, mergeable });
+  }
+  if (seat.SubscriptionGroupList.length > 0 && groups.size === 0) return null;
+  return [...groups.values()].map(({ summary }) => {
+    const total = summary.totalCredits === null ? null : Number(summary.totalCredits);
+    const remaining = summary.remainingCredits === null ? null : Number(summary.remainingCredits);
+    return {
+      ...summary,
+      remainingPct:
+        total !== null &&
+        remaining !== null &&
+        Number.isFinite(total) &&
+        Number.isFinite(remaining) &&
+        total > 0
+          ? (remaining / total) * 100
+          : null,
+    };
+  });
+}
+
+/** Only the documented numeric 0/1 values confirm team auto-renewal. */
+export function confirmedTeamAutoRenew(value: unknown): TokenPlanAutoRenew | null {
+  const data = teamResponseData(value, 'CheckTokenPlanAutoRenewal', []);
+  if (!data) return null;
+  if (data.AutoRenewal !== 0 && data.AutoRenewal !== 1) return null;
+  return {
+    enabled: data.AutoRenewal === 1,
+    period: subscriptionInteger(data.RenewalPeriod),
+    periodUnit:
+      typeof data.RenewalPeriodUnit === 'string' && data.RenewalPeriodUnit.trim()
+        ? data.RenewalPeriodUnit
+        : null,
+  };
 }
 
 export function enrichTeamTokenPlan(
@@ -607,6 +850,19 @@ export function enrichTeamTokenPlan(
     (seat && Array.isArray(seat.SubscriptionGroupList)) || knownTotal
       ? { groups, total: knownTotal }
       : null;
+  // Aggregate raw windows independently of timestamps hidden in legacy renewal displays.
+  const summaryDiagnostics: SubscriptionDiagnostic[] = [];
+  const summaries = parseTeamSeatTypeSummaries(seatRaw, summaryDiagnostics);
+  if (summaries !== null) result.seatSummaries = summaries;
+  for (const diagnostic of summaryDiagnostics) {
+    if (
+      !result.diagnostics.some(
+        (existing) =>
+          existing.api === diagnostic.api && existing.errorCode === diagnostic.errorCode,
+      )
+    )
+      result.diagnostics.push(diagnostic);
+  }
   if (result.status === 'active' || result.period || result.autoRenew || result.seatSummary)
     result.completeness = 'partial';
   return result;
@@ -743,9 +999,14 @@ export class TokenplanService {
     return dto;
   }
 
-  async fetchTokenPlanEditions(signal?: AbortSignal): Promise<TokenPlanEditionResult> {
+  async fetchTokenPlanEditions(
+    signal?: AbortSignal,
+    options: { enhancedIndividual?: boolean } = {},
+  ): Promise<TokenPlanEditionResult> {
     const [individual, teamResult] = await Promise.allSettled([
-      fetchIndividualTokenPlan(this.apiClient, signal),
+      fetchIndividualTokenPlan(this.apiClient, signal, {
+        enhanced: options.enhancedIndividual,
+      }),
       fetchTeamTokenPlan(this.apiClient, signal),
     ]);
     const individualStatus =

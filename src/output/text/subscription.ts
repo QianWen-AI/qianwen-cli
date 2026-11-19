@@ -25,6 +25,14 @@ export function renderTextSubscriptionStatus(vm: SubscriptionStatusViewModel): v
       console.log(`    ${section.title}`);
       for (const field of section.fields)
         console.log(`      ${field.label.padEnd(18)}${field.value}`);
+      for (const table of section.detailTables ?? []) {
+        console.log(`\n      ${table.title}`);
+        console.log(
+          table.rows.length
+            ? formatTextTable(table.headers, table.rows, 6)
+            : `      ${table.emptyMessage}`,
+        );
+      }
       if (section.id === 'tokenplan-team' && vm.tokenPlanSection?.tiers.length) {
         console.log('      Seat Usage');
         for (const tier of vm.tokenPlanSection.tiers) {

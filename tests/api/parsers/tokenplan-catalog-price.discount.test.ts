@@ -187,6 +187,136 @@ describe('parseTokenPlanCatalogPrice — pricing card fields', () => {
   });
 });
 
+describe('parseTokenPlanCatalogPrice — opt-in list prices', () => {
+  function response(
+    edition: 'individual' | 'team',
+    fields: { totalPrice?: unknown; articleStandPrice?: unknown; orderStandPrice?: unknown } = {},
+  ) {
+    return {
+      code: '200',
+      price: {
+        ...(Object.hasOwn(fields, 'orderStandPrice')
+          ? { order: { standPrice: fields.orderStandPrice } }
+          : {}),
+        articleItemResults: [
+          {
+            articleItemName: 'Token Plan',
+            ...(Object.hasOwn(fields, 'articleStandPrice')
+              ? { standPrice: fields.articleStandPrice }
+              : {}),
+            price: {
+              discountedTotalPrice: 15000,
+              ...(Object.hasOwn(fields, 'totalPrice') ? { totalPrice: fields.totalPrice } : {}),
+            },
+            moduleResults: [
+              {
+                moduleAttributeMap: {
+                  [edition === 'individual' ? 'subscription_type' : 'plan_type']: 'standard',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    };
+  }
+
+  it('preserves the exact legacy result unless list prices are requested', () => {
+    const data = response('team', {
+      totalPrice: 19800,
+      articleStandPrice: 21800,
+      orderStandPrice: 300,
+    });
+    const input = configuration('team', 'standard', '1', 'Month');
+
+    expect(
+      parseTokenPlanCatalogPrice(data, input, { edition: 'team', specCode: 'standard' }),
+    ).toEqual({ price: '150', originalPrice: '198', currency: 'CNY', monthlyCredits: null });
+    expect(
+      parseTokenPlanCatalogPrice(data, input, {
+        edition: 'team',
+        specCode: 'standard',
+        includeListPrice: true,
+      }),
+    ).toEqual({
+      price: '150',
+      originalPrice: '198',
+      listPrice: '300',
+      currency: 'CNY',
+      monthlyCredits: null,
+    });
+  });
+
+  it.each([
+    ['individual', { totalPrice: '54000.125' }, '540.00125'],
+    ['individual', { totalPrice: 0 }, '0'],
+    ['team', { orderStandPrice: '2376.45', articleStandPrice: 19800 }, '2376.45'],
+    ['team', { orderStandPrice: 0, articleStandPrice: '19800.125' }, '198.00125'],
+    ['team', { articleStandPrice: 19800 }, '198'],
+    ['team', { orderStandPrice: '0', articleStandPrice: 0 }, '0'],
+  ] as const)('uses the documented units for %s with %j', (edition, fields, expected) => {
+    expect(
+      parseTokenPlanCatalogPrice(
+        response(edition, fields),
+        configuration(edition, 'standard', '1', 'Month'),
+        { edition, specCode: 'standard', includeListPrice: true },
+      ).listPrice,
+    ).toBe(expected);
+  });
+
+  it.each([
+    ['individual', {}],
+    ['individual', { articleStandPrice: 19800, orderStandPrice: 198 }],
+    ['individual', { totalPrice: 'invalid' }],
+    ['individual', { totalPrice: null }],
+    ['team', { totalPrice: 19800 }],
+    ['team', { orderStandPrice: 0 }],
+    ['team', { orderStandPrice: 'invalid', articleStandPrice: 19800 }],
+    ['team', { orderStandPrice: null, articleStandPrice: 19800 }],
+    ['team', { orderStandPrice: -1, articleStandPrice: 19800 }],
+    ['team', { articleStandPrice: 'invalid' }],
+  ] as const)('retains unknown %s list prices for %j', (edition, fields) => {
+    const result = parseTokenPlanCatalogPrice(
+      response(edition, fields),
+      configuration(edition, 'standard', '1', 'Month'),
+      { edition, specCode: 'standard', includeListPrice: true },
+    );
+    expect(result.listPrice).toBeNull();
+    expect(result.price).toBe('150');
+  });
+
+  it('selects the matching article for a team fallback rather than another tier', () => {
+    const data = response('team', { articleStandPrice: 19800 });
+    data.price.articleItemResults.unshift({
+      articleItemName: 'Another tier',
+      standPrice: 69800,
+      price: { discountedTotalPrice: 55000 },
+      moduleResults: [{ moduleAttributeMap: { plan_type: 'pro' } }],
+    });
+
+    expect(
+      parseTokenPlanCatalogPrice(data, configuration('team', 'standard', '1', 'Month'), {
+        edition: 'team',
+        specCode: 'standard',
+        includeListPrice: true,
+      }).listPrice,
+    ).toBe('198');
+  });
+
+  it('rejects ambiguous article matching even when an order list price exists', () => {
+    const data = response('team', { articleStandPrice: 19800, orderStandPrice: 198 });
+    data.price.articleItemResults.push({ ...data.price.articleItemResults[0]! });
+
+    expect(() =>
+      parseTokenPlanCatalogPrice(data, configuration('team', 'standard', '1', 'Month'), {
+        edition: 'team',
+        specCode: 'standard',
+        includeListPrice: true,
+      }),
+    ).toThrowError('Token Plan catalog price is missing');
+  });
+});
+
 describe('parseTokenPlanCatalogPrice edge cases', () => {
   const teamCommodity = site.features.tokenPlanCommodityCodes.teams;
   const individualCommodity = site.features.tokenPlanCommodityCodes.soloBuy;

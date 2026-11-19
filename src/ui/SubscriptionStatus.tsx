@@ -7,6 +7,7 @@ import { renderWithInk } from './render.js';
 import { colors, theme } from './theme.js';
 import { useTerminalSize } from './useTerminalSize.js';
 import { TokenPlanSeatDetails } from './TokenPlanSeatDetails.js';
+import { TokenPlanDetailTables } from './TokenPlanDetailTables.js';
 import type {
   CreditPackSectionViewModel,
   OrderStatusColor,
@@ -19,7 +20,7 @@ export interface SubscriptionStatusInkProps {
   vm: SubscriptionStatusViewModel;
 }
 
-const DIVIDER_CHAR = '═';
+const DIVIDER_CHAR = '─';
 const MIN_DIVIDER_WIDTH = 40;
 
 function sectionDivider(title: string, width: number): string {
@@ -68,7 +69,7 @@ function LegacyTokenPlanSection({
 function TeamSeatUsage({ section }: { section: TokenPlanSectionViewModel }) {
   if (section.tiers.length === 0) return null;
   return (
-    <Box flexDirection="column" paddingLeft={2} marginBottom={1}>
+    <Box flexDirection="column" paddingLeft={2}>
       <Text bold>Seat Usage</Text>
       {section.tiers.map((tier) => (
         <Box flexDirection="column" paddingLeft={2} key={tier.label}>
@@ -187,7 +188,7 @@ export function SubscriptionStatusInk({ vm }: SubscriptionStatusInkProps) {
 
   if (vm.banner) {
     return (
-      <Section title="Subscription Status">
+      <Section title="Subscription Status" borderStyle="double">
         <Box flexDirection="column" paddingLeft={2}>
           <Text color={colors.error}>{vm.banner}</Text>
           {vm.diagnostics.map((diagnostic, index) => (
@@ -204,13 +205,18 @@ export function SubscriptionStatusInk({ vm }: SubscriptionStatusInkProps) {
   const hasEditionSections = editionSections.length > 0;
 
   return (
-    <Section title="Subscription Status" footer={vm.footnote ?? undefined}>
+    <Section title="Subscription Status" borderStyle="double" footer={vm.footnote ?? undefined}>
       <Box flexDirection="column" paddingLeft={2}>
         {hasEditionSections ? (
           <>
             <Text color={colors.brand}>{sectionDivider('Token Plans', width)}</Text>
-            {editionSections.map((section) => (
-              <Box key={section.id} flexDirection="column" paddingLeft={2} marginBottom={1}>
+            {editionSections.map((section, index) => (
+              <Box
+                key={section.id}
+                flexDirection="column"
+                paddingLeft={2}
+                marginTop={index === 0 ? 0 : 1}
+              >
                 <Text bold>{section.title}</Text>
                 <Box flexDirection="column" paddingLeft={2}>
                   {section.fields.map((field) => (
@@ -219,6 +225,14 @@ export function SubscriptionStatusInk({ vm }: SubscriptionStatusInkProps) {
                       {field.value}
                     </Text>
                   ))}
+                  {section.id === 'tokenplan-individual' && (
+                    <TokenPlanDetailTables
+                      tables={section.detailTables ?? []}
+                      paddingLeft={0}
+                      maxTotalWidth={Math.max(1, columns - 8)}
+                      recordTitleGap={0}
+                    />
+                  )}
                 </Box>
                 {section.id === 'tokenplan-team' && vm.tokenPlanSection && (
                   <TeamSeatUsage section={vm.tokenPlanSection} />

@@ -1,5 +1,5 @@
 /** Unit tests for SubscriptionService. */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SubscriptionService } from '../../src/services/subscription-service.js';
 import { SubscriptionTokenPlanService } from '../../src/services/subscription-tokenplan-service.js';
 import { makeMockApiClient, makeMockCachedFetcher } from '../helpers/service-mocks.js';
@@ -9,6 +9,19 @@ import type { TokenPlan } from '../../src/types/usage.js';
 import type { CallFlatApiOptions } from '../../src/api/api-client.js';
 import * as tokenPlanModule from '../../src/services/tokenplan-service.js';
 import { teamWithSeatDetails } from '../helpers/tokenplan-status.js';
+import { buildSubscriptionStatusViewModel } from '../../src/view-models/subscription/status.js';
+import { formatSubscriptionStatusJson } from '../../src/view-models/subscription/shared.js';
+import type { TokenPlanHarnessAllowance } from '../../src/types/tokenplan-benefits.js';
+import type { TokenPlanHarnessBenefits } from '../../src/services/tokenplan-benefits.js';
+
+const harness = vi.hoisted(() => ({ load: vi.fn<() => Promise<TokenPlanHarnessBenefits>>() }));
+vi.mock('../../src/services/tokenplan-benefits.js', () => ({
+  createTokenPlanBenefitsReader: () => ({ loadHarnessBenefits: harness.load }),
+}));
+beforeEach(() => {
+  harness.load.mockReset().mockResolvedValue({ allowances: [], hasResourcePack: false });
+});
+afterEach(() => vi.useRealTimers());
 
 // Mock TokenplanService factory
 
@@ -96,13 +109,417 @@ function routeByAction(
 
 // getStatus
 
+describe('Individual status display data', () => {
+  const allowance: TokenPlanHarnessAllowance = {
+    toolId: 'tool',
+    toolName: 'Tool',
+    totalQuota: '10',
+    remainingQuota: '8',
+    quotaUnit: 'calls',
+    startAt: null,
+    endAt: null,
+  };
+  function statusApi(active = true) {
+    const now = Date.now();
+    return makeMockApiClient({
+      csData: async (opts) => {
+        if (opts.api.endsWith('/subscription'))
+          return opts.parse(
+            active
+              ? {
+                  data: {
+                    instanceCode: 'personal-1',
+                    specCode: 'lite',
+                    remainingDays: 30,
+                    startTime: now - 60_000,
+                    endTime: now + 2_592_000_000,
+                    autoRenewFlag: false,
+                    status: 'VALID',
+                  },
+                }
+              : { code: 'SUCCESS', success: true },
+          );
+        if (opts.api.endsWith('/quota-config'))
+          return opts.parse({ data: { lite: { weekly: 1000, monthly: 2000 } } });
+        return opts.parse({ data: { per1WeekPercentage: 0.25, per1MonthPercentage: 0.5 } });
+      },
+      flat: async (opts) => {
+        if (opts.action === 'DescribeFrInstances')
+          return { TotalCount: 0, PageSize: 100, CurrentPage: 1, Data: [] };
+        if (opts.action === 'GetSubscriptionDetail')
+          return { Success: true, Code: 'Success', Data: { TotalCount: 0, SubscriptionList: [] } };
+        if (opts.action === 'CheckTokenPlanAutoRenewal')
+          return { Success: true, Code: 'Success', Data: { AutoRenewal: 0 } };
+        if (opts.action === 'QueryAvailableInstances')
+          return {
+            Success: true,
+            Code: 'Success',
+            Data: {
+              InstanceList: [
+                {
+                  InstanceID: 'personal-1',
+                  ProductCode: 'sfm',
+                  ProductType: 'sfm_tokenplansolo_public_cn',
+                  RenewStatus: 'ManualRenewal',
+                },
+              ],
+            },
+          };
+        return { Success: true, Code: 'Success', Data: {} };
+      },
+    });
+  }
+  function service(api: ReturnType<typeof statusApi>) {
+    const cache = makeMockCachedFetcher();
+    return new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      cache,
+      new tokenPlanModule.TokenplanService(api, cache),
+    );
+  }
+
+  it('shares dedicated personal fields and reads each existing API only once for human output', async () => {
+    const api = statusApi();
+    harness.load.mockResolvedValue({ allowances: [allowance], hasResourcePack: true });
+    const aggregate = await service(api).getStatus({ includeIndividualDetails: true });
+    expect(api.callCsDataApi).toHaveBeenCalledTimes(3);
+    expect(
+      api.callFlatApi.mock.calls.filter(([opts]) => opts.action === 'QueryAvailableInstances'),
+    ).toHaveLength(1);
+    expect(api.callFlatApi).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'QueryAvailableInstances',
+        params: {
+          InstanceIDs: 'personal-1',
+          ProductCode: 'sfm',
+          ProductType: 'sfm_tokenplansolo_public_cn',
+          PageNum: 1,
+          PageSize: 20,
+        },
+      }),
+    );
+    expect(harness.load).toHaveBeenCalledTimes(1);
+    const dedicated = await new SubscriptionTokenPlanService(api).getTokenPlanStatus({
+      edition: 'individual',
+    });
+    expect(aggregate.data?.individual).toEqual(dedicated.individual);
+    expect(aggregate.data?.individual?.tiers?.[0]).toMatchObject({
+      windowType: 'weekly',
+      usedPct: 25,
+      remainingPct: 75,
+    });
+  });
+
+  it('preserves the legacy data and request scope when personal details are not requested', async () => {
+    const api = statusApi();
+    const aggregate = await service(api).getStatus();
+    expect(harness.load).not.toHaveBeenCalled();
+    expect(aggregate.data?.individual).not.toHaveProperty('subscriptionId');
+    expect(aggregate.data?.individual).not.toHaveProperty('tiers');
+    expect(aggregate.data?.individual).not.toHaveProperty('harnessAllowances');
+    expect(api.callFlatApi).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'QueryAvailableInstances', params: {} }),
+    );
+  });
+
+  it('skips Harness for a confirmed unsubscribed personal account', async () => {
+    const result = await service(statusApi(false)).getStatus({ includeIndividualDetails: true });
+    expect(result.data?.individual?.status).toBe('not_subscribed');
+    expect(harness.load).not.toHaveBeenCalled();
+  });
+
+  it.each(['empty', 'failed', 'pending', 'legacy-code'])(
+    'keeps confirmed subscription fields when Harness is %s',
+    async (scenario) => {
+      if (scenario === 'failed') harness.load.mockRejectedValue(new Error('private backend text'));
+      if (scenario === 'pending')
+        harness.load.mockResolvedValue({ allowances: [], hasResourcePack: true });
+      if (scenario === 'legacy-code')
+        harness.load.mockRejectedValue(
+          Object.assign(new Error('private backend text'), { code: 'TOKENPLAN_HARNESS_PENDING' }),
+        );
+      const result = await service(statusApi()).getStatus({ includeIndividualDetails: true });
+      expect(result.data?.individual?.status).toBe('active');
+      expect(result.data?.individual?.subscriptionId).toBe('personal-1');
+      if (scenario === 'empty' || scenario === 'pending') {
+        expect(result.data?.individual).toMatchObject({
+          harnessAllowances: [],
+          harnessHasResourcePack: scenario === 'pending',
+        });
+        expect(result.diagnostics).toEqual([]);
+      } else {
+        expect(result.data?.individual).not.toHaveProperty('harnessAllowances');
+        expect(result.diagnostics).toContainEqual(
+          expect.objectContaining({
+            api: 'HarnessAllowances',
+            errorCode: 'SERVICE_UNAVAILABLE',
+          }),
+        );
+      }
+      expect(JSON.stringify(result.diagnostics)).not.toContain('private backend text');
+    },
+  );
+
+  it('bounds a hung Harness read without discarding personal data or accepting late results', async () => {
+    vi.useFakeTimers();
+    let release: ((value: TokenPlanHarnessBenefits) => void) | undefined;
+    harness.load.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const pending = service(statusApi()).getStatus({ includeIndividualDetails: true });
+    await vi.advanceTimersByTimeAsync(35_000);
+    const result = await pending;
+    expect(result.data?.individual?.status).toBe('active');
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ api: 'HarnessAllowances', errorCode: 'Timeout' }),
+    );
+    expect(result.data?.individual).not.toHaveProperty('harnessAllowances');
+    const before = structuredClone(result);
+    release?.({ allowances: [allowance], hasResourcePack: true });
+    await Promise.resolve();
+    expect(result).toEqual(before);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('team seat usage aggregation', () => {
+  const reset = '2026-12-01T00:00:00.000Z';
+  const group = (total: string, remaining = total, overrides: Record<string, unknown> = {}) => ({
+    SpecType: 'standard',
+    SubscriptionTotalNumber: 1,
+    SubscriptionAssignedNumber: 0,
+    NextCycleFlushTime: reset,
+    EquityList: [{ EquityType: 'CREDITS', TotalValue: total, SurplusValue: remaining }],
+    ...overrides,
+  });
+
+  async function status(groups: unknown[], autoRenew: number | null = 1) {
+    const raw = { Success: true, Code: 'Success', Data: { SubscriptionGroupList: groups } };
+    const before = structuredClone(raw);
+    const api = makeMockApiClient({
+      flat: routeByAction({
+        QuerySubscriptionGray: { IsGray: false },
+        GetSeatSubscriptionSummary: raw,
+        GetSubscriptionSummary: { Success: true, Code: 'Success', Data: {} },
+        CheckTokenPlanAutoRenewal: {
+          Success: true,
+          Code: 'Success',
+          Data: { AutoRenewal: autoRenew },
+        },
+        GetSubscriptionDetail: { Data: [], TotalCount: 0 },
+      }),
+    });
+    const team = { ...tokenPlanModule.unknownTokenPlanEdition('team'), status: 'active' as const };
+    const result = await new SubscriptionService(
+      api,
+      makeStubAdapter(),
+      makeMockCachedFetcher(),
+      makeMockTokenplanService({ subscribed: true, team }),
+    ).getStatus();
+    expect(raw).toEqual(before);
+    expect(
+      api.callFlatApi.mock.calls.filter(([opts]) => opts.action === 'GetSeatSubscriptionSummary'),
+    ).toHaveLength(1);
+    return result;
+  }
+
+  it.each([0, 1])(
+    'matches report F-001 without multiplying Credits by seats (renewal=%s)',
+    async (renewal) => {
+      const result = await status([group('1000', '800'), group('1000', '600')], renewal);
+      const summary = {
+        seatType: 'standard',
+        seatCount: 2,
+        assignedCount: 0,
+        totalCredits: '2000',
+        remainingCredits: '1400',
+        remainingPct: 70,
+        resetAt: reset,
+      };
+      const tier = {
+        specType: 'standard',
+        seats: 2,
+        totalCredits: 2000,
+        remainingCredits: 1400,
+        usedPct: 30,
+        remainingPct: 70,
+        nextCycleFlushTime: renewal === 0 ? null : reset,
+      };
+      expect(result.data?.seatTiers).toEqual([tier]);
+      expect(result.data?.team?.seatSummaries).toEqual([summary]);
+      expect(formatSubscriptionStatusJson(result.data)).toMatchObject({
+        seatTiers: [
+          { ...tier, nextCycleFlushTime: renewal === 0 ? null : '2026-12-01T08:00:00.000+08:00' },
+        ],
+        team: { seatSummaries: [summary] },
+      });
+      const vm = buildSubscriptionStatusViewModel(result.data, result.diagnostics);
+      expect(vm.tokenPlanSection?.tiers).toHaveLength(1);
+      expect(vm.tokenPlanSection?.tiers[0].bar).toContain('1,400 / 2,000');
+      expect(vm.tokenPlanSection?.tiers[0].usedPct).toBe(30);
+    },
+  );
+
+  it.each([0, 1, null])(
+    'merges the original window independently of auto-renewal=%s',
+    async (renewal) => {
+      const result = await status([group('100', '40'), group('200', '110')], renewal);
+      expect(result.data?.seatTiers).toEqual([
+        {
+          specType: 'standard',
+          seats: 2,
+          totalCredits: 300,
+          remainingCredits: 150,
+          usedPct: 50,
+          remainingPct: 50,
+          nextCycleFlushTime: renewal === 0 ? null : reset,
+        },
+      ]);
+      expect(result.data?.team?.seatSummaries?.[0]).toMatchObject({
+        seatCount: 2,
+        assignedCount: 0,
+        totalCredits: '300',
+        remainingCredits: '150',
+        resetAt: reset,
+      });
+      expect(result.diagnostics.filter((d) => d.api === 'GetSeatSubscriptionSummary')).toEqual([]);
+      const vm = buildSubscriptionStatusViewModel(result.data, result.diagnostics);
+      expect(vm.tokenPlanSection?.tiers[0].bar).toContain('150 / 300');
+      expect(vm.tokenPlanSection?.tiers[0].bar).not.toContain('unknown');
+    },
+  );
+
+  it.each([false, true])(
+    'sums decimals exactly regardless of input order (reversed=%s)',
+    async (reverse) => {
+      const groups = [group('0.1', '0.05'), group('0.2', '0.1')];
+      const result = await status(reverse ? groups.reverse() : groups);
+      expect(result.data?.seatTiers[0]).toMatchObject({
+        totalCredits: 0.3,
+        remainingCredits: 0.15,
+        usedPct: 50,
+        remainingPct: 50,
+      });
+      expect(result.data?.team?.seatSummaries?.[0]).toMatchObject({
+        totalCredits: '0.3',
+        remainingCredits: '0.15',
+      });
+      const vm = buildSubscriptionStatusViewModel(result.data, result.diagnostics);
+      expect(vm.tokenPlanSection?.tiers[0].bar).toContain('0.15 / 0.3');
+    },
+  );
+
+  it.each([
+    { NextCycleFlushTime: '2027-01-01T00:00:00.000Z' },
+    { NextCycleFlushTime: null },
+    { EquityList: [{ EquityType: 'CREDITS', TotalValue: '200' }] },
+  ])('keeps incompatible groups unknown with a diagnostic: %j', async (overrides) => {
+    const result = await status([group('100'), group('200', '100', overrides)], 0);
+    expect(result.data?.seatTiers[0]).toMatchObject({
+      seats: 2,
+      totalCredits: null,
+      remainingCredits: null,
+      usedPct: null,
+      remainingPct: null,
+    });
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        api: 'GetSeatSubscriptionSummary',
+        errorCode: 'ConflictingCreditGroups',
+      }),
+    );
+    expect(result.data?.team?.seatSummaries?.[0]).toMatchObject({
+      seatCount: 2,
+      totalCredits: null,
+      remainingCredits: null,
+      remainingPct: null,
+      resetAt: 'NextCycleFlushTime' in overrides ? null : reset,
+    });
+  });
+
+  it('retains zero and partial fields without substituting a total or duplicating diagnostics', async () => {
+    const result = await status([
+      group('0'),
+      group('10', '0', { SpecType: 'pro' }),
+      group('20', '0', {
+        SpecType: 'max',
+        EquityList: [{ EquityType: 'CREDITS', TotalValue: '20' }],
+      }),
+    ]);
+    expect(result.data?.seatTiers).toMatchObject([
+      { specType: 'standard', totalCredits: 0, remainingCredits: 0, remainingPct: null },
+      { specType: 'pro', totalCredits: 10, remainingCredits: 0, remainingPct: 0 },
+      { specType: 'max', totalCredits: 20, remainingCredits: null, remainingPct: null },
+    ]);
+    expect(
+      result.diagnostics.filter(
+        (d) => d.api === 'GetSeatSubscriptionSummary' && d.errorCode === 'IncompleteCredits',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('preserves exact large Credits while leaving unsafe legacy numbers unknown', async () => {
+    const result = await status([group('9007199254740993'), group('1')]);
+    expect(result.data?.team?.seatSummaries?.[0]).toMatchObject({
+      totalCredits: '9007199254740994',
+      remainingCredits: '9007199254740994',
+      remainingPct: 100,
+    });
+    expect(result.data?.seatTiers[0]).toMatchObject({
+      totalCredits: null,
+      remainingCredits: null,
+      remainingPct: 100,
+      usedPct: 0,
+    });
+    expect(result.diagnostics.filter((d) => d.errorCode === 'UnrepresentableCredits')).toHaveLength(
+      1,
+    );
+    const vm = buildSubscriptionStatusViewModel(result.data, result.diagnostics);
+    expect(vm.tokenPlanSection?.tiers[0].bar).toContain(
+      '9,007,199,254,740,994 / 9,007,199,254,740,994',
+    );
+    expect(vm.tokenPlanSection?.tiers[0].bar).not.toContain('unknown');
+  });
+
+  it('rejects lossy decimal conversion and supports small decimal values', async () => {
+    const result = await status([
+      group('1234567890123.123456789012'),
+      group('0.000000000001', '0.000000000001', { SpecType: 'pro' }),
+    ]);
+    expect(result.data?.seatTiers[0].totalCredits).toBeNull();
+    expect(result.data?.team?.seatSummaries?.[0].totalCredits).toBe('1234567890123.123456789012');
+    expect(result.data?.seatTiers[1].totalCredits).toBe(1e-12);
+    expect(result.diagnostics.filter((d) => d.errorCode === 'UnrepresentableCredits')).toHaveLength(
+      1,
+    );
+  });
+
+  it('validates the sum of seat counts as a safe integer', async () => {
+    const result = await status([
+      group('1', '1', { SubscriptionTotalNumber: Number.MAX_SAFE_INTEGER }),
+      group('1'),
+    ]);
+    expect(result.data?.seatTiers[0]).toMatchObject({
+      seats: null,
+      totalCredits: 2,
+      remainingCredits: 2,
+    });
+    expect(result.data?.team?.seatSummaries?.[0].seatCount).toBeNull();
+  });
+});
+
 describe('status seat details integration', () => {
-  it.each(['complete', 'failed', 'history', 'mismatch'])(
+  it.each(['complete', 'failed', 'history', 'mismatch', 'unknown-credits'])(
     'both status commands attach independent seat details (%s)',
     async (scenario) => {
       const failed = scenario === 'failed';
       const history = scenario === 'history';
       const mismatch = scenario === 'mismatch';
+      const unknownCredits = scenario === 'unknown-credits';
       const team = teamWithSeatDetails();
       delete team.seatDetails;
       const getTeam = vi
@@ -134,7 +551,13 @@ describe('status seat details integration', () => {
                   SpecType: 'standard',
                   Status: 'NORMAL',
                   ...(history ? { Assignable: true } : { MemberId: '' }),
-                  EquityList: [{ TotalValue: '25', SurplusValue: '20' }],
+                  EquityList: [
+                    {
+                      EquityType: unknownCredits ? 'REQUESTS' : 'CREDITS',
+                      TotalValue: '25',
+                      SurplusValue: '20',
+                    },
+                  ],
                 },
               ],
               TotalCount: history ? 16 : 1,
@@ -148,7 +571,7 @@ describe('status seat details integration', () => {
                     SpecType: 'standard',
                     SubscriptionTotalNumber: mismatch ? 2 : 1,
                     SubscriptionAssignedNumber: 0,
-                    EquityList: [{ TotalValue: '25', SurplusValue: '20' }],
+                    EquityList: [{ EquityType: 'CREDITS', TotalValue: '25', SurplusValue: '20' }],
                   },
                 ],
               },
@@ -169,9 +592,23 @@ describe('status seat details integration', () => {
           makeMockTokenplanService({ subscribed: true, team }, 'team-1'),
         ).getStatus();
         expect(dedicated.team?.seatDetails).toEqual(general.data?.team?.seatDetails);
+        expect(dedicated.team?.seatSummaries).toEqual(general.data?.team?.seatSummaries);
+        if (history || mismatch) {
+          expect(dedicated.team?.seatSummaries).toEqual([
+            {
+              seatType: 'standard',
+              seatCount: mismatch ? 2 : 1,
+              assignedCount: 0,
+              totalCredits: '25',
+              remainingCredits: '20',
+              remainingPct: 80,
+              resetAt: null,
+            },
+          ]);
+        }
         expect(dedicated.team?.seatDetails).toMatchObject({
           fetchedCount: failed ? 0 : history ? 16 : 1,
-          completeness: failed ? 'unknown' : mismatch ? 'partial' : 'complete',
+          completeness: failed ? 'unknown' : mismatch || unknownCredits ? 'partial' : 'complete',
         });
         if (history) {
           expect(dedicated.team?.seatDetails).toMatchObject({
@@ -201,6 +638,19 @@ describe('status seat details integration', () => {
           expect(general.diagnostics).toContainEqual(warning);
           expect(dedicated.team?.seatDetails?.items).toHaveLength(1);
           expect(dedicated.team?.seatSummary?.total?.seats).toBe(2);
+        }
+        if (unknownCredits) {
+          const warning = expect.objectContaining({
+            api: 'GetSubscriptionDetail',
+            errorCode: 'IncompleteCredits',
+          });
+          expect(dedicated.diagnostics).toContainEqual(warning);
+          expect(general.diagnostics).toContainEqual(warning);
+          expect(dedicated.team?.seatDetails).toMatchObject({
+            collectionCompleteness: 'complete',
+            diagnostics: [warning],
+            items: [{ totalValue: null, surplusValue: null }],
+          });
         }
       } finally {
         getTeam.mockRestore();
@@ -274,8 +724,7 @@ describe('SubscriptionService.getStatus', () => {
             {
               SpecType: 'standard',
               SubscriptionTotalNumber: 2,
-              TotalValue: '50000',
-              SurplusValue: '49997',
+              EquityList: [{ EquityType: 'CREDITS', TotalValue: '50000', SurplusValue: '49997' }],
               NextCycleFlushTime: '2026-08-27T11:00:00.000Z',
             },
           ],
@@ -313,8 +762,7 @@ describe('SubscriptionService.getStatus', () => {
             {
               SpecType: 'standard',
               SubscriptionTotalNumber: 2,
-              TotalValue: '50000',
-              SurplusValue: '49997',
+              EquityList: [{ EquityType: 'CREDITS', TotalValue: '50000', SurplusValue: '49997' }],
               NextCycleFlushTime: '2026-08-27T11:00:00.000Z',
             },
           ],

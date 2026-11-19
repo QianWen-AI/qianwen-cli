@@ -1,24 +1,26 @@
 type CommandInterruptHandler = () => void;
 
-let activeHandler: CommandInterruptHandler | undefined;
+const activeRegistrations: Array<{ handler: CommandInterruptHandler }> = [];
 
 /**
  * Register the interrupt handler for the currently running cancellable command.
  *
  * @param handler Command-specific cancellation callback.
- * @returns Cleanup that restores the previous handler without clearing a newer one.
+ * @returns Idempotent cleanup that removes only this registration.
  */
 export function registerCommandInterrupt(handler: CommandInterruptHandler): () => void {
-  const previous = activeHandler;
-  activeHandler = handler;
+  const registration = { handler };
+  activeRegistrations.push(registration);
   return () => {
-    if (activeHandler === handler) activeHandler = previous;
+    const index = activeRegistrations.indexOf(registration);
+    if (index !== -1) activeRegistrations.splice(index, 1);
   };
 }
 
 /** Dispatch Ctrl+C to the active command when one has registered cancellation. */
 export function interruptActiveCommand(): boolean {
-  if (!activeHandler) return false;
-  activeHandler();
+  const active = activeRegistrations.at(-1);
+  if (!active) return false;
+  active.handler();
   return true;
 }

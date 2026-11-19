@@ -1,9 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { Credentials } from '../../src/types/auth.js';
 import { site } from '../../src/site.js';
+import {
+  writeEncryptedCredentials,
+  writePlaintextCredentials,
+} from '../../src/auth/crypto-store.js';
+
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  return { ...actual, unlinkSync: vi.fn(actual.unlinkSync) };
+});
 
 const s = {
   ...site,
@@ -54,9 +63,9 @@ vi.mock('../../src/auth/crypto-store.js', () => ({
       return false;
     }
   },
-  writeEncryptedCredentials: (data: Record<string, unknown>, path: string) => {
+  writeEncryptedCredentials: vi.fn((data: Record<string, unknown>, path: string) => {
     writeFileSync(path, JSON.stringify({ [ENC_MARKER]: true, payload: data }), 'utf-8');
-  },
+  }),
   readEncryptedCredentials: (path: string) => {
     if (!existsSync(path)) return null;
     try {
@@ -67,9 +76,9 @@ vi.mock('../../src/auth/crypto-store.js', () => ({
       return null;
     }
   },
-  writePlaintextCredentials: (data: Record<string, unknown>, path: string) => {
+  writePlaintextCredentials: vi.fn((data: Record<string, unknown>, path: string) => {
     writeFileSync(path, JSON.stringify(data), 'utf-8');
-  },
+  }),
 }));
 
 vi.mock('../../src/config/paths.js', () => ({
@@ -244,6 +253,59 @@ describe('writeCredentials', () => {
 
     expect(existsSync(`${credPath}.console`)).toBe(false);
   });
+
+  it.each(['keychain', 'encrypted', 'plaintext'])(
+    'stores root credentials when cache cleanup fails: %s',
+    (storage) => {
+      const cachePath = `${credPath}.console`;
+      writeFileSync(cachePath, 'stale-cs-data-token', 'utf-8');
+      const cacheError = Object.assign(new Error('Mock cache cleanup denied'), { code: 'EACCES' });
+      vi.mocked(unlinkSync).mockImplementationOnce(() => {
+        throw cacheError;
+      });
+      keychainState.available = storage === 'keychain';
+      keychainState.plaintext = storage === 'plaintext';
+      const creds = makeCreds(24);
+
+      expect(() => writeCredentials(creds)).not.toThrow();
+      expect(unlinkSync).toHaveBeenCalledWith(cachePath);
+      expect(vi.mocked(unlinkSync).mock.results[0].value).toBe(cacheError);
+      expect(existsSync(cachePath)).toBe(true);
+      expect(resolveCredentials()!.access_token).toBe(creds.access_token);
+      expect(storage === 'keychain' ? keychainState.data !== null : existsSync(credPath)).toBe(
+        true,
+      );
+    },
+  );
+
+  it.each(
+    ['encrypted', 'plaintext'].flatMap((storage) =>
+      [false, true].map((cacheCleanupFails) => ({ storage, cacheCleanupFails })),
+    ),
+  )(
+    'propagates root credential storage errors: $storage, cache cleanup fails=$cacheCleanupFails',
+    ({ storage, cacheCleanupFails }) => {
+      if (cacheCleanupFails) {
+        vi.mocked(unlinkSync).mockImplementationOnce(() => {
+          throw Object.assign(new Error('Mock cache cleanup denied'), { code: 'EACCES' });
+        });
+      }
+      keychainState.plaintext = storage === 'plaintext';
+      const store = storage === 'plaintext' ? writePlaintextCredentials : writeEncryptedCredentials;
+      const storageError = Object.assign(new Error('Mock credential storage is read-only'), {
+        code: 'EROFS',
+      });
+      vi.mocked(store).mockImplementationOnce(() => {
+        throw storageError;
+      });
+      const creds = makeCreds(24);
+
+      expect(() => writeCredentials(creds)).toThrow(storageError);
+      expect(store).toHaveBeenCalledWith({ ...creds, auth_mode: 'device_flow' }, credPath);
+      expect(existsSync(credPath)).toBe(false);
+      expect(keychainState.data).toBeNull();
+    },
+  );
 
   it('writes via keychain when available and readback matches', () => {
     keychainState.available = true;

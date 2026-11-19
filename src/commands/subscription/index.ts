@@ -32,13 +32,6 @@ export function registerSubscriptionCommands(program: Command): void {
 
   const tokenplan = subscription.commands.find((c) => c.name() === 'tokenplan');
   if (tokenplan) {
-    const tpStatus = tokenplan.commands.find((c) => c.name() === 'status');
-    if (tpStatus) {
-      addExamples(tpStatus, [
-        formatCmd('subscription tokenplan status'),
-        formatCmd('subscription tokenplan status --format json'),
-      ]);
-    }
     const tpSeats = tokenplan.commands.find((c) => c.name() === 'seats');
     if (tpSeats) {
       addExamples(tpSeats, [

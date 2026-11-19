@@ -6,6 +6,8 @@ import type {
   SubscriptionStatus,
   SubscriptionDiagnostic,
 } from '../../../src/types/subscription.js';
+import { tokenPlanStatusWithDetails } from '../../helpers/tokenplan-status.js';
+import { formatSubscriptionStatusJson } from '../../../src/view-models/subscription/shared.js';
 
 function makeStatus(overrides: Partial<SubscriptionStatus> = {}): SubscriptionStatus {
   return {
@@ -15,6 +17,10 @@ function makeStatus(overrides: Partial<SubscriptionStatus> = {}): SubscriptionSt
     quota: { remaining: 800, total: 1000, usedPct: 20 },
     autoRenew: true,
     renewable: true,
+    remainingDays: null,
+    seatTiers: [],
+    creditPacks: [],
+    recentOrders: [],
     ...overrides,
   };
 }
@@ -55,6 +61,26 @@ const team = {
 };
 
 describe('buildSubscriptionStatusViewModel', () => {
+  it('orders team tier display as Standard, Pro, Max without changing source fields', () => {
+    const source = makeStatus({
+      seatTiers: ['max', 'standard', 'pro'].map((specType) => ({
+        specType,
+        seats: 1,
+        totalCredits: 1000,
+        remainingCredits: 500,
+        usedPct: 50,
+        remainingPct: 50,
+        nextCycleFlushTime: null,
+      })),
+    });
+    const before = structuredClone(source);
+    expect(
+      buildSubscriptionStatusViewModel(source, []).tokenPlanSection?.tiers.map(
+        (tier) => tier.label,
+      ),
+    ).toEqual(['Standard (1 seat)', 'Pro (1 seat)', 'Max (1 seat)']);
+    expect(source).toEqual(before);
+  });
   afterEach(() => vi.unstubAllEnvs());
   it('renders unavailable banner when data is null', () => {
     const vm = buildSubscriptionStatusViewModel(null, []);
@@ -96,6 +122,32 @@ describe('buildSubscriptionStatusViewModel', () => {
     expect(vm.fields[4].value).toBe('—'); // gray
   });
 
+  it('retains legacy seat usage when exact team summaries are absent', () => {
+    const vm = buildSubscriptionStatusViewModel(
+      makeStatus({
+        seatTiers: [
+          {
+            specType: 'standard',
+            seats: 2,
+            totalCredits: 1000,
+            remainingCredits: 750,
+            usedPct: 25,
+            remainingPct: 75,
+            nextCycleFlushTime: null,
+          },
+        ],
+      }),
+      [],
+    );
+    expect(vm.tokenPlanSection?.tiers[0]).toMatchObject({
+      label: 'Standard (2 seats)',
+      remaining: 750,
+      total: 1000,
+      usedPct: 25,
+    });
+    expect(vm.tokenPlanSection?.tiers[0].bar).toContain('750 / 1,000');
+  });
+
   it('groups edition fields without a synthetic account section', () => {
     const vm = buildSubscriptionStatusViewModel(
       makeStatus({
@@ -110,17 +162,16 @@ describe('buildSubscriptionStatusViewModel', () => {
       (section) => section.id === 'tokenplan-individual',
     )?.fields;
     expect(individualFields).toContainEqual({
-      label: 'Period',
-      value: '2026-07-27 → 2026-09-27 (12 days remaining)',
+      label: 'End At',
+      value: '2026-09-27 19:00:00 (Asia/Shanghai)',
     });
-    expect(individualFields).not.toContainEqual(
-      expect.objectContaining({ label: 'Remaining Days' }),
-    );
+    expect(individualFields).toContainEqual({ label: 'Remaining Days', value: '12' });
+    expect(individualFields).not.toContainEqual(expect.objectContaining({ label: 'Period' }));
     expect(individualFields).not.toContainEqual(expect.objectContaining({ label: 'Renewable' }));
     expect(vm.sections.find((section) => section.id === 'tokenplan-team')?.fields).toEqual([
       { label: 'Status', value: 'not_subscribed' },
-      { label: 'Name', value: 'Token Plan Team Edition' },
     ]);
+    expect(individualFields).not.toContainEqual(expect.objectContaining({ label: 'Name' }));
 
     const activeVm = buildSubscriptionStatusViewModel(
       makeStatus({
@@ -143,7 +194,7 @@ describe('buildSubscriptionStatusViewModel', () => {
     ).toContainEqual({ label: 'Renewable', value: 'Yes' });
   });
 
-  it('shows a stable Individual product name when no subscription exists', () => {
+  it('omits Individual Name when no subscription exists', () => {
     const notSubscribedIndividual = {
       ...individual,
       status: 'not_subscribed' as const,
@@ -160,13 +211,6 @@ describe('buildSubscriptionStatusViewModel', () => {
       makeStatus({ individual: notSubscribedIndividual, team: undefined }),
       [],
     );
-    expect(
-      aggregate.sections.find((section) => section.id === 'tokenplan-individual')?.fields,
-    ).toEqual([
-      { label: 'Status', value: 'not_subscribed' },
-      { label: 'Name', value: 'Token Plan Individual Edition' },
-    ]);
-
     const tokenPlan = buildTokenPlanStatusViewModel(
       {
         product: 'Token Plan Team Edition',
@@ -181,9 +225,50 @@ describe('buildSubscriptionStatusViewModel', () => {
     );
     expect(tokenPlan.editionSections[0]?.fields).toEqual([
       { label: 'Status', value: 'not_subscribed' },
-      { label: 'Name', value: 'Token Plan Individual Edition' },
+      { label: 'Subscription', value: 'No active Individual Token Plan subscription.' },
     ]);
+    expect(
+      aggregate.sections.find((section) => section.id === 'tokenplan-individual')?.fields,
+    ).toEqual(tokenPlan.editionSections[0]?.fields);
   });
+
+  it.each(['loaded', 'zero', 'unknown', 'empty', 'failed', 'pending', 'legacy-code'])(
+    'shares the dedicated Individual fields and detail tables for %s Harness data',
+    (scenario) => {
+      const source = tokenPlanStatusWithDetails();
+      const personal = source.individual!;
+      personal.confirmedAutoRenew = null;
+      personal.autoRenew = { enabled: true, period: 1, periodUnit: 'Month' };
+      if (scenario === 'zero') personal.harnessAllowances![0]!.remainingQuota = '0';
+      if (scenario === 'unknown') personal.harnessAllowances![0]!.remainingQuota = null;
+      personal.harnessHasResourcePack = scenario !== 'empty';
+      if (scenario === 'empty' || scenario === 'pending') personal.harnessAllowances = [];
+      if (scenario === 'failed' || scenario === 'legacy-code') {
+        delete personal.harnessAllowances;
+        source.diagnostics.push({
+          api: 'HarnessAllowances',
+          errorCode:
+            scenario === 'legacy-code' ? 'TOKENPLAN_HARNESS_PENDING' : 'SERVICE_UNAVAILABLE',
+          errorMessage: 'fixture',
+        });
+      }
+      const data = makeStatus({ individual: personal, team: source.team });
+      const before = structuredClone(data);
+      const jsonBefore = formatSubscriptionStatusJson(data);
+      const aggregate = buildSubscriptionStatusViewModel(data, source.diagnostics);
+      const dedicated = buildTokenPlanStatusViewModel(source, 'text');
+      const section = aggregate.sections.find((entry) => entry.id === 'tokenplan-individual')!;
+      expect(section.fields).toEqual(dedicated.editionSections[0]!.fields);
+      expect(section.detailTables).toEqual(dedicated.editionSections[0]!.detailTables);
+      expect(section.fields).toContainEqual({ label: 'Auto-Renew', value: 'unknown' });
+      expect(
+        section.fields.some((field) => ['Period', 'Monthly Credits'].includes(field.label)),
+      ).toBe(false);
+      expect(data).toEqual(before);
+      expect(formatSubscriptionStatusJson(data)).toEqual(jsonBefore);
+      expect(JSON.stringify(jsonBefore)).not.toContain('harnessHasResourcePack');
+    },
+  );
 
   it('renders server-reported weekly usage without inventing absolute Credits', () => {
     const vm = buildSubscriptionStatusViewModel(
@@ -206,7 +291,7 @@ describe('buildSubscriptionStatusViewModel', () => {
       vm.sections
         .find((section) => section.id === 'tokenplan-individual')
         ?.fields.find((field) => field.label === 'Weekly Credits')?.value,
-    ).toBe('2500 total; 37.5% used (62.5% remaining); resets 2026-09-19 14:52:00');
+    ).toBe('37.5% used (62.5% remaining); resets 2026-09-19 14:52:00');
     const fields = vm.sections.find((section) => section.id === 'tokenplan-individual')?.fields;
     expect(fields).not.toContainEqual(expect.objectContaining({ label: '5-Hour Credits' }));
   });
@@ -268,7 +353,7 @@ describe('buildSubscriptionStatusViewModel', () => {
       const fields = vm.sections.find((section) => section.id === 'tokenplan-individual')?.fields;
 
       expect(fields?.find((field) => field.label === 'Monthly Credits')?.value).toBe(
-        '11500 total; 14.38% used (85.62% remaining); resets 2026-09-30 00:00:00',
+        '14.38% used (85.62% remaining); resets 2026-09-30 00:00:00',
       );
       expect(fields).not.toContainEqual(expect.objectContaining({ label: 'Weekly Credits' }));
 
@@ -288,7 +373,7 @@ describe('buildSubscriptionStatusViewModel', () => {
       expect(
         tokenPlan.editionSections[0]?.fields.find((field) => field.label === 'Monthly Credits')
           ?.value,
-      ).toBe('11500 total; 14.38% used (85.62% remaining); resets 2026-09-30 00:00:00');
+      ).toBe('14.38% used (85.62% remaining); resets 2026-09-30 00:00:00');
       expect(tokenPlan.individual?.monthlyCredits?.resetTime).toBe('2026-09-29T16:00:00.000Z');
     },
   );
@@ -452,8 +537,9 @@ describe('Token Plan status date display', () => {
       'text',
     );
 
-    expect(vm.editionSections[0]?.fields.find((field) => field.label === 'Period')?.value).toBe(
-      '2026-09-15 → 2026-10-16 (28 days remaining)',
+    expect(vm.editionSections[0]?.fields.some((field) => field.label === 'Period')).toBe(false);
+    expect(vm.editionSections[0]?.fields.find((field) => field.label === 'End At')?.value).toBe(
+      '2026-10-16 00:00:00 (Asia/Shanghai)',
     );
   });
 });

@@ -9,8 +9,15 @@ import {
   type TokenPlanIndividualTier,
 } from '../../types/tokenplan-tiers.js';
 
+export interface TokenPlanCatalogQuotaWindow {
+  weekly: number | null;
+  monthly: number | null;
+  weeklyInvalid?: true;
+  monthlyInvalid?: true;
+}
+
 export type TokenPlanCatalogQuota = Partial<
-  Record<TokenPlanIndividualTier, { weekly: number | null; monthly: number | null }>
+  Record<TokenPlanIndividualTier, TokenPlanCatalogQuotaWindow>
 >;
 
 function object(value: unknown): Record<string, unknown> | null {
@@ -115,9 +122,16 @@ function credits(value: unknown): number | null {
 export function parseTokenPlanCatalogQuota(business: unknown): TokenPlanCatalogQuota {
   const data = object(object(business)?.data);
   if (!data) throw new GatewayShapeError('Personal Token Plan quota configuration is invalid');
-  const tier = (specCode: TokenPlanIndividualTier) => {
+  const tier = (specCode: TokenPlanIndividualTier): TokenPlanCatalogQuotaWindow => {
     const quota = object(data[specCode]);
-    return { weekly: credits(quota?.weekly), monthly: credits(quota?.monthly) };
+    const weekly = credits(quota?.weekly);
+    const monthly = credits(quota?.monthly);
+    return {
+      weekly,
+      monthly,
+      ...(quota?.weekly != null && weekly === null ? { weeklyInvalid: true } : {}),
+      ...(quota?.monthly != null && monthly === null ? { monthlyInvalid: true } : {}),
+    };
   };
   const result: TokenPlanCatalogQuota = {};
   // Tier whitelist iteration keeps non-tier keys such as addon_quota out of the result.

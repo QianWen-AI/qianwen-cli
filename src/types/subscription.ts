@@ -24,6 +24,7 @@ export interface SubscriptionSeatTier {
   totalCredits: number | null;
   remainingCredits: number | null;
   usedPct: number | null;
+  remainingPct: number | null;
   nextCycleFlushTime: string | null;
 }
 

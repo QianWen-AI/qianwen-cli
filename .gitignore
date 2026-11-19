@@ -1,6 +1,9 @@
 node_modules/
 .pnpm-store/
 dist/
+/dist-dev/
+/out/
+/.local-test-tmp/
 .build-tmp/
 release/
 *.tsbuildinfo

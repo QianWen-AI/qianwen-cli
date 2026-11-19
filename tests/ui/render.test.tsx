@@ -1,8 +1,28 @@
-import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  afterEach,
+  beforeEach,
+  afterAll,
+  type MockInstance,
+} from 'vitest';
 import React from 'react';
 import { Text, useApp } from 'ink';
+import { stripVTControlCharacters } from 'node:util';
 import { renderWithInk, renderInteractive } from '../../src/ui/render.js';
 import { createGuardedStdin } from '../../src/ui/interactive-stdin.js';
+
+// Exercise terminal frames: Ink intentionally prints only the final dynamic frame in CI.
+// Set this before Ink's imports because its CI detection is evaluated at module load.
+vi.hoisted(() => {
+  vi.stubEnv('CI', 'false');
+});
+
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -32,6 +52,67 @@ describe('renderWithInk', () => {
     expect(writeSpy).toHaveBeenCalled();
   });
 
+  it('can append raw copyable text directly after a static result without an extra empty line', async () => {
+    const writeSpy = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation(((_chunk: unknown) => true) as typeof process.stdout.write);
+    await renderWithInk(<Text>subscription-status</Text>, { trailingNewline: false });
+    process.stdout.write('    To purchase a Team Token Plan, run:\n');
+    const output = stripVTControlCharacters(
+      writeSpy.mock.calls.map((call) => String(call[0])).join(''),
+    );
+    expect(output).toContain('subscription-status\n    To purchase a Team Token Plan, run:\n');
+    expect(output).not.toContain('subscription-status\n\n');
+  });
+
+  it('keeps only one trailing separator before subsequent output in the default static mode', async () => {
+    const writeSpy = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation(((_chunk: unknown) => true) as typeof process.stdout.write);
+    await renderWithInk(<Text>static-result</Text>);
+    process.stdout.write('next-output\n');
+    const output = stripVTControlCharacters(
+      writeSpy.mock.calls.map((call) => String(call[0])).join(''),
+    );
+    expect(output).toContain('static-result\n\nnext-output\n');
+    expect(output).not.toContain('\n\n\n');
+  });
+
+  it.each([23, 24, 80])(
+    'prints all %s lines exactly once without clearing the terminal or scrollback',
+    async (lineCount) => {
+      const descriptors = new Map(
+        ['isTTY', 'columns', 'rows'].map((key) => [
+          key,
+          Object.getOwnPropertyDescriptor(process.stdout, key),
+        ]),
+      );
+      Object.defineProperties(process.stdout, {
+        isTTY: { value: true, configurable: true },
+        columns: { value: 80, configurable: true },
+        rows: { value: 24, configurable: true },
+      });
+      const writeSpy = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation(((_chunk: unknown) => true) as typeof process.stdout.write);
+      const lines = Array.from({ length: lineCount }, (_, index) => `row-${index}`);
+
+      try {
+        await renderWithInk(<Text>{lines.join('\n')}</Text>);
+        const output = writeSpy.mock.calls.map((call) => String(call[0])).join('');
+        expect(output).not.toContain('\x1b[2J');
+        expect(output).not.toContain('\x1b[3J');
+        expect(output).not.toContain('\x1b[?1049h');
+        expect(stripVTControlCharacters(output).split('\n').filter(Boolean)).toEqual(lines);
+      } finally {
+        for (const [key, descriptor] of descriptors) {
+          if (descriptor) Object.defineProperty(process.stdout, key, descriptor);
+          else Reflect.deleteProperty(process.stdout, key);
+        }
+      }
+    },
+  );
+
   it('exits static rendering only after waitUntil settles', async () => {
     const writeSpy = vi
       .spyOn(process.stdout, 'write')
@@ -53,10 +134,41 @@ describe('renderWithInk', () => {
     expect(finished).toBe(true);
     expect(writeSpy).toHaveBeenCalled();
   });
+
+  it('keeps promise-driven updates visible until the final frame', async () => {
+    const writeSpy = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation(((_chunk: unknown) => true) as typeof process.stdout.write);
+    let resolveWait: () => void = () => {};
+    const waitUntil = new Promise<void>((resolve) => {
+      resolveWait = resolve;
+    });
+    function DeferredResult() {
+      const [message, setMessage] = React.useState('pending-result');
+      React.useEffect(() => {
+        void waitUntil.then(() => setMessage('completed-result'));
+      }, []);
+      return <Text>{message}</Text>;
+    }
+
+    const rendering = renderWithInk(<DeferredResult />, { waitUntil });
+    // One event-loop tick does not guarantee Ink has painted under concurrent test load.
+    await vi.waitFor(() => {
+      expect(writeSpy.mock.calls.map((call) => String(call[0])).join('')).toContain(
+        'pending-result',
+      );
+    });
+    resolveWait();
+    await rendering;
+
+    const output = writeSpy.mock.calls.map((call) => String(call[0])).join('');
+    expect(output).toContain('pending-result');
+    expect(output).toContain('completed-result');
+  });
 });
 
 describe('renderInteractive', () => {
-  let writeSpy: ReturnType<typeof vi.spyOn>;
+  let writeSpy: MockInstance<typeof process.stdout.write>;
   let originalIsTTY: PropertyDescriptor | undefined;
   let originalPlatform: PropertyDescriptor | undefined;
   let originalTermProgram: string | undefined;
@@ -309,7 +421,7 @@ describe('renderInteractive', () => {
 
 // Windows regression: all hosts retain the v1.5 main-screen full-redraw strategy.
 describe('renderInteractive in Windows environments', () => {
-  let writeSpy: ReturnType<typeof vi.spyOn>;
+  let writeSpy: MockInstance<typeof process.stdout.write>;
   let originalIsTTY: PropertyDescriptor | undefined;
   let originalPlatform: PropertyDescriptor | undefined;
   let originalWtSession: string | undefined;
